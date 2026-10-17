@@ -1,0 +1,49 @@
+# Stage 2 (Design), automated: when an accepted intent.md merges to main, generate
+# spec.md and open it as a PR for the product owner. The agent never commits to main.
+name: Spec from intent
+
+on:
+  push:
+    branches: [main]
+    paths: ["changes/*/intent.md"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  spec:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-stack
+      - name: Find intents without a spec
+        id: find
+        run: |
+          pending=$(for d in changes/*/; do [ -f "$d/intent.md" ] && [ ! -f "$d/spec.md" ] && echo "${d%/}"; done || true)
+          echo "pending<<EOF" >> "$GITHUB_OUTPUT"; echo "$pending" >> "$GITHUB_OUTPUT"; echo "EOF" >> "$GITHUB_OUTPUT"
+      - name: Generate specs
+        if: steps.find.outputs.pending != ''
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          PENDING: ${{ steps.find.outputs.pending }}
+        run: |
+          npm install -g @anthropic-ai/claude-code
+          { cat prompts/spec-from-intent.md; echo "$PENDING"; } | scripts/agent.sh -
+      - name: Open PR
+        if: steps.find.outputs.pending != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PENDING: ${{ steps.find.outputs.pending }}
+        run: |
+          branch="spec/${GITHUB_RUN_ID}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git add changes/*/spec.md
+          git diff --cached --quiet && { echo "no specs produced"; exit 0; }
+          git commit -m "spec: generate from accepted intent"
+          git push -u origin "$branch"
+          gh pr create --title "spec: generate from accepted intent" \
+            --body "Generated spec(s) for: ${PENDING}. Product owner: review and resolve flagged policy concerns."

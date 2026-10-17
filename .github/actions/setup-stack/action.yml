@@ -1,0 +1,11 @@
+# The CI half of the stack contract (the other half is the Makefile).
+# Installs the current language toolchain, then runs `make setup`.
+# Change this file and the Makefile to switch language; workflows stay the same.
+name: Setup stack
+description: Install the language toolchain and project dependencies
+runs:
+  using: composite
+  steps:
+    - uses: astral-sh/setup-uv@v6
+    - shell: bash
+      run: make setup

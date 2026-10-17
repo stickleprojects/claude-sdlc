@@ -1,0 +1,24 @@
+# Stage 4 (Test): evals for the agent configuration itself. Runs when the things that
+# steer the agent change, and nightly. A falling pass rate blocks the config change.
+name: Agent evals
+
+on:
+  pull_request:
+    paths: ["CLAUDE.md", "REVIEW.md", ".claude/**", "prompts/**", "evals/**", "scripts/agent.sh"]
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  evals:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-stack
+      - run: npm install -g @anthropic-ai/claude-code
+      - run: make evals
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
