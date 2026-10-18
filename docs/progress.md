@@ -20,7 +20,7 @@ The first real change, `0001-show-open-questions`, is the test case for the whol
 - **AI PR review**: follows [REVIEW.md](../REVIEW.md), quotes the text each finding refers to, and keeps one summary comment that it updates on every push.
 - **Spec from intent**: generates a spec when an intent merges. The PR is opened by hand once; automatic PR creation isn't verified yet (#13).
 - **Guardrail hooks**: protected paths, format on edit, and a production gate (no deploys to production, no pushes to `main`).
-- **GitHub setup**: branch protection, CODEOWNERS, token secret and Actions permissions, all scripted in `scripts/bootstrap-github.sh` (#17, open).
+- **GitHub setup**: branch protection, CODEOWNERS, token secret and Actions permissions, all scripted in `scripts/bootstrap-github.sh` (#17).
 
 ## Paused: product-owner review
 
@@ -104,6 +104,6 @@ Tracked as GitHub issues labelled `pipeline`:
 | #7 | Pass allowed tools to the agent in CI | CI workspaces are never trusted, so the allow list in `settings.json` is ignored there |
 | #8, #9 | CODEOWNERS; production gate checks only push arguments | Whole-command matching blocked a legitimate `git merge main && git push` |
 | #16 | Readable findings, one summary comment, `/po-review` | Findings need quoted context; the first `/po-review` design was wrong (see above) |
-| #17 | Bootstrap script and *Getting started* (open) | Roughly ten manual GitHub settings broke setup; now scripted |
+| #17 | Bootstrap script and *Getting started* | Roughly ten manual GitHub settings broke setup; now scripted |
 
 Setup problems that weren't code: a token pasted with line wraps (the secret was cut off); the Claude GitHub app not installed; and the action skipping itself on PRs that change its own workflow file.
