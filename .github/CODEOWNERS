@@ -1,0 +1,3 @@
+# Code owners must approve PRs (branch protection requires it).
+# The agent never counts as a code owner.
+* @stickleprojects
