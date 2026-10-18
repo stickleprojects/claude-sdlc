@@ -9,7 +9,7 @@
 #   validate  check the intent -> spec -> plan artifact chain
 #   check     everything CI requires; exits non-zero on any failure
 
-.PHONY: setup fmt lint test validate check evals deploy-dev deploy-prod
+.PHONY: setup fmt lint test validate check exec-bits evals deploy-dev deploy-prod
 
 # --- current stack: Python via uv -------------------------------------------------
 PY_FILES = $(filter %.py,$(FILES))
@@ -36,7 +36,12 @@ validate:
 	uv run sdlc check
 # ----------------------------------------------------------------------------------
 
-check: lint test validate
+check: lint test validate exec-bits
+
+# Committed scripts must be executable; a non-executable hook is skipped silently.
+exec-bits:
+	@bad=$$(git ls-files -s '*.sh' | awk '$$1 != "100755" {print $$4}'); \
+	test -z "$$bad" || { echo "not executable in git (git update-index --chmod=+x):"; echo "$$bad"; exit 1; }
 
 evals:
 	./evals/run.sh

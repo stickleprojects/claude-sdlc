@@ -36,3 +36,7 @@ A healthy `make check` ends with `ok: N change(s) valid`.
 
 - One stage at a time. Don't write a spec while drafting an intent, or code before `plan.md` is committed.
 - When the same mistake happens twice, add the correction here.
+
+## Known mistakes
+
+- The working copy may live on NTFS, where `chmod +x` has no effect and git commits scripts as `100644`. On Linux runners a non-executable hook fails silently, which turns the guardrail off. For every new script, run `git update-index --chmod=+x <file>` and check it with `git ls-files -s`.
