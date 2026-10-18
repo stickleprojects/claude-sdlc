@@ -24,6 +24,20 @@ Run these in order. Report only what each pass actually finds.
 - Lockfiles and generated files.
 - Wording in `intent.md` and `spec.md`. The product owner reviews those, not this pass.
 
+## Writing findings
+
+The product owner and code owners read findings on GitHub, often without the files open. Make every finding readable on its own:
+
+- **Quote what you refer to.** Never cite a bare ID like "A8" or "R2". Quote the line: `> A8. The existing change … prints \`…\tspec\t0\``.
+- **Say why it matters** in one sentence: what goes wrong, and when.
+- **Suggest a fix**, as replacement wording or code where you can.
+- **Say who decides:** *product owner* for intent and spec content, *engineer* for plan and code.
+
 ## Summary comment
 
-End with a single comment: the number of findings per severity, then one line on whether the change matches its spec.
+Keep exactly **one** summary comment per PR, and replace it on each new review rather than adding another. It contains:
+
+1. The number of findings per severity, and whether each earlier finding is now resolved.
+2. One line per open finding: a short quote of the text it's about, plus the owner who decides.
+3. One line on whether the change matches its spec.
+4. For `intent:` and `spec:` PRs, a reminder that the product owner can run `/po-review <PR#>` in Claude Code to work through the findings.
