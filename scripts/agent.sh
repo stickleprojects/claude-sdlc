@@ -9,6 +9,8 @@
 # Env:
 #   AGENT     which adapter to use (default: claude)
 #   AGENT_MAX_TURNS  turn budget for one run (default: 30)
+#   AGENT_ALLOWED_TOOLS  tools the agent may use without approval. CI workspaces are never
+#     "trusted", so the allow list in .claude/settings.json is ignored there; pass it here.
 set -euo pipefail
 
 prompt_src="${1:?usage: agent.sh <prompt-file|-> [args...]}"
@@ -20,6 +22,7 @@ case "${AGENT:-claude}" in
     exec claude -p "$prompt" \
       --max-turns "${AGENT_MAX_TURNS:-30}" \
       --permission-mode acceptEdits \
+      --allowedTools "${AGENT_ALLOWED_TOOLS:-Read,Grep,Glob,Edit,Write,Bash(make validate),Bash(make test),Bash(make lint),Bash(make check),Bash(uv run sdlc:*)}" \
       "$@"
     ;;
   echo)
