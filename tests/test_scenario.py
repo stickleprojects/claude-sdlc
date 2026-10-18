@@ -115,3 +115,35 @@ def test_hooks_guard_the_consumer(consumer):
     assert hook("protect-paths.sh", settings, cwd=consumer).returncode == 2
     app = {"tool_input": {"file_path": str(consumer / "src/app.ts")}}
     assert hook("protect-paths.sh", app, cwd=consumer).returncode == 0
+
+
+def test_sync_keeps_files_the_consumer_added(consumer, framework_snapshot):
+    own = {
+        ".github/workflows/deploy.yml": "name: deploy\n",
+        ".claude/skills/streaming-policy/SKILL.md": "consumer skill\n",
+    }
+    commit(consumer, "ci: consumer's own workflow and skill", own)
+    commit(framework_snapshot, "fix: change", {"REVIEW.md": "changed\n"})
+    assert sync(consumer, framework_snapshot, "main").returncode == 0
+    for rel, content in own.items():
+        assert (consumer / rel).read_text() == content, rel
+    assert (consumer / "REVIEW.md").read_text() == "changed\n"
+
+
+def test_sync_removes_files_the_framework_dropped(consumer, framework_snapshot):
+    dropped = ".claude/skills/po-review/SKILL.md"
+    assert (consumer / dropped).exists()
+    (framework_snapshot / dropped).unlink()
+    commit(framework_snapshot, "feat!: drop po-review skill")
+    assert sync(consumer, framework_snapshot, "main").returncode == 0
+    assert not (consumer / dropped).exists()
+    assert dropped not in (consumer / ".sdlc-files").read_text()
+
+
+def test_sdlc_files_lists_what_was_installed(consumer):
+    files = (consumer / ".sdlc-files").read_text().split()
+    assert ".claude/hooks/production-gate.sh" in files
+    assert "tools/sdlc/src/sdlc/cli.py" in files
+    assert ".github/workflows/release.yml" not in files
+    assert "Makefile" not in files
+    assert all((consumer / f).is_file() for f in files)

@@ -9,9 +9,10 @@
 #   SDLC_SOURCE  local path or URL to clone instead of SDLC_REPO, e.g. ../claude-sdlc
 #                to try unpushed framework changes; the scenario tests use this.
 #
-# Copies only the paths the framework owns (FRAMEWORK_PATHS), overwriting local copies,
-# and records the exact commit in .sdlc-version. Everything else belongs to the consumer
-# repo and is never touched. The result is staged for review in a PR.
+# Copies the files the framework owns (the paths list in main), overwriting local copies,
+# and records the exact commit in .sdlc-version and the installed files in .sdlc-files.
+# Files the consumer adds, even inside framework folders such as .github/workflows or
+# .claude/skills, are never touched. The result is staged for review in a PR.
 #
 # This script is itself framework-owned and may overwrite itself, so everything runs
 # inside main(), which bash reads in full before executing.
@@ -65,16 +66,40 @@ main() {
   sha="$(git -C "$tmp/fw" rev-parse HEAD)"
   echo "syncing from $label@$ref (${sha:0:7})"
 
-  local pair src dst wf
+  # Remove the files the previous sync installed (listed in .sdlc-files), then copy the
+  # new set. Files the framework dropped disappear; files the consumer added inside
+  # framework folders (its own workflows, skills, agents, hooks) are never touched.
+  local old
+  if [[ -f .sdlc-files ]]; then
+    while IFS= read -r old; do
+      [[ -n "$old" && "$old" != /* && "$old" != *..* ]] && rm -f -- "$old"
+    done < .sdlc-files
+  fi
+
+  local pair src dst file installed=()
+  install_file() {  # <framework file> <consumer path>
+    mkdir -p "$(dirname "$2")"
+    cp "$1" "$2"
+    installed+=("$2")
+  }
   for pair in "${paths[@]}"; do
     src="$tmp/fw/${pair%%:*}" dst="${pair#*:}"
-    [[ -e "$src" ]] || { echo "  skip (not in framework): ${pair%%:*}"; continue; }
-    rm -rf -- "$dst"
-    mkdir -p "$(dirname "$dst")"
-    cp -r "$src" "$dst"
+    if [[ -f "$src" ]]; then
+      install_file "$src" "$dst"
+    elif [[ -d "$src" ]]; then
+      while IFS= read -r -d '' file; do
+        file="${file#./}"
+        [[ "$file" == *__pycache__* ]] && continue
+        [[ "$dst" == .github/workflows ]] && printf '%s\n' "${skip_workflows[@]}" | grep -qxF "$file" && continue
+        install_file "$src/$file" "$dst/$file"
+      done < <(cd "$src" && find . -type f -print0)
+    else
+      echo "  skip (not in framework): ${pair%%:*}"
+    fi
   done
-  for wf in "${skip_workflows[@]}"; do rm -f ".github/workflows/$wf"; done
-  find tools -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true
+  printf '%s\n' "${installed[@]}" | sort > .sdlc-files
+  # Drop folders the removal left empty (git doesn't track them anyway).
+  find .claude .github tools templates prompts -type d -empty -delete 2>/dev/null || true
 
   printf '%s@%s\n%s\n' "$repo" "$ref" "$sha" > .sdlc-version
 

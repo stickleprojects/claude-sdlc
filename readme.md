@@ -97,7 +97,7 @@ CI usage counts against your Claude plan's limits. That's why agent evals run on
 Product work happens in consumer repos, such as [sdlc-sandbox](https://github.com/stickleprojects/sdlc-sandbox), not here. A consumer repo:
 
 1. Writes its own stack half of the contract: a `Makefile` with the targets above, and `.github/actions/setup-stack/`. `SDLC` points at its copy of the CLI, e.g. `uv run --project tools/sdlc sdlc`.
-2. Copies in `scripts/sync-sdlc.sh` and runs it. That pulls every framework-owned file (hooks, skills, workflows, templates, `REVIEW.md`, the CLI in `tools/sdlc/`) and records the version in `.sdlc-version`.
+2. Copies in `scripts/sync-sdlc.sh` and runs it. That pulls every framework-owned file (hooks, skills, workflows, templates, `REVIEW.md`, the CLI in `tools/sdlc/`) and records the version in `.sdlc-version` and the installed files in `.sdlc-files`. Files the consumer adds, even inside `.github/workflows/` or `.claude/skills/`, are never touched.
 3. Runs `scripts/bootstrap-github.sh`.
 
 To update later, run `make sync-sdlc` (latest release) or `make sync-sdlc REF=main`. To try framework changes before pushing them, run `SDLC_SOURCE=../claude-sdlc make sync-sdlc REF=<branch>`.

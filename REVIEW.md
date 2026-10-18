@@ -11,6 +11,7 @@ Run these in order. Report only what each pass actually finds.
 3. **Compliance with the artifact chain:** the PR's change folder under `changes/` must have `intent.md`, `spec.md` and `plan.md`. Flag code that has no matching requirement, requirements with no code or test, and plan steps that were skipped.
    - **Maintenance exemption:** skip this pass for PRs whose title starts with `fix:`, `ci:` or `chore:`, but only if they don't change how the product behaves. That covers pipeline, tooling, docs and file permissions. For these, check instead that the PR description explains why the change is needed. If an exempt PR does change product behaviour (`src/` logic, CLI output), report that as Important: it needs an intent.
    - PRs that only add or edit artifacts (`intent:`, `spec:`, `plan:`) are checked only against the stage they belong to.
+   - **Repos that track changes as issues:** if the repo's `CLAUDE.md` contains the line `Change tracking: issues` (the claude-sdlc framework repo does), skip the change-folder requirement for every PR type, `feat:` included. Instead, check that the PR description links an issue, or explains the problem it solves and how the change was tested. Report a missing explanation as Important.
 4. **Verification:** every acceptance criterion has a test or a command in the plan's Verification section. Bug fixes include a test that failed before the fix.
 
 ## Severity
