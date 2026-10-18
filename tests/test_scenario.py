@@ -147,3 +147,13 @@ def test_sdlc_files_lists_what_was_installed(consumer):
     assert ".github/workflows/release.yml" not in files
     assert "Makefile" not in files
     assert all((consumer / f).is_file() for f in files)
+
+
+def test_sync_overwrites_files_in_place(consumer, framework_snapshot):
+    # The sync script replaces itself while running; deleting it first leaves a
+    # .fuse_hidden* file behind on NTFS-over-FUSE checkouts. Same inode = no delete.
+    script = consumer / "scripts" / "sync-sdlc.sh"
+    before = script.stat().st_ino
+    commit(framework_snapshot, "fix: change", {"REVIEW.md": "changed\n"})
+    assert sync(consumer, framework_snapshot, "main").returncode == 0
+    assert script.stat().st_ino == before
