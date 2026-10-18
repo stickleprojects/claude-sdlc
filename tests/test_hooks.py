@@ -71,3 +71,32 @@ def test_protect_paths_ignores_tools_without_a_path():
 def test_format_hook_never_fails():
     payload = {"tool_input": {"file_path": str(REPO / "does-not-exist.py")}}
     assert hook("format.sh", payload).returncode == 0
+
+
+MERGE = "gh pr " + "merge"  # split so this file's text never trips the gate
+
+
+@pytest.mark.parametrize(
+    ("command", "blocked"),
+    [
+        (f"{MERGE} 21", True),
+        (f"{MERGE} 21 --merge --admin --delete-branch", True),
+        (f"git fetch && {MERGE} 21 --squash", True),
+        ("gh pr review 21 --approve", True),
+        ("gh pr review 21 -a -b lgtm", True),
+        ("gh api -X PUT repos/o/r/pulls/21/merge", True),
+        ("gh api repos/o/r/pulls/21/reviews -f event=APPROVE", True),
+        ("gh pr review 21 --comment -b 'see inline'", False),
+        ("gh pr review 21 --request-changes -b 'fix x'", False),
+        ("gh pr create --fill", False),
+        ("gh pr view 21 --json mergeable", False),
+        ("gh pr checks 21", False),
+        ("gh api repos/o/r/pulls/21/comments", False),
+        ("git merge --no-edit main", False),
+    ],
+)
+def test_agent_cannot_merge_or_approve(command, blocked):
+    result = hook("production-gate.sh", {"tool_input": {"command": command}})
+    assert result.returncode == (2 if blocked else 0), result.stderr
+    if blocked:
+        assert "human decision" in result.stderr

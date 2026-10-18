@@ -1,6 +1,6 @@
 # REVIEW.md
 
-The policy for automated PR review (`.github/workflows/claude-review.yml`). Review findings are comments only. They never approve or block a PR: a code owner approves through branch protection. The agent that wrote a change never reviews it.
+The policy for automated PR review (`.github/workflows/claude-review.yml`). Review findings are comments only. They never approve or block a PR: a human merges it (in team mode, after a code owner's approval). The agent that wrote a change never reviews, approves or merges it.
 
 ## Passes
 

@@ -1,30 +1,56 @@
 #!/usr/bin/env bash
 # Configure a GitHub repo for this pipeline. Safe to re-run: each step checks, then fixes.
 #
-# Usage: scripts/bootstrap-github.sh [--repo owner/name] [--dry-run] [--skip-token]
+# Usage: scripts/bootstrap-github.sh [--repo owner/name] [--mode solo|team] [--dry-run] [--skip-token]
 #
 # Every setting below was learned the hard way when this repo was first set up:
 #   1. executable bits    NTFS/Windows checkouts commit scripts as 100644; hooks then fail silently
 #   2. labels             `pipeline`, for platform-team issues
-#   3. CODEOWNERS         branch protection requires a code owner; must name the repo owner
+#   3. CODEOWNERS         names the repo owner; team mode requires a code owner's review
 #   4. Claude token       CLAUDE_CODE_OAUTH_TOKEN secret (from `claude setup-token`; Pro/Max plan)
 #   5. Actions → PRs      Spec from intent opens PRs; GitHub blocks that by default
-#   6. branch protection  PR + `check` and `pr-title` statuses + code owner review; admins may bypass
+#   6. branch protection  PR + `check` and `pr-title` statuses, no admin bypass, and:
+#        --mode solo (default)  0 approvals: one person, with Claude using their gh login. GitHub
+#                               can't tell them apart, so the human gate is the merge click, and
+#                               the production-gate hook stops the agent from merging or approving.
+#        --mode team            1 code-owner approval: several people, or Claude under its own bot
+#                               account, so authors and approvers are different GitHub users.
 # Steps it can only check or print (they need a browser or a human):
 #   7. Claude GitHub app  https://github.com/apps/claude, needed by claude-code-action
 #   8. workspace trust    run `claude` here once; until then .claude/settings.json allow rules are ignored
 set -euo pipefail
 
-repo="" dry=0 skip_token=0
+repo="" mode=solo dry=0 skip_token=0 print_protection=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --repo) repo="$2"; shift 2 ;;
+    --mode) mode="$2"; shift 2 ;;
     --dry-run) dry=1; shift ;;
     --skip-token) skip_token=1; shift ;;
-    -h|--help) sed -n '2,18p' "$0"; exit 0 ;;
+    --print-protection) print_protection=1; shift ;;  # print the step 6 JSON and exit (tests)
+    -h|--help) sed -n '2,23p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
+[[ "$mode" == solo || "$mode" == team ]] || { echo "--mode must be solo or team" >&2; exit 2; }
+
+protection_json() {
+  local approvals=0 code_owners=false
+  [[ "$mode" == team ]] && approvals=1 code_owners=true
+  jq -n --argjson n "$approvals" --argjson co "$code_owners" '{
+    required_status_checks: { strict: false, contexts: ["check", "pr-title"] },
+    enforce_admins: true,
+    required_pull_request_reviews: {
+      require_code_owner_reviews: $co,
+      required_approving_review_count: $n,
+      dismiss_stale_reviews: true
+    },
+    restrictions: null,
+    allow_force_pushes: false,
+    allow_deletions: false
+  }'
+}
+if ((print_protection)); then protection_json; exit 0; fi
 
 cd "$(git rev-parse --show-toplevel)"
 for tool in gh git jq; do command -v "$tool" >/dev/null || { echo "missing: $tool" >&2; exit 1; }; done
@@ -61,9 +87,9 @@ else
   if ((dry)); then echo "    would write: $want"
   else
     mkdir -p .github
-    printf '# Code owners must approve PRs (branch protection requires it).\n# The agent never counts as a code owner.\n%s\n' "$want" > .github/CODEOWNERS
+    printf '# Code owners approve PRs when branch protection runs in team mode.\n# The agent never counts as a code owner.\n%s\n' "$want" > .github/CODEOWNERS
   fi
-  todo ".github/CODEOWNERS set to @$owner; commit it in a PR (branch protection needs it on main)"
+  todo ".github/CODEOWNERS set to @$owner; commit it in a PR (team mode needs it on main)"
 fi
 
 step "4. Claude token secret (CLAUDE_CODE_OAUTH_TOKEN)"
@@ -101,30 +127,27 @@ if [[ "$(gh api "repos/$repo/actions/permissions/workflow" -q .can_approve_pull_
 else
   echo '{"default_workflow_permissions":"read","can_approve_pull_request_reviews":true}' \
     | run gh api -X PUT "repos/$repo/actions/permissions/workflow" --input -
-  ((dry)) || ok "allowed (approvals by Actions never count: step 6 requires a code owner)"
+  ((dry)) || ok "allowed (an approval by Actions never counts: team mode requires a code owner)"
 fi
 
-step "6. Branch protection on main"
-protection='{
-  "required_status_checks": { "strict": false, "contexts": ["check", "pr-title"] },
-  "enforce_admins": false,
-  "required_pull_request_reviews": {
-    "require_code_owner_reviews": true,
-    "required_approving_review_count": 1,
-    "dismiss_stale_reviews": true
-  },
-  "restrictions": null,
-  "allow_force_pushes": false,
-  "allow_deletions": false
-}'
-if gh api "repos/$repo/branches/main/protection" \
-    -q '[.required_pull_request_reviews.require_code_owner_reviews, (.required_status_checks.contexts | index("pr-title") != null)] | all' \
-    2>/dev/null | grep -qx true; then
-  ok "already protected"
+step "6. Branch protection on main ($mode mode)"
+summary="PR + 'check' and 'pr-title' statuses, no admin bypass"
+[[ "$mode" == team ]] && summary+=", 1 code-owner approval" || summary+=", 0 approvals (you merge; the hook stops the agent)"
+# Compare the settings that matter, normalised, with what this mode wants.
+shape='{checks: (.required_status_checks.contexts | sort),
+        admins: (if (.enforce_admins | type) == "object" then .enforce_admins.enabled else .enforce_admins end),
+        approvals: .required_pull_request_reviews.required_approving_review_count,
+        owners: .required_pull_request_reviews.require_code_owner_reviews}'
+want="$(protection_json | jq -c "$shape")"
+have="$(gh api "repos/$repo/branches/main/protection" 2>/dev/null | jq -c "$shape" 2>/dev/null || true)"
+if [[ "$have" == "$want" ]]; then
+  ok "already protected: $summary"
 elif ((dry)); then
   echo "    would PUT repos/$repo/branches/main/protection"
-elif echo "$protection" | gh api -X PUT "repos/$repo/branches/main/protection" --input - >/dev/null 2>/tmp/bootstrap-err; then
-  ok "protected: PR + 'check' and 'pr-title' statuses + code owner review; admins can bypass"
+  echo "    have: ${have:-none}"
+  echo "    want: $want"
+elif protection_json | gh api -X PUT "repos/$repo/branches/main/protection" --input - >/dev/null 2>/tmp/bootstrap-err; then
+  ok "protected: $summary"
 else
   todo "could not protect main: $(head -c 200 /tmp/bootstrap-err). Private repos on a free plan need GitHub Pro."
 fi
