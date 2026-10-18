@@ -29,7 +29,7 @@ In Claude Code, the stages are skills: `/intent`, `/spec`, `/plan`. The `verifie
 | Plan | `changes/NNNN-*/intent.md` | `/intent` skill |
 | Design | `spec.md` | `/spec` skill; the *Spec from intent* workflow opens a spec PR when an intent merges |
 | Build | `plan.md` + code | plan mode, `/plan`, worktrees, hooks (format on edit, protected paths) |
-| Test | tests, evals | `make check`; *Agent evals* runs on config changes and nightly |
+| Test | tests, evals | `make check`; *Agent evals* (on demand for now) |
 | Deploy | PR | *Claude review* follows [REVIEW.md](REVIEW.md); `@claude` fixes; production gate hook |
 
 ### Two abstraction seams
@@ -43,8 +43,8 @@ The `sdlc` CLI (in `src/sdlc/`) is the pipeline's own tooling. It also gives the
 
 ## GitHub setup
 
-1. Add the `ANTHROPIC_API_KEY` repository secret. The Claude review, mention, spec and eval workflows all need it.
-2. Install the Claude GitHub app (`/install-github-app` in Claude Code). `claude-code-action` needs it.
+1. Run `claude setup-token` and save the token as the `CLAUDE_CODE_OAUTH_TOKEN` repository secret: `gh secret set CLAUDE_CODE_OAUTH_TOKEN`. The Claude review, mention, spec and eval workflows all use it. It is tied to a Claude subscription, so CI usage counts against that plan's limits. That's why agent evals run only on demand (Actions → Agent evals → Run workflow).
+2. Install the Claude GitHub app (`/install-github-app` in Claude Code). `claude-code-action` needs it. Skip the installer's API key step, and don't merge the workflow PR it opens: this repo already has its own workflows.
 3. Turn on branch protection for `main`: require a PR, the `CI / check` status, and a code owner's approval.
 
 ## Roadmap
@@ -52,5 +52,6 @@ The `sdlc` CLI (in `src/sdlc/`) is the pipeline's own tooling. It also gives the
 - [ ] **Maintain stage:** a deterministic metric check against a baseline, with response tiers in `bands.yaml` (log, then read-only diagnosis, then a fix PR). Diagnoses are written as a new `intent.md`.
 - [ ] Scheduled security scans whose findings become intents or fix PRs.
 - [ ] Managed settings for guardrails engineers can't override.
+- [ ] Switch CI authentication to identity federation with API billing: short-lived tokens, so evals can run on every config change and nightly again.
 - [ ] More agent adapters in `scripts/agent.sh`, and a second sample stack to prove the stack contract.
 - [ ] Terminal demo animations for each role: see [docs/demo-animation-plan.md](docs/demo-animation-plan.md).
