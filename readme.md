@@ -9,7 +9,7 @@ intent.md ─► spec.md ─► plan.md ─► code + tests ─► PR + AI revie
    Plan       Design     Build        Test            Deploy
 ```
 
-**Start here:** [docs/roles.md](docs/roles.md) explains, step by step, what each person does.
+**Start here:** [docs/roles.md](docs/roles.md) explains, step by step, what each person does. Current status and paused work: [docs/progress.md](docs/progress.md).
 
 ## Quick start
 
