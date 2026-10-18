@@ -66,15 +66,13 @@ main() {
   sha="$(git -C "$tmp/fw" rev-parse HEAD)"
   echo "syncing from $label@$ref (${sha:0:7})"
 
-  # Remove the files the previous sync installed (listed in .sdlc-files), then copy the
-  # new set. Files the framework dropped disappear; files the consumer added inside
-  # framework folders (its own workflows, skills, agents, hooks) are never touched.
-  local old
-  if [[ -f .sdlc-files ]]; then
-    while IFS= read -r old; do
-      [[ -n "$old" && "$old" != /* && "$old" != *..* ]] && rm -f -- "$old"
-    done < .sdlc-files
-  fi
+  # Copy the new set over the old one in place, then delete only files the previous sync
+  # installed (.sdlc-files) that the framework has since dropped. Overwriting in place,
+  # never delete-then-copy, matters: this script is one of the files, and deleting an
+  # open file on some filesystems (NTFS via FUSE) leaves a stray .fuse_hidden* behind.
+  # Files the consumer added inside framework folders are never touched.
+  local previous=""
+  [[ -f .sdlc-files ]] && previous="$(cat .sdlc-files)"
 
   local pair src dst file installed=()
   install_file() {  # <framework file> <consumer path>
@@ -98,6 +96,11 @@ main() {
     fi
   done
   printf '%s\n' "${installed[@]}" | sort > .sdlc-files
+  local old
+  while IFS= read -r old; do
+    [[ -n "$old" && "$old" != /* && "$old" != *..* ]] || continue
+    grep -qxF -- "$old" .sdlc-files || rm -f -- "$old"
+  done <<<"$previous"
   # Drop folders the removal left empty (git doesn't track them anyway).
   find .claude .github tools templates prompts -type d -empty -delete 2>/dev/null || true
 
