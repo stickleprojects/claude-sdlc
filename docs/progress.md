@@ -2,6 +2,11 @@
 
 Status as of 2026-10-18. This is a living log: update it whenever the pipeline changes or a stage is paused.
 
+## Two repos
+
+- **claude-sdlc (this repo): the framework.** Its own changes go through `fix:`/`feat:`/`ci:` PRs and `pipeline` issues. It's tested by unit tests and scenario tests (see the readme's *Testing the framework*), and released as tagged versions with generated release notes.
+- **[sdlc-sandbox](https://github.com/stickleprojects/sdlc-sandbox): the practice product.** *StreamLite*, a lightweight video streaming service in TypeScript. Product work (intents, specs, product-owner sessions) happens there. It pulls the framework with `make sync-sdlc`.
+
 ## Where we are
 
 The first real change, `0001-show-open-questions`, is the test case for the whole loop.
@@ -92,6 +97,7 @@ Tracked as GitHub issues labelled `pipeline`:
 | #13 | Spec from intent: automatic PR creation not yet verified end to end |
 | #14 | PRs that change the review workflow never get an AI review |
 | #15 | Maintain stage not built |
+| #20 | Release migrations: notes written for Claude, picked up by `sync-sdlc` (breaking changes, work in flight) |
 
 ## History
 
@@ -107,3 +113,10 @@ Tracked as GitHub issues labelled `pipeline`:
 | #17 | Bootstrap script and *Getting started* | Roughly ten manual GitHub settings broke setup; now scripted |
 
 Setup problems that weren't code: a token pasted with line wraps (the secret was cut off); the Claude GitHub app not installed; and the action skipping itself on PRs that change its own workflow file.
+
+Later work:
+
+| PR | What | Lesson |
+|---|---|---|
+| #19 | Pipeline commands go through `make` (`new-change`, `status`) | `uv run sdlc` in skills tied every consumer to Python |
+| #21 | Framework tests (hooks, scripts, scenario), PR-title check, versions from PR titles, release notes, `sync-sdlc` | Once product work moved out, framework CI was checking the wrong things |

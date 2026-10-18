@@ -9,7 +9,7 @@
 #   3. CODEOWNERS         branch protection requires a code owner; must name the repo owner
 #   4. Claude token       CLAUDE_CODE_OAUTH_TOKEN secret (from `claude setup-token`; Pro/Max plan)
 #   5. Actions → PRs      Spec from intent opens PRs; GitHub blocks that by default
-#   6. branch protection  PR + `check` status + code owner review; admins may bypass (solo repos)
+#   6. branch protection  PR + `check` and `pr-title` statuses + code owner review; admins may bypass
 # Steps it can only check or print (they need a browser or a human):
 #   7. Claude GitHub app  https://github.com/apps/claude, needed by claude-code-action
 #   8. workspace trust    run `claude` here once; until then .claude/settings.json allow rules are ignored
@@ -106,7 +106,7 @@ fi
 
 step "6. Branch protection on main"
 protection='{
-  "required_status_checks": { "strict": false, "contexts": ["check"] },
+  "required_status_checks": { "strict": false, "contexts": ["check", "pr-title"] },
   "enforce_admins": false,
   "required_pull_request_reviews": {
     "require_code_owner_reviews": true,
@@ -117,12 +117,14 @@ protection='{
   "allow_force_pushes": false,
   "allow_deletions": false
 }'
-if gh api "repos/$repo/branches/main/protection" -q '.required_pull_request_reviews.require_code_owner_reviews' 2>/dev/null | grep -qx true; then
+if gh api "repos/$repo/branches/main/protection" \
+    -q '[.required_pull_request_reviews.require_code_owner_reviews, (.required_status_checks.contexts | index("pr-title") != null)] | all' \
+    2>/dev/null | grep -qx true; then
   ok "already protected"
 elif ((dry)); then
   echo "    would PUT repos/$repo/branches/main/protection"
 elif echo "$protection" | gh api -X PUT "repos/$repo/branches/main/protection" --input - >/dev/null 2>/tmp/bootstrap-err; then
-  ok "protected: PR + 'check' status + code owner review; admins can bypass"
+  ok "protected: PR + 'check' and 'pr-title' statuses + code owner review; admins can bypass"
 else
   todo "could not protect main: $(head -c 200 /tmp/bootstrap-err). Private repos on a free plan need GitHub Pro."
 fi

@@ -4,14 +4,16 @@
 # A task (evals/tasks/*.json) is {"name", "prompt", "check"}: the prompt goes to
 # scripts/agent.sh in a throwaway copy of the repo, then `check` (a shell command)
 # runs in that copy and must exit 0. Fails when the pass rate is below EVAL_MIN_PASS_RATE.
+# EVAL_TASKS_DIR points at another task folder (the framework's own tests use this).
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
+tasks_dir="${EVAL_TASKS_DIR:-$root/evals/tasks}"
 min_rate="${EVAL_MIN_PASS_RATE:-0.8}"
 pass=0
 total=0
 
-for task in "$root"/evals/tasks/*.json; do
+for task in "$tasks_dir"/*.json; do
   name="$(jq -r .name "$task")"
   work="$(mktemp -d)"
   trap 'rm -rf "$work"' EXIT

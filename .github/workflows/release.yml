@@ -1,0 +1,58 @@
+# Cut a framework release: work out the version from PR titles, check, tag, and publish
+# release notes grouped by change type (scripts/release-notes.sh). GitHub Releases are the
+# changelog; a CHANGELOG.md file would need a push to the protected main branch.
+# Run from Actions → Release → Run workflow, or: gh workflow run release.yml
+# Framework-only: scripts/sync-sdlc.sh doesn't copy this file to consumer repos.
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Only show the version that would be released"
+        type: boolean
+        default: true
+      run_evals:
+        description: "Run agent evals before releasing (uses Claude subscription usage)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency: release
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Work out the next version
+        id: version
+        run: |
+          version=$(scripts/next-version.sh --explain 2> explain.txt) || { cat explain.txt; echo "::error::nothing to release"; exit 1; }
+          cat explain.txt
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          scripts/release-notes.sh "$version" "$GITHUB_REPOSITORY" > notes.md
+          { echo "### Next version: \`$version\`"; echo '```'; cat explain.txt; echo '```';
+            echo; echo "### Release notes preview"; cat notes.md; } >> "$GITHUB_STEP_SUMMARY"
+      - uses: ./.github/actions/setup-stack
+        if: ${{ !inputs.dry_run }}
+      - run: make check
+        if: ${{ !inputs.dry_run }}
+      - name: Agent evals
+        if: ${{ !inputs.dry_run && inputs.run_evals }}
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          npm install -g @anthropic-ai/claude-code
+          make evals
+      - name: Tag and publish
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: gh release create "$VERSION" --target "$GITHUB_SHA" --title "$VERSION" --notes-file notes.md
