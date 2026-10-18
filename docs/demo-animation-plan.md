@@ -24,7 +24,7 @@ A live model gives different output every run, which breaks reproducible renders
 
 1. Add a `demo/bin/claude` shim. It prints canned output for each scene from `demo/transcripts/<scene>.txt`, streamed line by line so it looks live.
 2. Each tape uses `Hide` to put `demo/bin` on `PATH` before recording starts.
-3. Real commands (`make check`, `uv run sdlc status`, `git`) run for real in a scratch copy of the repo, so their output is true.
+3. Real commands (`make check`, `make status`, `git`) run for real in a scratch copy of the repo, so their output is true.
 4. Captions say "Claude output abridged" wherever the shim stands in.
 
 To use real Claude output instead, set `DEMO_LIVE=1`. The shim is skipped and you accept that each render differs.

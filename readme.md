@@ -64,8 +64,8 @@ Open any small PR. Both **check** and **review** should pass, and Claude should 
 ### 4. Daily use
 
 ```
-uv run sdlc new add-login       # start a change: changes/0001-add-login/intent.md
-uv run sdlc status              # stage each change has reached
+make new-change NAME=add-login  # start a change: changes/0001-add-login/intent.md
+make status                     # stage each change has reached
 make check                      # lint + tests + artifact chain
 ```
 

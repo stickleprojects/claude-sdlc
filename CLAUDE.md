@@ -12,7 +12,8 @@ make check       # lint + test + validate; the one command that must exit 0 befo
 make fmt         # format; FILES="a.py b.py" limits it to those files
 make test        # uv run pytest -q
 uv run pytest tests/test_artifacts.py::test_next_slug_increments   # a single test
-uv run sdlc new <kebab-name> | check | status
+make new-change NAME=<kebab-name>   # start a change
+make status      # stage each change has reached
 make evals       # agent evals (calls the model; in CI it uses CLAUDE_CODE_OAUTH_TOKEN)
 ```
 
