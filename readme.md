@@ -92,6 +92,49 @@ The `sdlc` CLI (in `src/sdlc/`) is the pipeline's own tooling. It also gives the
 
 CI usage counts against your Claude plan's limits. That's why agent evals run only on demand (Actions → Agent evals → Run workflow). Known pipeline gaps are tracked as [`pipeline` issues](../../issues?q=label%3Apipeline).
 
+## Using the framework in another repo
+
+Product work happens in consumer repos, such as [sdlc-sandbox](https://github.com/stickleprojects/sdlc-sandbox), not here. A consumer repo:
+
+1. Writes its own stack half of the contract: a `Makefile` with the targets above, and `.github/actions/setup-stack/`. `SDLC` points at its copy of the CLI, e.g. `uv run --project tools/sdlc sdlc`.
+2. Copies in `scripts/sync-sdlc.sh` and runs it. That pulls every framework-owned file (hooks, skills, workflows, templates, `REVIEW.md`, the CLI in `tools/sdlc/`) and records the version in `.sdlc-version` and the installed files in `.sdlc-files`. Files the consumer adds, even inside `.github/workflows/` or `.claude/skills/`, are never touched.
+3. Runs `scripts/bootstrap-github.sh`.
+
+To update later, run `make sync-sdlc` (latest release) or `make sync-sdlc REF=main`. To try framework changes before pushing them, run `SDLC_SOURCE=../claude-sdlc make sync-sdlc REF=<branch>`.
+
+## Testing the framework
+
+`make check` runs three kinds of test, all without calling Claude:
+
+| Layer | What | Where |
+|---|---|---|
+| Unit | The `sdlc` CLI and the artifact rules | `tests/test_artifacts.py` |
+| Unit | Hooks block and allow exactly the right commands and paths; `agent.sh`, the eval runner, `bootstrap-github.sh` and `next-version.sh` | `tests/test_hooks.py`, `tests/test_scripts.py` |
+| Scenario | Install the framework into a throwaway consumer repo (a no-op stack) with `sync-sdlc.sh`, then run a change through `new-change`, `validate` and `status`; check that the hooks guard it and that syncing respects tags, local edits and a dirty tree | `tests/test_scenario.py` |
+
+Agent evals (`make evals`, `evals/tasks/`) test the skills with Claude itself. They run on demand and before every release.
+
+## Releases
+
+Versions are worked out from PR titles, so there's nothing to remember:
+
+| PR title | Version bump |
+|---|---|
+| `fix: …`, `ci: …`, `chore: …`, `docs: …` | patch (0.4.2 → 0.4.3) |
+| `feat: …` | minor (0.4.2 → 0.5.0) |
+| `feat!: …` or `BREAKING CHANGE:` in the body | major (1.4.2 → 2.0.0); minor while still 0.x |
+
+A breaking change is anything that would break a consumer repo: a renamed `make` target, a changed artifact section, or a moved framework-owned file. The *PR title* check fails PRs whose titles don't follow the convention.
+
+To release, run:
+
+```
+gh workflow run release.yml                    # dry run: the run summary shows the version it would pick
+gh workflow run release.yml -f dry_run=false   # check, run evals, tag, publish release notes
+```
+
+`scripts/next-version.sh --explain` shows the same calculation locally.
+
 ## Roadmap
 
 - [ ] **Maintain stage:** a deterministic metric check against a baseline, with response tiers in `bands.yaml` (log, then read-only diagnosis, then a fix PR). Diagnoses are written as a new `intent.md`.

@@ -1,0 +1,27 @@
+# PR titles become the commit messages that drive semantic versioning
+# (scripts/next-version.sh) and the release notes, so they must follow the convention.
+name: PR title
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  pr-title:
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          types='feat|fix|docs|chore|ci|refactor|test|perf|build|revert|intent|spec|plan'
+          if [[ "$TITLE" =~ ^($types)(\([a-z0-9-]+\))?!?:\ .+ ]]; then
+            echo "ok: $TITLE"
+          else
+            echo "::error::PR title must look like 'type: summary' or 'type!: summary' (breaking)."
+            echo "Types: ${types//|/, }. feat bumps the minor version, ! marks a breaking change."
+            echo "Got: $TITLE"
+            exit 1
+          fi

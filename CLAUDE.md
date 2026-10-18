@@ -15,9 +15,19 @@ uv run pytest tests/test_artifacts.py::test_next_slug_increments   # a single te
 make new-change NAME=<kebab-name>   # start a change
 make status      # stage each change has reached
 make evals       # agent evals (calls the model; in CI it uses CLAUDE_CODE_OAUTH_TOKEN)
+scripts/next-version.sh --explain   # the version the next release would get
 ```
 
 A healthy `make check` ends with `ok: N change(s) valid`.
+
+## What this repo is
+
+Change tracking: issues
+
+The framework itself. Its changes are tracked as GitHub issues (label `pipeline`), not `changes/` folders; REVIEW.md reads the line above. Product work happens in consumer repos (e.g. stickleprojects/sdlc-sandbox), which pull framework-owned files with `scripts/sync-sdlc.sh`. The list of framework-owned paths is in that script. Changing a framework-owned path, a `make` target name or an artifact's required sections affects every consumer: say so in the PR, and use a `!` title if it's a breaking change.
+
+- Tests: `tests/test_hooks.py` and `tests/test_scripts.py` are unit tests for the hooks and scripts. `tests/test_scenario.py` installs the framework into a throwaway consumer repo (`tests/fixtures/consumer/`) and runs a change through it. When you change a hook, script, skill or the sync manifest, add a case there.
+- PR titles follow conventional commits (`feat:`, `fix:`, `ci:`, …, `!` for breaking changes). They drive the version and the release notes.
 
 ## Architecture
 
