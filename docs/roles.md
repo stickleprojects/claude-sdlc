@@ -70,7 +70,7 @@ Find your role below. Each section covers when you're involved, what you do (wit
    For each item, Claude quotes the spec text, explains the problem, suggests a fix and asks what you want. It then edits the artifact, records your decisions, pushes, and replies to each comment on GitHub.
    If you prefer, you can edit the file directly in the GitHub UI or your editor instead.
 3. **Wait for the fresh review** that the push starts. Check that its summary shows no open findings for you.
-4. **Accept** by approving and merging the PR. On a solo repo you can't approve your own PR, so use "merge without waiting for requirements", or run `gh pr merge <N> --merge --admin --delete-branch`.
+4. **Accept** by merging the PR, once its checks are green. In solo mode the merge *is* the approval. In team mode, a code owner approves first. Claude never merges for you: a hook blocks it.
 
 What you check at each gate:
 
@@ -140,9 +140,9 @@ To regenerate a spec by hand, run `claude`, then `/spec changes/NNNN-<name>`.
 
 1. Read the Claude review summary and its inline findings. Every *Important* finding is either fixed or dismissed with a reason.
 2. Check that the diff matches `spec.md` and `plan.md` for its change.
-3. Approve. Branch protection requires your approval: Claude's review never counts as one.
+3. **Solo mode:** merge it. The required checks must be green, and nobody can bypass them. **Team mode:** approve it, then merge. Branch protection requires your approval, and Claude's review never counts as one.
 
-**Stays with you:** The merge decision. The agent that wrote the code can't approve it.
+**Stays with you:** The merge decision. The agent opens and updates PRs but can't approve or merge them: the production-gate hook blocks it.
 
 ---
 

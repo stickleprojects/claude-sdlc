@@ -185,3 +185,25 @@ def test_merge_commits_after_the_first_are_parsed(released):
     notes = _notes(released)
     assert "- older feature (#1)" in notes
     assert "- newer fix (#2)" in notes
+
+
+@pytest.mark.parametrize(
+    ("mode", "approvals", "code_owners"),
+    [("solo", 0, False), ("team", 1, True)],
+)
+def test_bootstrap_protection_modes(mode, approvals, code_owners):
+    result = run(["scripts/bootstrap-github.sh", "--mode", mode, "--print-protection"])
+    assert result.returncode == 0, result.stderr
+    protection = json.loads(result.stdout)
+    assert protection["enforce_admins"] is True, "nobody bypasses required checks"
+    assert sorted(protection["required_status_checks"]["contexts"]) == ["check", "pr-title"]
+    reviews = protection["required_pull_request_reviews"]
+    assert reviews["required_approving_review_count"] == approvals
+    assert reviews["require_code_owner_reviews"] is code_owners
+    assert protection["allow_force_pushes"] is False
+
+
+def test_bootstrap_defaults_to_solo_and_rejects_unknown_mode():
+    default = json.loads(run(["scripts/bootstrap-github.sh", "--print-protection"]).stdout)
+    assert default["required_pull_request_reviews"]["required_approving_review_count"] == 0
+    assert run(["scripts/bootstrap-github.sh", "--mode", "chaos"]).returncode == 2

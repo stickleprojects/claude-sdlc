@@ -14,9 +14,31 @@ EOF
   exit 2
 fi
 
-# Inspect only the arguments of each `git push`, so words like `main` elsewhere in a
-# compound command (e.g. `git merge main && git push`) don't trigger a false block.
+# The agent opens and updates PRs but never merges or approves them: a human does.
+# In solo mode Claude uses the human's gh login, so GitHub can't enforce this; this can.
+merge_or_approve() {
+  cat >&2 <<'EOF'
+Blocked: merging and approving PRs is a human decision, not the agent's.
+Route: tell the human the PR is ready (checks green, review summary read) and let them merge it.
+EOF
+  exit 2
+}
+
+# Inspect each command segment on its own, so words elsewhere in a compound command
+# (e.g. `git merge main && git push`) don't trigger a false block.
 while IFS= read -r segment; do
+  if [[ "$segment" =~ (^|[[:space:]])gh[[:space:]]+pr[[:space:]]+merge([[:space:]]|$) ]]; then
+    merge_or_approve
+  fi
+  if [[ "$segment" =~ (^|[[:space:]])gh[[:space:]]+pr[[:space:]]+review([[:space:]]|$) ]] \
+    && grep -Eq '(^|[[:space:]])(--approve|-a)([[:space:]]|$)' <<<"$segment"; then
+    merge_or_approve
+  fi
+  if [[ "$segment" =~ (^|[[:space:]])gh[[:space:]]+api([[:space:]]|$) ]] \
+    && grep -Eq '/pulls/[0-9]+/merge|event[=:"[:space:]]+"?APPROVE' <<<"$segment"; then
+    merge_or_approve
+  fi
+
   [[ "$segment" =~ git[[:space:]]+push([[:space:]]+(.*))?$ ]] || continue
   args="${BASH_REMATCH[2]:-}"
   if grep -Eq '(^|[[:space:]])(--force|--force-with-lease|-f)([=[:space:]]|$)' <<<"$args"; then

@@ -50,4 +50,4 @@ Findings that belong to the engineer (plan or code) get noted and handed on, not
 Tell the product owner:
 - what changed, as a short list;
 - that the push starts a fresh review, so they should check that its summary has no open findings;
-- that they accept by approving and merging the PR on GitHub. On a solo repo that means "merge without waiting for requirements", or `gh pr merge <N> --merge --admin --delete-branch`.
+- that they accept by merging the PR on GitHub once its checks are green (in team mode, a code owner approves first). You can't merge it for them: a hook blocks the agent from merging or approving.

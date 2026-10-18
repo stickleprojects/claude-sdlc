@@ -41,6 +41,7 @@ The framework itself. Its changes are tracked as GitHub issues (label `pipeline`
 - You can't edit `.claude/hooks/*`, `.claude/settings.json`, lockfiles or `.env*`. Propose those changes for a human instead.
 - With `SDLC_LOCK_TESTS=1`, files under `tests/` are locked. Fix the code, not the test.
 - `make deploy-prod`, `git push` to main and force pushes are blocked. Push a branch and open a PR.
+- Merging and approving PRs (`gh pr merge`, `gh pr review --approve`, the merge and review APIs) are blocked: a human merges. When a PR is ready, say so and stop.
 - Edited files are auto-formatted after each edit through `make fmt FILES=...`.
 
 ## Conventions

@@ -43,7 +43,7 @@ The script checks and fixes each item below. Every one of these broke the first 
 | 3 | `.github/CODEOWNERS` names the repo owner | Branch protection requires a code owner's review | No one counts as owner, so the review rule has no effect |
 | 4 | `CLAUDE_CODE_OAUTH_TOKEN` secret | Every Claude workflow logs in with it | The review fails instantly with no model usage. The script tests the token before saving it, and copes with line-wrapped pastes. |
 | 5 | Actions may create PRs | *Spec from intent* opens the spec PR | *"GitHub Actions is not permitted to create or approve pull requests"* |
-| 6 | Branch protection on `main` | Requires a PR, the `check` status and a code owner's approval; admins can bypass | Anyone, including the agent, could push straight to `main` |
+| 6 | Branch protection on `main` | Requires a PR and green `check` and `pr-title` statuses, with **no admin bypass**. `--mode solo` (default) needs 0 approvals; `--mode team` needs a code owner's approval (see below) | Anyone, including the agent, could push straight to `main` or merge a red PR |
 
 It **can't** do these two; they need you:
 
@@ -54,12 +54,21 @@ It **can't** do these two; they need you:
 
 If the script changed any files (items 1 and 3), commit them in a PR.
 
+**Solo or team mode.** The playbook rule is that *the agent never approves or merges its own work*. How that's enforced depends on who's on GitHub:
+
+| | `--mode solo` (default) | `--mode team` |
+|---|---|---|
+| When | One person, with Claude using their `gh` login. GitHub sees one user, and nobody can approve their own PR | Several people, or Claude under its own bot account, so author and approver are different users |
+| Human gate | **Your merge click.** Merging requires green checks, for admins too | A code owner's approval, then the merge |
+| Agent can't merge or approve | The production-gate hook blocks it | The hook, plus GitHub's own rules |
+
+Switching modes later only means re-running `scripts/bootstrap-github.sh --mode team`.
+
 ### 3. Check it works
 
-Open any small PR. Both **check** and **review** should pass, and Claude should post a single *Review summary* comment. Expect two quirks:
+Open any small PR. **check**, **pr-title** and **review** should pass, and Claude should post a single *Review summary* comment. Then merge it yourself; in solo mode no approval is needed, and no bypass either. Expect one quirk:
 
 - **A PR that changes `.github/workflows/claude-*.yml` gets no AI review.** The action skips itself on purpose until the file matches `main`, so review those PRs by hand.
-- **On a solo repo you can't approve your own PRs.** Merge with *"merge without waiting for requirements"*, or run `gh pr merge <N> --merge --admin`.
 
 ### 4. Daily use
 
