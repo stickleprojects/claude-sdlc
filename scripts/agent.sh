@@ -22,7 +22,7 @@ case "${AGENT:-claude}" in
     exec claude -p "$prompt" \
       --max-turns "${AGENT_MAX_TURNS:-30}" \
       --permission-mode acceptEdits \
-      --allowedTools "${AGENT_ALLOWED_TOOLS:-Read,Grep,Glob,Edit,Write,Bash(make validate),Bash(make test),Bash(make lint),Bash(make check),Bash(uv run sdlc:*)}" \
+      --allowedTools "${AGENT_ALLOWED_TOOLS:-Read,Grep,Glob,Edit,Write,Bash(make validate),Bash(make test),Bash(make lint),Bash(make check),Bash(make new-change:*),Bash(make status)}" \
       "$@"
     ;;
   echo)

@@ -1,5 +1,5 @@
 {
   "name": "intent skill drafts a valid intent from a complete brief",
   "prompt": "Use the intent skill. Do not ask questions: the brief is complete. Brief: engineers want `sdlc status` to also print the number of open questions in each intent. Users: engineers and product owners. Systems: the sdlc CLI only. Constraint: no new dependencies. Name the change show-open-questions. Do not write a spec or code.",
-  "check": "test -f changes/0001-show-open-questions/intent.md && ! test -e changes/0001-show-open-questions/spec.md && uv run sdlc check"
+  "check": "test -f changes/0001-show-open-questions/intent.md && ! test -e changes/0001-show-open-questions/spec.md && make validate"
 }
