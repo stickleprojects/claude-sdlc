@@ -38,10 +38,45 @@ The first real change, `0001-show-open-questions`, is the test case for the whol
 3. **Decide.** Only product decisions (behaviour, scope, priority), asked in user terms. Technical findings are fixed automatically, or routed to the engineer, and listed as tidy-ups the product owner can veto.
 4. **Accept.** Merge on GitHub.
 
+**Recording the session as minutes (direction agreed).** The Q&A matters because it shows the train of thought and can surface useful insights, but it mustn't clutter the intent or spec. Treat the session as a **minuted meeting between Claude and the product owner**, saved next to the change:
+
+```
+changes/0001-show-open-questions/
+  intent.md
+  spec.md                       ← records outcomes only, each linking to the minutes
+  minutes/
+    2026-10-18-spec-review.md   ← the meeting
+```
+
+The minutes would follow roughly this shape:
+
+```markdown
+# Spec review: show open questions in sdlc status
+Date: 2026-10-18 · Attendees: Kieron (product owner), Claude · Artifact: spec.md @ <commit>
+
+## Context
+What was being reviewed, and the before/after picture Claude presented.
+
+## Discussion
+- **Q (PO):** What happens if an intent has no questions section?
+  **A (Claude):** It reports 0. The spec covers this in its requirements.
+- **Q (PO):** Could this break existing changes?
+  **A (Claude):** The spec doesn't say. ⚠ Gap, raised as a decision.
+
+## Outcomes
+- **Decisions:** what the PO decided, each one also written into spec.md.
+- **Tidy-ups accepted:** technical fixes Claude made, which the PO didn't veto.
+- **Actions:** e.g. "Engineer: cover X in the plan".
+- **Result:** accepted / changes requested / rejected.
+```
+
+So the artifacts stay short, the reasoning is still kept in version control, and a later reader (or Claude, when planning) can see *why* a decision was made.
+
 Open questions for this work:
-- Is this one session at the spec stage, or does it also run at the intent stage?
-- Should the interrogation transcript, or a summary of it, be committed as part of the audit trail?
+- Is this one session at the spec stage, or does it also run at the intent stage? If both, there would be one set of minutes per meeting.
+- Should `/plan` and the AI review read the minutes as context, or only the outcomes written into the spec?
 - Should `REVIEW.md`'s "who decides" gain an *auto-fix* category, so spec-wording findings never reach the product owner?
+- Should `sdlc check` validate the minutes, for example that an *Outcomes* section exists?
 
 Until this is designed, PR #6 stays open and unreviewed.
 
