@@ -184,6 +184,7 @@ The production gate hook (`.claude/hooks/production-gate.sh`) blocks Claude from
 
 | Thing | Where |
 |---|---|
+| GitHub repo settings (secrets, protection, permissions) | `scripts/bootstrap-github.sh`; re-run it after any change |
 | Stack contract (`setup fmt lint test validate check`) | `Makefile`, `.github/actions/setup-stack/` |
 | AI tool adapter | `scripts/agent.sh` |
 | Build-time guardrails | `.claude/settings.json`, `.claude/hooks/` |

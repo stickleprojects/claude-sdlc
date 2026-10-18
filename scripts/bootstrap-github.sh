@@ -1,0 +1,137 @@
+#!/usr/bin/env bash
+# Configure a GitHub repo for this pipeline. Safe to re-run: each step checks, then fixes.
+#
+# Usage: scripts/bootstrap-github.sh [--repo owner/name] [--dry-run] [--skip-token]
+#
+# Every setting below was learned the hard way when this repo was first set up:
+#   1. executable bits    NTFS/Windows checkouts commit scripts as 100644; hooks then fail silently
+#   2. labels             `pipeline`, for platform-team issues
+#   3. CODEOWNERS         branch protection requires a code owner; must name the repo owner
+#   4. Claude token       CLAUDE_CODE_OAUTH_TOKEN secret (from `claude setup-token`; Pro/Max plan)
+#   5. Actions → PRs      Spec from intent opens PRs; GitHub blocks that by default
+#   6. branch protection  PR + `check` status + code owner review; admins may bypass (solo repos)
+# Steps it can only check or print (they need a browser or a human):
+#   7. Claude GitHub app  https://github.com/apps/claude, needed by claude-code-action
+#   8. workspace trust    run `claude` here once; until then .claude/settings.json allow rules are ignored
+set -euo pipefail
+
+repo="" dry=0 skip_token=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --repo) repo="$2"; shift 2 ;;
+    --dry-run) dry=1; shift ;;
+    --skip-token) skip_token=1; shift ;;
+    -h|--help) sed -n '2,18p' "$0"; exit 0 ;;
+    *) echo "unknown argument: $1" >&2; exit 2 ;;
+  esac
+done
+
+cd "$(git rev-parse --show-toplevel)"
+for tool in gh git jq; do command -v "$tool" >/dev/null || { echo "missing: $tool" >&2; exit 1; }; done
+gh auth status >/dev/null 2>&1 || { echo "run: gh auth login" >&2; exit 1; }
+repo="${repo:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
+owner="${repo%%/*}"
+
+ok()   { printf '  \033[32m✓\033[0m %s\n' "$*"; }
+todo() { printf '  \033[33m!\033[0m %s\n' "$*"; }
+step() { printf '\n\033[1m%s\033[0m\n' "$*"; }
+run()  { if ((dry)); then printf '    would run: %s\n' "$*"; else "$@"; fi; }
+
+echo "Configuring $repo$( ((dry)) && echo ' (dry run)')"
+
+step "1. Executable bits on committed scripts"
+bad=$(git ls-files -s '*.sh' | awk '$1 != "100755" {print $4}')
+if [[ -z "$bad" ]]; then ok "all *.sh are 100755"
+else
+  for f in $bad; do run git update-index --chmod=+x "$f"; done
+  todo "marked executable: $(echo $bad); commit this in a PR"
+fi
+
+step "2. Labels"
+if gh label list -R "$repo" --json name -q '.[].name' | grep -qx pipeline; then ok "label pipeline"
+else
+  run gh label create pipeline -R "$repo" --color 5319e7 --description "Pipeline, tooling and permissions (platform team)"
+  ((dry)) || ok "created label pipeline"
+fi
+
+step "3. CODEOWNERS"
+want="* @$owner"
+if [[ -f .github/CODEOWNERS ]] && grep -qxF "$want" .github/CODEOWNERS; then ok ".github/CODEOWNERS names @$owner"
+else
+  if ((dry)); then echo "    would write: $want"
+  else
+    mkdir -p .github
+    printf '# Code owners must approve PRs (branch protection requires it).\n# The agent never counts as a code owner.\n%s\n' "$want" > .github/CODEOWNERS
+  fi
+  todo ".github/CODEOWNERS set to @$owner; commit it in a PR (branch protection needs it on main)"
+fi
+
+step "4. Claude token secret (CLAUDE_CODE_OAUTH_TOKEN)"
+has_secret=0
+gh secret list -R "$repo" --json name -q '.[].name' | grep -qx CLAUDE_CODE_OAUTH_TOKEN && has_secret=1
+if ((has_secret)) && ! ((dry)) && ! ((skip_token)); then
+  read -rp "  secret already exists; replace it? [y/N] " answer
+  [[ "$answer" == [yY]* ]] || skip_token=1
+fi
+if ((skip_token)); then
+  if ((has_secret)); then ok "secret exists"; else todo "secret missing; re-run without --skip-token"; fi
+elif ((dry)); then
+  ((has_secret)) && ok "secret exists (a real run asks whether to replace it)" \
+    || echo "    would prompt for the token, test it with claude -p, then gh secret set"
+else
+  echo "  Run 'claude setup-token' in another terminal and copy the token it prints."
+  echo "  Paste it below (input hidden). Line wraps are fine; finish with an empty line."
+  token=""
+  while IFS= read -rs line && [[ -n "$line" ]]; do token+="$line"; done
+  token="$(tr -d '[:space:]' <<<"$token")"
+  [[ "$token" == sk-ant-oat01-* ]] || { echo "  token should start with sk-ant-oat01- (got ${#token} chars); not saved" >&2; exit 1; }
+  if command -v claude >/dev/null; then
+    reply=$(CLAUDE_CODE_OAUTH_TOKEN="$token" claude -p "reply with just: ok" 2>&1 || true)
+    [[ "$reply" == *ok* ]] || { echo "  token test failed: ${reply:0:200}" >&2; exit 1; }
+    ok "token works locally"
+  fi
+  printf '%s' "$token" | gh secret set CLAUDE_CODE_OAUTH_TOKEN -R "$repo"
+  unset token
+  ok "secret saved"
+fi
+
+step "5. Let GitHub Actions create pull requests"
+if [[ "$(gh api "repos/$repo/actions/permissions/workflow" -q .can_approve_pull_request_reviews)" == true ]]; then
+  ok "already allowed"
+else
+  echo '{"default_workflow_permissions":"read","can_approve_pull_request_reviews":true}' \
+    | run gh api -X PUT "repos/$repo/actions/permissions/workflow" --input -
+  ok "allowed (approvals by Actions never count: step 6 requires a code owner)"
+fi
+
+step "6. Branch protection on main"
+protection='{
+  "required_status_checks": { "strict": false, "contexts": ["check"] },
+  "enforce_admins": false,
+  "required_pull_request_reviews": {
+    "require_code_owner_reviews": true,
+    "required_approving_review_count": 1,
+    "dismiss_stale_reviews": true
+  },
+  "restrictions": null,
+  "allow_force_pushes": false,
+  "allow_deletions": false
+}'
+if gh api "repos/$repo/branches/main/protection" -q '.required_pull_request_reviews.require_code_owner_reviews' 2>/dev/null | grep -qx true; then
+  ok "already protected"
+elif ((dry)); then
+  echo "    would PUT repos/$repo/branches/main/protection"
+elif echo "$protection" | gh api -X PUT "repos/$repo/branches/main/protection" --input - >/dev/null 2>/tmp/bootstrap-err; then
+  ok "protected: PR + 'check' status + code owner review; admins can bypass"
+else
+  todo "could not protect main: $(head -c 200 /tmp/bootstrap-err). Private repos on a free plan need GitHub Pro."
+fi
+
+step "7. Claude GitHub app (manual)"
+todo "install it on $repo: https://github.com/apps/claude → Configure → Only select repositories"
+
+step "8. Claude Code workspace trust (manual)"
+todo "run 'claude' in this folder once and accept the trust prompt"
+
+echo
+echo "Done. Verify: open a test PR and check that both 'check' and 'review' pass and Claude posts a review summary."
