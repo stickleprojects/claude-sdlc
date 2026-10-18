@@ -167,7 +167,7 @@ The production gate hook (`.claude/hooks/production-gate.sh`) blocks Claude from
 | CI and automation | `.github/workflows/` |
 | Agent evals | `evals/`; run with `make evals` |
 
-- Changes to `CLAUDE.md`, `.claude/**`, prompts or evals trigger the *Agent evals* workflow. Don't merge one that lowers the pass rate.
+- Before merging a change to `CLAUDE.md`, `.claude/**`, prompts or evals, run the *Agent evals* workflow: Actions → Agent evals → Run workflow. It's on demand for now to save subscription usage. Don't merge a change that lowers the pass rate.
 - Turn every production incident into a new task under `evals/tasks/`.
 - Hooks and settings are protected from agent edits. Change them through a reviewed PR.
 
