@@ -25,9 +25,17 @@ jobs:
           prompt: |
             Review PR #${{ github.event.pull_request.number }} in ${{ github.repository }}.
             Follow REVIEW.md exactly. Check the diff against the spec.md and plan.md
-            of the change it implements (under changes/). Post findings as inline
-            comments, then one summary comment.
+            of the change it implements (under changes/).
+
+            This PR may have been reviewed before. First read the existing inline comments:
+              gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments
+            Post an inline comment only for a finding that is new or still not addressed
+            in a different way; never repeat one that is already there.
+
+            Keep exactly one summary comment on the PR. If you posted one before, replace it:
+              gh pr comment ${{ github.event.pull_request.number }} --edit-last --body "..."
+            Only if that fails because there is none, create it with `gh pr comment`.
           # Automation mode allows only the tools listed here: read the PR, comment on it.
           claude_args: >-
             --max-turns 30
-            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Read,Grep,Glob"
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments),Read,Grep,Glob"

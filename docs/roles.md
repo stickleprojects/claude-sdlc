@@ -50,13 +50,36 @@ Find your role below. Each section covers when you're involved, what you do (wit
 
 ## Product owner
 
-**When:** An intent PR or a spec PR asks for your review.
+**When:** An `intent:` or `spec:` PR asks for your review. GitHub notifies you when it's opened. The spec PR is opened automatically when your intent merges.
+
+**Where you work:** you can use two tools, which do different jobs.
+
+| | GitHub PR | Claude Code session |
+|---|---|---|
+| Purpose | **The gate.** Approving and merging *is* your acceptance, and it's the audit record | **A helper.** It explains findings, asks for your decisions and edits the artifact for you |
+| Use it for | Reading the review summary, then the final approve and merge | Working through findings and open questions |
 
 **What you do**
 
-- **Intent PR:** Check that the problem is real and the outcome is worth building. Anything listed under *Open questions* gets answered or removed. Approve and merge to accept. Merging starts the *Spec from intent* workflow, which opens a spec PR.
-- **Spec PR:** Check every requirement and acceptance criterion. Each *Policy concern* needs a decision: resolve it with the policy owner, and pass higher-risk items to the tech lead. Approve and merge to accept.
-- To regenerate a spec by hand: `claude` → `/spec changes/NNNN-<name>`.
+1. **Open the PR on GitHub** and read the single *Review summary* comment. It lists each open finding with the text it's about quoted, and who decides it. Findings marked *engineer* aren't yours.
+2. **Work through your items** in Claude Code:
+   ```
+   claude
+   > /po-review 6
+   ```
+   For each item, Claude quotes the spec text, explains the problem, suggests a fix and asks what you want. It then edits the artifact, records your decisions, pushes, and replies to each comment on GitHub.
+   If you prefer, you can edit the file directly in the GitHub UI or your editor instead.
+3. **Wait for the fresh review** that the push starts. Check that its summary shows no open findings for you.
+4. **Accept** by approving and merging the PR. On a solo repo you can't approve your own PR, so use "merge without waiting for requirements", or run `gh pr merge <N> --merge --admin --delete-branch`.
+
+What you check at each gate:
+
+- **Intent PR:** the problem is real and the outcome is worth building. *Open questions* is empty, or says `None.`. Merging starts the *Spec from intent* workflow.
+- **Spec PR:** every requirement and acceptance criterion is what you want. Each *Policy concern* has a decision: settle it with the policy owner, and pass higher-risk items to the tech lead. Merging hands the change to the engineer.
+
+To regenerate a spec by hand, run `claude`, then `/spec changes/NNNN-<name>`.
+
+**Not your job:** pipeline failures, permissions and workflow bugs. Report them to the platform team, as a GitHub issue labelled `pipeline`.
 
 **Stays with you:** Go or no-go at both gates. Claude flags conflicts but never resolves them.
 
