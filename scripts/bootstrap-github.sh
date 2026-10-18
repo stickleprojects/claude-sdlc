@@ -101,7 +101,7 @@ if [[ "$(gh api "repos/$repo/actions/permissions/workflow" -q .can_approve_pull_
 else
   echo '{"default_workflow_permissions":"read","can_approve_pull_request_reviews":true}' \
     | run gh api -X PUT "repos/$repo/actions/permissions/workflow" --input -
-  ok "allowed (approvals by Actions never count: step 6 requires a code owner)"
+  ((dry)) || ok "allowed (approvals by Actions never count: step 6 requires a code owner)"
 fi
 
 step "6. Branch protection on main"
