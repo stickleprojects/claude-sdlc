@@ -11,16 +11,65 @@ intent.md ─► spec.md ─► plan.md ─► code + tests ─► PR + AI revie
 
 **Start here:** [docs/roles.md](docs/roles.md) explains, step by step, what each person does.
 
-## Quick start
+## Getting started
+
+### Prerequisites
+
+- `git`, `gh` (logged in: `gh auth login`), `make`, `jq`, `uv`
+- Claude Code (`claude`) with a Claude **Pro or Max** subscription. CI uses your subscription through a token, so there's no separate API billing.
+- Owner or admin rights on the GitHub repo. Branch protection on a *private* repo needs GitHub Pro.
+
+### 1. Get the code and check it builds
 
 ```
-make setup        # install dependencies
-make check        # lint + tests + validate the artifact chain (exit 0 = healthy)
+gh repo create <you>/<name> --private --clone   # or fork / copy this repo
+cd <name>                                       # copy this repo's files in, then commit
+make setup && make check                        # must end with "ok: N change(s) valid"
+```
+
+### 2. Configure GitHub: one script
+
+```
+scripts/bootstrap-github.sh --dry-run   # show what it would change
+scripts/bootstrap-github.sh             # apply; safe to re-run
+```
+
+The script checks and fixes each item below. Every one of these broke the first time this repo was set up:
+
+| # | Setting | Why it's needed | What goes wrong without it |
+|---|---|---|---|
+| 1 | Scripts committed as executable (`100755`) | NTFS and Windows checkouts lose the executable bit | Workflows fail with *Permission denied*, and **Claude Code hooks silently don't run** |
+| 2 | `pipeline` label | Pipeline problems are tracked apart from product work | — |
+| 3 | `.github/CODEOWNERS` names the repo owner | Branch protection requires a code owner's review | No one counts as owner, so the review rule has no effect |
+| 4 | `CLAUDE_CODE_OAUTH_TOKEN` secret | Every Claude workflow logs in with it | The review fails instantly with no model usage. The script tests the token before saving it, and copes with line-wrapped pastes. |
+| 5 | Actions may create PRs | *Spec from intent* opens the spec PR | *"GitHub Actions is not permitted to create or approve pull requests"* |
+| 6 | Branch protection on `main` | Requires a PR, the `check` status and a code owner's approval; admins can bypass | Anyone, including the agent, could push straight to `main` |
+
+It **can't** do these two; they need you:
+
+| # | Step | How |
+|---|---|---|
+| 7 | Install the **Claude GitHub app** | https://github.com/apps/claude → *Configure* → *Only select repositories* → add the repo. Without it the review fails with *"Claude Code is not installed on this repository"*. `/install-github-app` does the same, but skip its API-key step and don't merge the workflow PR it opens. |
+| 8 | **Trust the workspace** in Claude Code | Run `claude` in the repo once and accept the prompt. Until then, the allow rules in `.claude/settings.json` are ignored. |
+
+If the script changed any files (items 1 and 3), commit them in a PR.
+
+### 3. Check it works
+
+Open any small PR. Both **check** and **review** should pass, and Claude should post a single *Review summary* comment. Expect two quirks:
+
+- **A PR that changes `.github/workflows/claude-*.yml` gets no AI review.** The action skips itself on purpose until the file matches `main`, so review those PRs by hand.
+- **On a solo repo you can't approve your own PRs.** Merge with *"merge without waiting for requirements"*, or run `gh pr merge <N> --merge --admin`.
+
+### 4. Daily use
+
+```
 uv run sdlc new add-login       # start a change: changes/0001-add-login/intent.md
 uv run sdlc status              # stage each change has reached
+make check                      # lint + tests + artifact chain
 ```
 
-In Claude Code, the stages are skills: `/intent`, `/spec`, `/plan`. The `verifier` subagent checks finished work.
+In Claude Code, the stages are skills: `/intent`, `/spec`, `/plan`, plus `/po-review <PR#>` for product owners. The `verifier` subagent checks finished work. Who does what: [docs/roles.md](docs/roles.md).
 
 ## How it is put together
 
@@ -41,11 +90,7 @@ These keep the project general:
 
 The `sdlc` CLI (in `src/sdlc/`) is the pipeline's own tooling. It also gives the pipeline real code to build and test.
 
-## GitHub setup
-
-1. Run `claude setup-token` and save the token as the `CLAUDE_CODE_OAUTH_TOKEN` repository secret: `gh secret set CLAUDE_CODE_OAUTH_TOKEN`. The Claude review, mention, spec and eval workflows all use it. It is tied to a Claude subscription, so CI usage counts against that plan's limits. That's why agent evals run only on demand (Actions → Agent evals → Run workflow).
-2. Install the Claude GitHub app (`/install-github-app` in Claude Code). `claude-code-action` needs it. Skip the installer's API key step, and don't merge the workflow PR it opens: this repo already has its own workflows.
-3. Turn on branch protection for `main`: require a PR, the `CI / check` status, and a code owner's approval.
+CI usage counts against your Claude plan's limits. That's why agent evals run only on demand (Actions → Agent evals → Run workflow). Known pipeline gaps are tracked as [`pipeline` issues](../../issues?q=label%3Apipeline).
 
 ## Roadmap
 
