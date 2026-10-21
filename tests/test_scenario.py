@@ -51,6 +51,7 @@ def test_sync_installs_framework_owned_files(consumer):
         assert (consumer / rel).exists(), rel
     assert not (consumer / ".github/workflows/release.yml").exists(), "framework-only workflow"
     assert not (consumer / "scripts/next-version.sh").exists(), "framework-only script"
+    assert not (consumer / ".vscode").exists(), "framework's own editor colours"
 
 
 def test_sync_records_version_and_keeps_consumer_files(consumer, framework_snapshot):
