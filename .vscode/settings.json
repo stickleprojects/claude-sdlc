@@ -1,0 +1,20 @@
+{
+  // Workspace colour so this window is recognisable at a glance (violet and Claude orange = sdlc)
+  "workbench.colorCustomizations": {
+    "titleBar.activeBackground": "#5B3FA0",
+    "titleBar.activeForeground": "#FFFFFF",
+    "titleBar.inactiveBackground": "#432E78",
+    "titleBar.inactiveForeground": "#FFFFFFAA",
+    "activityBar.background": "#432E78",
+    "activityBar.foreground": "#F0A283",
+    "activityBar.inactiveForeground": "#FFFFFF99",
+    "activityBarBadge.background": "#D97757",
+    "activityBarBadge.foreground": "#000000",
+    "statusBar.background": "#5B3FA0",
+    "statusBar.foreground": "#FFFFFF",
+    "statusBarItem.remoteBackground": "#D97757",
+    "statusBarItem.remoteForeground": "#000000",
+    "tab.activeBorderTop": "#D97757"
+  },
+  "window.title": "🔁 claude-sdlc — ${activeEditorShort}"
+}
