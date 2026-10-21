@@ -15,20 +15,40 @@ intent.md ─► spec.md ─► plan.md ─► code + tests ─► PR + AI revie
 
 ### Prerequisites
 
-- `git`, `gh` (logged in: `gh auth login`), `make`, `jq`, `uv`
+- `git`, `gh` (logged in: `gh auth login`), `make`, `jq`, `python3` (3.12+) for the pipeline CLI
 - Claude Code (`claude`) with a Claude **Pro or Max** subscription. CI uses your subscription through a token, so there's no separate API billing.
 - Owner or admin rights on the GitHub repo. Branch protection on a *private* repo needs GitHub Pro.
 
-### 1. Get the code and check it builds
+Product work happens in its own repo, such as [sdlc-sandbox](https://github.com/stickleprojects/sdlc-sandbox), not in this one. Don't fork or copy this repo. A new project needs only two scripts from it: `sync-sdlc.sh` pulls the framework's files, and `bootstrap-github.sh` configures GitHub.
+
+### 1. Create the repo and write your stack
 
 ```
-gh repo create <you>/<name> --private --clone   # or fork / copy this repo
-cd <name>                                       # copy this repo's files in, then commit
-rm -rf .vscode                                  # if you copied or forked: that's this repo's own window colours
-make setup && make check                        # must end with "ok: N change(s) valid"
+gh repo create <you>/<name> --private --clone
+cd <name>
 ```
 
-### 2. Configure GitHub: one script
+Add the two files that are yours, the stack half of the contract:
+
+- **`Makefile`** with the targets `setup`, `fmt`, `lint`, `test`, `validate`, `check`, `new-change`, `status` and `sync-sdlc` (`scripts/sync-sdlc.sh $(REF)`). The pipeline CLI has no dependencies, so `SDLC = PYTHONPATH=tools/sdlc/src python3 -m sdlc.cli` is enough to run it. [tests/fixtures/consumer/Makefile](tests/fixtures/consumer/Makefile) is the smallest one that works; [sdlc-sandbox's](https://github.com/stickleprojects/sdlc-sandbox/blob/main/Makefile) is a real TypeScript stack.
+- **`.github/actions/setup-stack/action.yml`**, which installs your toolchain in CI and runs `make setup`.
+
+### 2. Pull the framework
+
+```
+mkdir -p scripts
+gh api repos/stickleprojects/claude-sdlc/contents/scripts/sync-sdlc.sh \
+  -H "Accept: application/vnd.github.raw" > scripts/sync-sdlc.sh
+git add -A && git commit -m "chore: project skeleton"   # the sync needs a clean tree
+bash scripts/sync-sdlc.sh                                # latest release; add a ref, e.g. main, to pick another
+git commit -m "chore: sync pipeline from claude-sdlc"
+make setup && make check                                 # must end with "ok: N change(s) valid"
+git push -u origin HEAD                                  # before step 3 turns on branch protection
+```
+
+The sync copies every framework-owned file (hooks, skills, workflows, templates, `REVIEW.md`, `bootstrap-github.sh`, the CLI in `tools/sdlc/`). It records the version in `.sdlc-version` and the installed files in `.sdlc-files`. Nothing else comes across, so this repo's own `CLAUDE.md`, readme and `.vscode` colours stay here. Write your project's own `CLAUDE.md`.
+
+### 3. Configure GitHub: one script
 
 ```
 scripts/bootstrap-github.sh --dry-run   # show what it would change
@@ -65,13 +85,13 @@ If the script changed any files (items 1 and 3), commit them in a PR.
 
 Switching modes later only means re-running `scripts/bootstrap-github.sh --mode team`.
 
-### 3. Check it works
+### 4. Check it works
 
 Open any small PR. **check**, **pr-title** and **review** should pass, and Claude should post a single *Review summary* comment. Then merge it yourself; in solo mode no approval is needed, and no bypass either. Expect one quirk:
 
 - **A PR that changes `.github/workflows/claude-*.yml` gets no AI review.** The action skips itself on purpose until the file matches `main`, so review those PRs by hand.
 
-### 4. Daily use
+### 5. Daily use
 
 ```
 make new-change NAME=add-login  # start a change: changes/0001-add-login/intent.md
@@ -102,17 +122,13 @@ The `sdlc` CLI (in `src/sdlc/`) is the pipeline's own tooling. It also gives the
 
 CI usage counts against your Claude plan's limits. That's why agent evals run only on demand (Actions → Agent evals → Run workflow). Known pipeline gaps are tracked as [`pipeline` issues](../../issues?q=label%3Apipeline).
 
-## Using the framework in another repo
+## Updating the framework in a project
 
-Product work happens in consumer repos, such as [sdlc-sandbox](https://github.com/stickleprojects/sdlc-sandbox), not here. A consumer repo:
-
-1. Writes its own stack half of the contract: a `Makefile` with the targets above, and `.github/actions/setup-stack/`. `SDLC` points at its copy of the CLI, e.g. `uv run --project tools/sdlc sdlc`.
-2. Copies in `scripts/sync-sdlc.sh` and runs it. That pulls every framework-owned file (hooks, skills, workflows, templates, `REVIEW.md`, the CLI in `tools/sdlc/`) and records the version in `.sdlc-version` and the installed files in `.sdlc-files`. Files the consumer adds, even inside `.github/workflows/` or `.claude/skills/`, are never touched.
-3. Runs `scripts/bootstrap-github.sh`.
-
-To update later, run `make sync-sdlc` (latest release) or `make sync-sdlc REF=main`. To try framework changes before pushing them, run `SDLC_SOURCE=../claude-sdlc make sync-sdlc REF=<branch>`.
+Run `make sync-sdlc` (latest release) or `make sync-sdlc REF=main`, then review the staged changes in a PR. Files the project added, even inside `.github/workflows/` or `.claude/skills/`, are never touched. To try framework changes before pushing them, run `SDLC_SOURCE=../claude-sdlc make sync-sdlc REF=<branch>`.
 
 ## Testing the framework
+
+To work on the framework itself, clone this repo and run `make setup && make check`.
 
 `make check` runs three kinds of test, all without calling Claude:
 
