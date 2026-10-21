@@ -24,6 +24,7 @@ intent.md ─► spec.md ─► plan.md ─► code + tests ─► PR + AI revie
 ```
 gh repo create <you>/<name> --private --clone   # or fork / copy this repo
 cd <name>                                       # copy this repo's files in, then commit
+rm -rf .vscode                                  # if you copied or forked: that's this repo's own window colours
 make setup && make check                        # must end with "ok: N change(s) valid"
 ```
 
