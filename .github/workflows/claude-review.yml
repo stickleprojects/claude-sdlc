@@ -13,7 +13,10 @@ permissions:
 
 jobs:
   review:
-    if: github.event.pull_request.draft == false
+    # Skip PRs from forks: they get no secrets, and outside contributors shouldn't spend the token.
+    if: >-
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

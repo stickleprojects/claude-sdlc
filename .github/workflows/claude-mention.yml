@@ -16,7 +16,10 @@ permissions:
 
 jobs:
   respond:
-    if: contains(github.event.comment.body, '@claude')
+    # Public repo: only the owner and collaborators can trigger Claude (and spend the token).
+    if: >-
+      contains(github.event.comment.body, '@claude') &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
