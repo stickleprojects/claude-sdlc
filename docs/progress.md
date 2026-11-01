@@ -1,6 +1,6 @@
 # Progress
 
-Status as of 2026-10-21. This is a living log: update it whenever the pipeline changes or a stage is paused.
+Status as of 2026-11-02. This is a living log: update it whenever the pipeline changes or a stage is paused.
 
 ## Two repos
 
@@ -16,13 +16,13 @@ The first change through the loop, `0001-show-open-questions`, ran here before t
 | Plan: intent | ✅ Works | `/intent`, then merge |
 | Design: spec | ✅ Works; ⏸ **product-owner review paused** | *Spec from intent* generates the spec. Product-owner review is paused while that flow gets reworked (see below). |
 | Build: plan + code | Not yet exercised | |
-| Test / Deploy | Partly | CI and the AI review work on every PR |
+| Test / Deploy | Partly | CI runs on every PR; the AI review runs when a PR opens, and again on the `review` label |
 | Maintain | Not built | #15 |
 
 ## What works
 
 - **CI** (`make check`): lint, tests, artifact-chain validation, and a check that scripts are committed as executable.
-- **AI PR review**: follows [REVIEW.md](../REVIEW.md), quotes the text each finding refers to, and keeps one summary comment that it updates on every push.
+- **AI PR review**: follows [REVIEW.md](../REVIEW.md), quotes the text each finding refers to, and keeps one summary comment that it updates each time it runs. It runs when a PR opens or leaves draft, and again when someone adds the `review` label (#11). It can't review PRs that change its own workflow, and says so on the PR (#14).
 - **Spec from intent**: generates a spec when an intent merges. The PR is opened by hand once; automatic PR creation isn't verified yet (#13).
 - **Guardrail hooks**: protected paths, format on edit, and a production gate (no deploys to production, no pushes to `main`).
 - **GitHub setup**: branch protection, CODEOWNERS, token secret and Actions permissions, all scripted in `scripts/bootstrap-github.sh` (#17).
@@ -92,12 +92,15 @@ Tracked as GitHub issues labelled `pipeline`:
 | Issue | Gap |
 |---|---|
 | #10 | Do project hooks run in an untrusted CI workspace? |
-| #11 | Review on every push uses up Pro plan limits |
 | #12 | The production gate matches the deploy target name anywhere in a command |
 | #13 | Spec from intent: automatic PR creation not yet verified end to end |
-| #14 | PRs that change the review workflow never get an AI review |
 | #15 | Maintain stage not built |
 | #27 | `sdlc status`: show the open-question count per change (was `changes/0001-show-open-questions`) |
+| #31 | Sync and bootstrap replace an existing repo's CI, Claude settings and branch protection |
+| #32 | No stage for checks a person must try by hand |
+| #33 | No way to deliver one change in several PRs |
+| #34 | Issues as change tracking for consumer repos (design question) |
+| #35 | Design context: sources to read before designing or fixing |
 | #20 | Release migrations: notes written for Claude, picked up by `sync-sdlc` (breaking changes, work in flight) |
 
 ## History

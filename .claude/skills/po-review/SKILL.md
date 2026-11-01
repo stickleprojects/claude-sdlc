@@ -41,7 +41,7 @@ Findings that belong to the engineer (plan or code) get noted and handed on, not
 
 1. Edit only the artifact under review (`intent.md` or `spec.md`). Record each decision where the template expects it. For a spec, that's the "Product owner decisions" section.
 2. Run `make validate`.
-3. Commit with `<stage>: address review (product owner decisions)`, then `git push`.
+3. Commit with `<stage>: address review (product owner decisions)`, then `git push`. Pushes don't start a review, so ask for one: `gh pr edit <PR#> --add-label review`.
 4. Reply to each inline comment you handled with what was decided:
    `gh api repos/{owner}/{repo}/pulls/<N>/comments/<comment-id>/replies -f body="…"`
 
@@ -49,5 +49,5 @@ Findings that belong to the engineer (plan or code) get noted and handed on, not
 
 Tell the product owner:
 - what changed, as a short list;
-- that the push starts a fresh review, so they should check that its summary has no open findings;
+- that a fresh review is on its way, so they should check that its summary has no open findings;
 - that they accept by merging the PR on GitHub once its checks are green (in team mode, a code owner approves first). You can't merge it for them: a hook blocks the agent from merging or approving.

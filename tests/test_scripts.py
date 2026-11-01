@@ -81,6 +81,19 @@ def test_bootstrap_help_and_bad_args():
     assert run(["scripts/bootstrap-github.sh", "--bogus"]).returncode == 2
 
 
+def test_bootstrap_creates_the_review_label_the_workflow_listens_for():
+    script = (REPO / "scripts/bootstrap-github.sh").read_text()
+    workflow = (REPO / ".github/workflows/claude-review.yml").read_text()
+    assert "\nreview|" in script
+    assert "github.event.label.name == 'review'" in workflow
+
+
+def test_review_does_not_run_on_every_push():
+    workflow = (REPO / ".github/workflows/claude-review.yml").read_text()
+    assert "types: [opened, ready_for_review, labeled]" in workflow
+    assert "synchronize" not in workflow
+
+
 # --- next-version ----------------------------------------------------------------------
 
 

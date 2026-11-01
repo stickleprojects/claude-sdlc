@@ -69,7 +69,7 @@ Find your role below. Each section covers when you're involved, what you do (wit
    ```
    For each item, Claude quotes the spec text, explains the problem, suggests a fix and asks what you want. It then edits the artifact, records your decisions, pushes, and replies to each comment on GitHub.
    If you prefer, you can edit the file directly in the GitHub UI or your editor instead.
-3. **Wait for the fresh review** that the push starts. Check that its summary shows no open findings for you.
+3. **Wait for the fresh review**, which `/po-review` asks for after it pushes. Check that its summary shows no open findings for you. If you edited the file yourself, add the `review` label to the PR to get one.
 4. **Accept** by merging the PR, once its checks are green. In solo mode the merge *is* the approval. In team mode, a code owner approves first. Claude never merges for you: a hook blocks it.
 
 What you check at each gate:
@@ -112,7 +112,7 @@ To regenerate a spec by hand, run `claude`, then `/spec changes/NNNN-<name>`.
    > Use the verifier subagent on changes/NNNN-<name>
    gh pr create --fill
    ```
-5. Answer the review. On any review comment, tag `@claude` to have it push a fix to the branch.
+5. Answer the review. On any review comment, tag `@claude` to have it push a fix to the branch. The review runs when the PR opens, not on every push. To review the latest push, add the `review` label; it removes itself so you can add it again.
 
 **Stays with you:** Approving the plan, and deciding the work is done. When Claude makes the same mistake twice, add the correction to `CLAUDE.md`.
 
@@ -138,7 +138,8 @@ To regenerate a spec by hand, run `claude`, then `/spec changes/NNNN-<name>`.
 
 **What you do**
 
-1. Read the Claude review summary and its inline findings. Every *Important* finding is either fixed or dismissed with a reason.
+1. Read the Claude review summary and its inline findings. Every *Important* finding is either fixed or dismissed with a reason. If the PR changed since the review, add the `review` label to review it again.
+   - **A PR that changes `.github/workflows/claude-*.yml` gets no AI review**, though its check is green. A comment on the PR says so. Review those by hand, with extra care: they control what the agent may do.
 2. Check that the diff matches `spec.md` and `plan.md` for its change.
 3. **Solo mode:** merge it. The required checks must be green, and nobody can bypass them. **Team mode:** approve it, then merge. Branch protection requires your approval, and Claude's review never counts as one.
 
