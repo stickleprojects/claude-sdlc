@@ -89,7 +89,8 @@ Switching modes later only means re-running `scripts/bootstrap-github.sh --mode 
 
 Open any small PR. **check**, **pr-title** and **review** should pass, and Claude should post a single *Review summary* comment. Then merge it yourself; in solo mode no approval is needed, and no bypass either. Expect one quirk:
 
-- **A PR that changes `.github/workflows/claude-*.yml` gets no AI review.** The action skips itself on purpose until the file matches `main`, so review those PRs by hand.
+- **A PR that changes `.github/workflows/claude-*.yml` gets no AI review.** The action skips itself on purpose until the file matches `main`, and a comment on the PR says so. Review those PRs by hand.
+- **The review runs when a PR opens, not on every push**, to save subscription usage. Add the `review` label to review the latest push; the label removes itself, so you can add it again.
 
 ### 5. Daily use
 

@@ -5,7 +5,7 @@
 #
 # Every setting below was learned the hard way when this repo was first set up:
 #   1. executable bits    NTFS/Windows checkouts commit scripts as 100644; hooks then fail silently
-#   2. labels             `pipeline`, for platform-team issues
+#   2. labels             `pipeline`, for platform-team issues; `review`, to re-run the AI review on a PR
 #   3. CODEOWNERS         names the repo owner; team mode requires a code owner's review
 #   4. Claude token       CLAUDE_CODE_OAUTH_TOKEN secret (from `claude setup-token`; Pro/Max plan)
 #   5. Actions → PRs      Spec from intent opens PRs; GitHub blocks that by default
@@ -74,11 +74,17 @@ else
 fi
 
 step "2. Labels"
-if gh label list -R "$repo" --json name -q '.[].name' | grep -qx pipeline; then ok "label pipeline"
-else
-  run gh label create pipeline -R "$repo" --color 5319e7 --description "Pipeline, tooling and permissions (platform team)"
-  ((dry)) || ok "created label pipeline"
-fi
+labels=$(gh label list -R "$repo" --limit 200 --json name -q '.[].name')
+while IFS='|' read -r name color desc; do
+  if grep -qx "$name" <<<"$labels"; then ok "label $name"
+  else
+    run gh label create "$name" -R "$repo" --color "$color" --description "$desc"
+    ((dry)) || ok "created label $name"
+  fi
+done <<'EOF'
+pipeline|5319e7|Pipeline, tooling and permissions (platform team)
+review|0e8a16|Add to run the Claude review again on the latest push
+EOF
 
 step "3. CODEOWNERS"
 want="* @$owner"
