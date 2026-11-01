@@ -13,7 +13,16 @@ min_rate="${EVAL_MIN_PASS_RATE:-0.8}"
 pass=0
 total=0
 
-for task in "$tasks_dir"/*.json; do
+# A repo with no eval tasks yet has nothing to check: say so and pass, rather than
+# failing on the unmatched glob. The release and CI logs then show evals didn't run.
+shopt -s nullglob
+tasks=("$tasks_dir"/*.json)
+if ((${#tasks[@]} == 0)); then
+  echo "evals: no tasks in $tasks_dir; nothing to check"
+  exit 0
+fi
+
+for task in "${tasks[@]}"; do
   name="$(jq -r .name "$task")"
   work="$(mktemp -d)"
   trap 'rm -rf "$work"' EXIT

@@ -73,6 +73,16 @@ def test_eval_runner_pass_rate(tmp_path, checks, min_rate, passes):
     assert (result.returncode == 0) is passes, result.stdout
 
 
+@pytest.mark.parametrize("make_dir", [True, False], ids=["empty", "missing"])
+def test_eval_runner_without_tasks_passes_and_says_so(tmp_path, make_dir):
+    tasks = tmp_path / "tasks"
+    if make_dir:
+        tasks.mkdir()
+    result = run(["evals/run.sh"], env={"AGENT": "echo", "EVAL_TASKS_DIR": str(tasks)})
+    assert result.returncode == 0, result.stderr
+    assert "no tasks" in result.stdout
+
+
 # --- bootstrap -------------------------------------------------------------------------
 
 
