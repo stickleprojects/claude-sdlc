@@ -1,6 +1,6 @@
 # Progress
 
-Status as of 2026-11-02. This is a living log: update it whenever the pipeline changes or a stage is paused.
+Status as of 2026-11-03. This is a living log: update it whenever the pipeline changes or a stage is paused.
 
 ## Two repos
 
@@ -85,6 +85,42 @@ Open questions for this work:
 
 Until this is designed, try it on a sandbox change rather than in this repo.
 
+## Field trial: jobhunt-app (3 Nov 2026)
+
+The first consumer repo set up for a real product, outside the sandbox: [jobhunt-app](https://github.com/stickleprojects/jobhunt-app), a read-only browser over the markdown job-search data in a separate repo. Set up from scratch with the readme, then a first intent taken from a design brief to a PR ready to merge (jobhunt-app#4). These are practical results, in the order they came up.
+
+**Setup** (fixes collected in #39):
+
+| What happened | Lesson |
+|---|---|
+| `make check`: *No rule to make target* | The readme's step 2 block looks self-contained, so step 1 (write your `Makefile`) got skipped. Nothing warned |
+| The new repo's branch was `master` | CI, *Spec from intent* and branch protection all assume `main`; nothing checks it |
+| `__pycache__/` left untracked | No `.gitignore`; a dirty tree blocks the next sync |
+| Token prompt looked frozen | It waits silently for an empty line after the paste |
+| `gh secret set --org` returned 404 | `stickleprojects` is a user account; there are no organisation secrets, so each repo needs its own copy |
+| No `CLAUDE.md` | By design the sync doesn't bring one, but nothing prompts for it before the first `/intent` |
+| `make new-change role-index` and `name=` failed | The error comes from `sdlc new`, not a usage line naming `NAME=` |
+
+About a dozen manual steps, with an assistant diagnosing each failure. A new user wouldn't have got through alone, hence #39's ask for a guide in the consumer repo and one re-runnable setup script.
+
+**Where the pipeline fits:**
+- **A data repo can't go on the pipeline.** The job-search repo is markdown written by an unattended 06:00 sweep, a Telegram bot and interactive sessions, all committing straight to `main` (1,000+ commits). The production gate and branch protection would break that, and the sync would overwrite its `.claude/settings.json` (#31). The app went in a new repo and reads the data repo by path.
+- **CI reads every PR, so personal data stays out.** The design brief named contacts, confidential employers and family; it was redacted in a PR and the consumer's `CLAUDE.md` now forbids real personal data, with made-up fixtures for tests.
+
+**Agents and hooks:**
+- **Other agents run our hooks.** GitHub Copilot in VS Code picked up `.claude/settings.json` and reported the pre-edit hook as *errored* (exit code 0), then refused the edit. The hook itself ran cleanly by hand. Failing closed is right, but the message pointed at the wrong cause.
+
+**Intent stage:**
+- **The split test was contaminated.** The whole brief went in as one change to see how `/intent` breaks it down, but the engineer's answers (read-only, no database) set the scope before the skill had to. A clean test needs an eval case with the brief alone.
+- **Claude added an `## Out of scope` section on its own.** The template has none, so cut features could simply vanish. Evidence for adding the section to the template (a required-sections change, so it affects every consumer).
+- **The first draft promised *confirmed* duplicates in a read-only app,** and said *Open questions: None* while it had decided home-network access on the product owner's behalf. Both were caught in human review, not by the skill. The skill could ask whether each outcome fits the constraints, and send any decision it made for the originator to Open questions.
+- **The intent PR's AI review passed with 0 findings** on the corrected draft. It checked the rules (read-only, no outbound, no copied data) but has no view of earlier drafts.
+
+**Product owner experience:**
+- **Clunky in VS Code.** Skills and PR approval assume an engineer's tools; the product owner's job is small and the tooling is the hard part. Options, starting with GitHub comments and `@claude po-review`, are in #40.
+
+**Still to see:** whether merging the intent opens the spec PR automatically (#13).
+
 ## Pipeline issues
 
 Tracked as GitHub issues labelled `pipeline`:
@@ -101,6 +137,8 @@ Tracked as GitHub issues labelled `pipeline`:
 | #33 | No way to deliver one change in several PRs |
 | #34 | Issues as change tracking for consumer repos (design question) |
 | #35 | Design context: sources to read before designing or fixing |
+| #39 | Guided, automated setup for a new consumer repo (jobhunt-app trial) |
+| #40 | Product owner interface: decide and approve without engineering tools |
 | #20 | Release migrations: notes written for Claude, picked up by `sync-sdlc` (breaking changes, work in flight) |
 
 ## History
