@@ -119,7 +119,10 @@ About a dozen manual steps, with an assistant diagnosing each failure. A new use
 **Product owner experience:**
 - **Clunky in VS Code.** Skills and PR approval assume an engineer's tools; the product owner's job is small and the tooling is the hard part. Options, starting with GitHub comments and `@claude po-review`, are in #40.
 
-**Still to see:** whether merging the intent opens the spec PR automatically (#13).
+**Spec stage:**
+- **Spec from intent worked end to end** for the first time: merging the intent generated the spec, `make validate` passed inside the run, and the workflow opened the spec PR itself (jobhunt-app#5; #13).
+- **The spec review earned its keep.** It found two real gaps: loopback-only binding without a `Host` check (DNS rebinding could expose contacts), and a no-personal-data-in-logs rule that no test enforced. The product owner agreed by replying `@claude` on the findings, and Claude applied both.
+- **`@claude` can't check its own work.** The mention workflow has no `--allowedTools`, so `make check` needed an approval nobody could give; CI caught it instead. The review summary also stays stale after the fix until someone adds the `review` label. Both are on #40.
 
 ## Pipeline issues
 
