@@ -124,6 +124,9 @@ About a dozen manual steps, with an assistant diagnosing each failure. A new use
 - **The spec review earned its keep.** It found two real gaps: loopback-only binding without a `Host` check (DNS rebinding could expose contacts), and a no-personal-data-in-logs rule that no test enforced. The product owner agreed by replying `@claude` on the findings, and Claude applied both.
 - **`@claude` can't check its own work.** The mention workflow has no `--allowedTools`, so `make check` needed an approval nobody could give; CI caught it instead. The review summary also stays stale after the fix until someone adds the `review` label. Both are on #40.
 
+**Plan stage:**
+- **Approving a plan skips `/plan`.** Claude Code's plan-mode dialog offers to leave plan mode and start building; nothing makes the engineer save and commit `plan.md` first. Here the engineer chose "keep planning", switched the mode selector by hand, and is watching that the session never goes to edit or auto mode until `/plan`. The rule needs a hook (#44).
+
 ## Pipeline issues
 
 Tracked as GitHub issues labelled `pipeline`:
@@ -132,7 +135,6 @@ Tracked as GitHub issues labelled `pipeline`:
 |---|---|
 | #10 | Do project hooks run in an untrusted CI workspace? |
 | #12 | The production gate matches the deploy target name anywhere in a command |
-| #13 | Spec from intent: automatic PR creation not yet verified end to end |
 | #15 | Maintain stage not built |
 | #27 | `sdlc status`: show the open-question count per change (was `changes/0001-show-open-questions`) |
 | #31 | Sync and bootstrap replace an existing repo's CI, Claude settings and branch protection |
@@ -142,6 +144,9 @@ Tracked as GitHub issues labelled `pipeline`:
 | #35 | Design context: sources to read before designing or fixing |
 | #39 | Guided, automated setup for a new consumer repo (jobhunt-app trial) |
 | #40 | Product owner interface: decide and approve without engineering tools |
+| #42 | Spec from intent regenerates specs for every intent without one |
+| #43 | Estimating a change: size, AI usage and effort, estimated and actual |
+| #44 | Enforce plan before code: approving a plan skips `/plan` |
 | #20 | Release migrations: notes written for Claude, picked up by `sync-sdlc` (breaking changes, work in flight) |
 
 ## History
