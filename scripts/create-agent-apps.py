@@ -176,7 +176,8 @@ def choose_groups(local: list[str], prefix: str, ask=input) -> list[list[str]]:
 
 
 def describe(identities: list[Identity]) -> str:
-    lines = [f"About to create {len(identities)} GitHub App(s):"]
+    count = "1 GitHub App" if len(identities) == 1 else f"{len(identities)} GitHub Apps"
+    lines = [f"\nAbout to create {count}:"]
     for i in identities:
         extra = "  (can change .github/workflows)" if "workflows" in i.permissions else ""
         lines.append(f"  {i.app_name:<34}  for {', '.join(i.personas)}{extra}")

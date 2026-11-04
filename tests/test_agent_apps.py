@@ -170,7 +170,7 @@ def test_nothing_is_created_unless_confirmed(apps, capsys):
     assert apps.confirm(identities, _answers("")) is True
     assert apps.confirm(identities, _answers("n")) is False
     out = capsys.readouterr().out
-    assert "About to create 1 GitHub App(s)" in out and "s-claude" in out
+    assert "About to create 1 GitHub App:" in out and "s-claude" in out
 
 
 def test_groups_flag_must_cover_each_persona_once(apps):

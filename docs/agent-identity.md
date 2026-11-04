@@ -18,6 +18,8 @@ To give a persona its own App later, add an `identity` line in `personas.conf`, 
 
 ## Set it up (once, about 5 minutes)
 
+For a step-by-step walkthrough with every prompt and page you'll see, read [setup-agent-apps.md](setup-agent-apps.md).
+
 1. **Create the App or Apps.** Run this from any repo that has the pipeline:
    ```
    scripts/agent-identity.sh create

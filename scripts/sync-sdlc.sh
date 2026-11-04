@@ -44,6 +44,7 @@ main() {
     "REVIEW.md:REVIEW.md"
     "docs/roles.md:docs/roles.md"
     "docs/agent-identity.md:docs/agent-identity.md"
+    "docs/setup-agent-apps.md:docs/setup-agent-apps.md"
     "src/sdlc:tools/sdlc/src/sdlc"
   )
   # Framework-only workflows that consumers must not run.
