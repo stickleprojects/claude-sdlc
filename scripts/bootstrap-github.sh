@@ -83,7 +83,7 @@ while IFS='|' read -r name color desc; do
   fi
 done <<'EOF'
 pipeline|5319e7|Pipeline, tooling and permissions (platform team)
-review|0e8a16|Add to run the Claude review again on the latest push
+review|0e8a16|While on, the Claude review runs again on every push
 EOF
 
 step "3. CODEOWNERS"

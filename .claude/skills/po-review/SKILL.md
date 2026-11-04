@@ -46,7 +46,7 @@ Findings that belong to the engineer (plan or code) get noted and handed on, not
 1. Edit only the artifact under review (`intent.md` or `spec.md`). Record each decision where the template expects it. For a spec, that's the "Product owner decisions" section.
 2. Run `make validate`.
 3. Check the branch for bot commits (*One actor per finding*). Then commit the artifact by explicit path (`git add changes/<slug>/<artifact>.md`) with `<stage>: address review (product owner decisions)`, and push.
-4. Pushes don't start a review, so ask for one: `gh api repos/{owner}/{repo}/issues/<N>/labels -f "labels[]=review"`.
+4. Make sure the push gets reviewed: if the PR has no `review` label, add it (`gh api repos/{owner}/{repo}/issues/<N>/labels -f "labels[]=review"`). While the label is on, every push is reviewed.
 5. Reply on every thread you handled with what was decided, ending with `(posted from Claude Code)`, then resolve it (*Reply and resolve*). If resolving fails, tell the product owner which threads to resolve by hand.
 
 ## 5. Hand back the gate
