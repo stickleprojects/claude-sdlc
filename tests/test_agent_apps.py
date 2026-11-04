@@ -126,3 +126,73 @@ def test_per_persona_override_maps_each_persona_and_the_script_follows_it(apps, 
     apps.write_personas_override(PERSONAS, identities[:1], per_persona=False)
     assert not override.exists()
     assert ident("identity-of", "build").stdout.strip() == "agent"
+
+
+def _answers(*replies):
+    it = iter(replies)
+    return lambda _prompt: next(it)
+
+
+def test_prompt_one_app_for_everything(apps):
+    assert apps.choose_groups(LOCAL, "s-claude", _answers("1")) == [LOCAL]
+    assert apps.choose_groups(LOCAL, "s-claude", _answers("")) == [LOCAL], "Enter = recommended"
+
+
+def test_prompt_every_persona_its_own_app(apps):
+    groups = apps.choose_groups(LOCAL, "s-claude", _answers("2", ""))
+    assert groups == [[p] for p in LOCAL]
+
+
+def test_prompt_several_personas_share_the_plan_app(apps):
+    # plan, build and dev get their own; intent, spec and po-review share plan's.
+    replies = _answers("2", "3,4,5", "1", "1", "1")
+    groups = apps.choose_groups(LOCAL, "s-claude", replies)
+    assert groups == [["plan", "intent", "spec", "po-review"], ["build"], ["dev"]]
+    identities = apps.build_identities(groups, LOCAL, "s-claude")
+    assert [(i.name, i.app_name) for i in identities] == [
+        ("agent-plan", "s-claude-plan"),
+        ("agent-build", "s-claude-build"),
+        ("agent-dev", "s-claude-dev"),
+    ]
+    assert "workflows" not in identities[0].permissions
+
+
+def test_prompt_asks_again_after_a_bad_answer(apps, capsys):
+    groups = apps.choose_groups(
+        LOCAL, "s-claude", _answers("7", "2", "9,x", "6", "1", "1", "1", "1", "1")
+    )
+    assert groups == [["po-review", "intent", "spec", "plan", "build", "dev"]]
+    assert "please answer" in capsys.readouterr().out
+
+
+def test_nothing_is_created_unless_confirmed(apps, capsys):
+    identities = apps.build_identities([LOCAL], LOCAL, "s-claude")
+    assert apps.confirm(identities, _answers("")) is True
+    assert apps.confirm(identities, _answers("n")) is False
+    out = capsys.readouterr().out
+    assert "About to create 1 GitHub App(s)" in out and "s-claude" in out
+
+
+def test_groups_flag_must_cover_each_persona_once(apps):
+    groups = apps.parse_groups("intent+spec+plan+po-review, build+dev")
+    assert groups == [["intent", "spec", "plan", "po-review"], ["build", "dev"]]
+    assert [i.name for i in apps.build_identities(groups, LOCAL, "s")] == [
+        "agent-intent",
+        "agent-build",
+    ]
+    with pytest.raises(SystemExit):
+        apps.build_identities([["intent", "spec"]], LOCAL, "s")
+    with pytest.raises(SystemExit):
+        apps.build_identities([LOCAL, ["dev"]], LOCAL, "s")
+
+
+def test_shared_app_mapping_in_the_override(apps, tmp_path):
+    groups = [["plan", "intent", "spec", "po-review"], ["build"], ["dev"]]
+    identities = apps.build_identities(groups, LOCAL, "s-claude")
+    apps.write_personas_override(PERSONAS, identities, per_persona=True)
+    env = {"XDG_CONFIG_HOME": str(tmp_path / "config"), "SDLC_PERSONAS": ""}
+    of = lambda p: run(  # noqa: E731
+        ["bash", str(REPO / "scripts/agent-identity.sh"), "identity-of", p], env=env
+    ).stdout.strip()
+    assert of("intent") == "agent-plan" and of("spec-ci") == "agent-plan"
+    assert of("dev") == "agent-dev"

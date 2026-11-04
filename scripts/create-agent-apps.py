@@ -1,11 +1,19 @@
 #!/usr/bin/env python3
 """Create Claude's GitHub App identities with GitHub's App manifest flow.
 
-Usage: scripts/agent-identity.sh create [--per-persona] [--name PREFIX] [--org ORG] [--no-browser]
+Usage: scripts/agent-identity.sh create [--per-persona | --groups G] [--name PREFIX] [--org ORG]
+                                        [--yes] [--no-browser]
 
-  (default)       one App, `agent`, for every local persona
-  --per-persona   one App per local persona (`agent-build`, `agent-plan`, ...), each with only
-                  the permissions it needs; the mapping is written to ~/.config/sdlc/personas.conf
+  (no flags, in a terminal)  asks: one App for everything, or one per persona, and for each
+                             persona whether to reuse an App already chosen; then shows what it
+                             will create and asks to continue before opening the browser
+  (no flags, no terminal)    one App, `agent`, for every local persona
+  --per-persona              one App per local persona (`agent-build`, `agent-plan`, ...)
+  --groups G                 your own grouping, e.g. "intent+spec+plan+po-review,build+dev"
+  --yes                      don't ask to confirm
+
+Each App gets only the permissions its personas need. Anything other than one App writes the
+persona-to-App mapping to ~/.config/sdlc/personas.conf.
 
 How it works: a small server on 127.0.0.1 serves a page that posts each App's manifest to
 GitHub. You click "Create GitHub App"; GitHub redirects back here with a one-time code, which is
@@ -87,16 +95,101 @@ def read_registry(path: Path) -> tuple[dict[str, str], list[tuple[str, str, str]
     return kinds, personas
 
 
-def plan(registry: Path, per_persona: bool, prefix: str) -> list[Identity]:
+def local_personas(registry: Path) -> list[str]:
     kinds, personas = read_registry(registry)
     local = [
         p for p, ident, where in personas if where == "local" and kinds.get(ident) == "github-app"
     ]
     if not local:
         raise SystemExit(f"no local github-app personas in {registry}")
-    if not per_persona:
-        return [Identity("agent", local, prefix[:NAME_LIMIT])]
-    return [Identity(f"agent-{p}", [p], f"{prefix}-{p}"[:NAME_LIMIT]) for p in local]
+    return local
+
+
+def build_identities(groups: list[list[str]], local: list[str], prefix: str) -> list[Identity]:
+    """One Identity per group of personas. A single group holding every persona is `agent`;
+    any other group is named after its first persona (agent-build serves build and dev)."""
+    seen = [p for g in groups for p in g]
+    if sorted(seen) != sorted(local) or len(seen) != len(set(seen)):
+        raise SystemExit(f"each of these personas must be in exactly one group: {', '.join(local)}")
+    if len(groups) == 1:
+        return [Identity("agent", list(groups[0]), prefix[:NAME_LIMIT])]
+    return [Identity(f"agent-{g[0]}", list(g), f"{prefix}-{g[0]}"[:NAME_LIMIT]) for g in groups]
+
+
+def plan(registry: Path, per_persona: bool, prefix: str) -> list[Identity]:
+    local = local_personas(registry)
+    groups = [[p] for p in local] if per_persona else [local]
+    return build_identities(groups, local, prefix)
+
+
+def parse_groups(text: str) -> list[list[str]]:
+    return [[p.strip() for p in g.split("+") if p.strip()] for g in text.split(",") if g.strip()]
+
+
+def _pick(ask, question: str, options: list[str], default: int = 1) -> int:
+    """Ask until the answer is one of the numbered options; Enter takes the default."""
+    while True:
+        print(question)
+        for n, option in enumerate(options, 1):
+            print(f"  {n}) {option}")
+        answer = ask(f"Choice [{default}]: ").strip()
+        if not answer:
+            return default
+        if answer.isdigit() and 1 <= int(answer) <= len(options):
+            return int(answer)
+        print(f"  please answer 1-{len(options)}")
+
+
+def _pick_many(ask, question: str, options: list[str]) -> list[int]:
+    """Ask for a comma-separated list of option numbers; Enter takes all of them."""
+    while True:
+        print(question)
+        for n, option in enumerate(options, 1):
+            print(f"  {n}) {option}")
+        answer = ask("Numbers, comma-separated [all]: ").strip()
+        if not answer:
+            return list(range(1, len(options) + 1))
+        parts = [a.strip() for a in answer.split(",") if a.strip()]
+        if parts and all(a.isdigit() and 1 <= int(a) <= len(options) for a in parts):
+            return sorted({int(a) for a in parts})
+        print(f"  please answer with numbers 1-{len(options)}, e.g. 1,3")
+
+
+def choose_groups(local: list[str], prefix: str, ask=input) -> list[list[str]]:
+    """Ask: one App for everything, or Apps per persona. With Apps per persona, first pick
+    which personas get an App of their own, then which of those each other persona shares."""
+    one = f"One App for everything ({prefix}): every persona signs as itself (recommended)"
+    each = "Apps per persona: choose which personas get their own App; the rest share one of them"
+    if _pick(ask, "How many GitHub Apps should Claude use?", [one, each]) == 1:
+        return [local]
+    owners = [
+        local[n - 1] for n in _pick_many(ask, "\nWhich personas get an App of their own?", local)
+    ]
+    groups = {owner: [owner] for owner in owners}
+    for persona in local:
+        if persona in groups:
+            continue
+        apps = [f"{prefix}-{owner}" for owner in owners]
+        choice = _pick(ask, f"\n{persona}: which App does it share?", apps)
+        groups[owners[choice - 1]].append(persona)
+    return [groups[owner] for owner in owners]
+
+
+def describe(identities: list[Identity]) -> str:
+    lines = [f"About to create {len(identities)} GitHub App(s):"]
+    for i in identities:
+        extra = "  (can change .github/workflows)" if "workflows" in i.permissions else ""
+        lines.append(f"  {i.app_name:<34}  for {', '.join(i.personas)}{extra}")
+    lines.append(
+        "For each one, your browser opens GitHub: click Create GitHub App, then install it"
+        " on your repos."
+    )
+    return "\n".join(lines)
+
+
+def confirm(identities: list[Identity], ask=input) -> bool:
+    print(describe(identities))
+    return ask("Continue? [Y/n] ").strip().lower() in ("", "y", "yes")
 
 
 def manifest(identity: Identity, base_url: str, owner: str) -> dict:
@@ -318,7 +411,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="agent-identity.sh create", description=__doc__.split("\n\n")[0]
     )
-    parser.add_argument("--per-persona", action="store_true", help="one App per local persona")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--per-persona", action="store_true", help="one App per local persona")
+    mode.add_argument("--groups", help='personas sharing an App, e.g. "intent+spec,build+dev"')
+    parser.add_argument("--yes", action="store_true", help="don't ask to confirm")
     parser.add_argument(
         "--name", help="App name (prefix with --per-persona); default <owner>-claude"
     )
@@ -332,14 +428,28 @@ def main(argv: list[str] | None = None) -> int:
     owner = args.org or owner_from_git()
     if not owner and not args.name:
         raise SystemExit("can't tell the GitHub owner from origin; pass --name or --org")
-    identities = plan(registry, args.per_persona, args.name or f"{owner}-claude")
+    prefix = args.name or f"{owner}-claude"
+    local = local_personas(registry)
+    interactive = sys.stdin.isatty() and sys.stdout.isatty()
+    if args.groups:
+        groups = parse_groups(args.groups)
+    elif args.per_persona:
+        groups = [[p] for p in local]
+    elif interactive:
+        groups = choose_groups(local, prefix)
+    else:
+        groups = [local]
+    identities = build_identities(groups, local, prefix)
+    if interactive and not args.yes and not confirm(identities):
+        print("Nothing created.")
+        return 1
 
     flow = Flow(identities, owner, args.org)
     server = ThreadingHTTPServer(("127.0.0.1", args.port), make_handler(flow))
     url = f"http://127.0.0.1:{server.server_address[1]}/start"
     threading.Thread(target=server.serve_forever, daemon=True).start()
-    names = ", ".join(i.app_name for i in identities)
-    print(f"Creating {len(identities)} GitHub App(s): {names}")
+    if not interactive:
+        print(describe(identities))
     print(f"Open {url} if your browser doesn't. If you skip an install page, open .../next.")
     if not args.no_browser:
         webbrowser.open(url)
@@ -347,7 +457,7 @@ def main(argv: list[str] | None = None) -> int:
     server.shutdown()
     if not finished:
         print("timed out after 30 minutes; Apps created so far are kept", file=sys.stderr)
-    print(write_personas_override(registry, identities, args.per_persona))
+    print(write_personas_override(registry, identities, per_persona=len(identities) > 1))
     for line in flow.log:
         print(f"  {line}")
     if flow.log:

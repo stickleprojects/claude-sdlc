@@ -18,16 +18,22 @@ To give a persona its own App later, add an `identity` line in `personas.conf`, 
 
 ## Set it up (once, about 5 minutes)
 
-1. **Create the App or Apps.** Run one of these from any repo that has the pipeline:
+1. **Create the App or Apps.** Run this from any repo that has the pipeline:
    ```
-   scripts/agent-identity.sh create                 # one App for every persona (recommended)
-   scripts/agent-identity.sh create --per-persona   # one App each: intent, spec, plan, build, dev, po-review
+   scripts/agent-identity.sh create
    ```
-   Your browser opens on GitHub's *Create GitHub App* page with everything filled in: the name (`<owner>-claude`, or `<owner>-claude-<persona>`), permissions, no webhook, private. For each App:
+   It asks before anything opens:
+   - **one App for everything** (recommended), or **Apps per persona**;
+   - with Apps per persona: **which personas get an App of their own** (e.g. plan, build, dev), then **which of those Apps each other persona shares** (e.g. intent, spec and po-review share plan's);
+   - then it lists the Apps it will create, who each serves, and which can change workflows, and asks **Continue?**
+
+   Without a terminal, or to script it: `--per-persona` (one App each), or `--groups "plan+intent+spec+po-review,build,dev"` (each group shares the App named after its first persona), and `--yes` to skip the confirmation.
+
+   Then your browser opens on GitHub's *Create GitHub App* page with everything filled in: the name (`<owner>-claude`, or `<owner>-claude-<persona>`), permissions, no webhook, private. For each App:
    - click **Create GitHub App**;
    - on the install page, choose *Only select repositories*, pick the repos and click **Install**. GitHub then sends you back for the next App.
 
-   The command stores each App's private key in your keyring (Seahorse: *claude-sdlc GitHub App private key (<identity>)*) and its id and name in `~/.config/sdlc/<identity>.env`. With `--per-persona` it also writes `~/.config/sdlc/personas.conf`, which maps each persona to its App and overrides the repo's copy. Running `create` again without `--per-persona` moves that file aside.
+   It stores each App's private key in your keyring (Seahorse: *claude-sdlc GitHub App private key (<identity>)*) and its id and name in `~/.config/sdlc/<identity>.env`. With more than one App it also writes `~/.config/sdlc/personas.conf`, which maps each persona to its App and overrides the repo's copy. Choosing one App on a later run moves that file aside.
 
    Options: `--name <app name>` if the default is taken (App names are unique across GitHub, 34 characters at most); `--org <org>` to create the Apps under an organization; `--no-browser` to print the URL instead.
 

@@ -5,9 +5,10 @@
 # Which persona uses which identity is set in .claude/personas.conf. The default identity is
 # `agent`; `--persona <name>` picks the identity that persona is mapped to.
 #
-# Usage: scripts/agent-identity.sh create [--per-persona] [--name <app name>] [--org <org>]
+# Usage: scripts/agent-identity.sh create [--per-persona | --groups <g>] [--name <app name>] [--org <org>]
 #          Create the App(s) in your browser with GitHub's manifest flow, and store them as
-#          `setup` would: one App for every persona (default), or one per persona.
+#          `setup` would. In a terminal it first asks: one App for everything, or which personas
+#          get their own App and which App each other persona shares.
 #        scripts/agent-identity.sh identities
 #          List the github-app identities the personas use, one per line.
 #        scripts/agent-identity.sh identity-of <persona>
