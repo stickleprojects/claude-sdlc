@@ -202,10 +202,11 @@ else
 fi
 
 step "8. Claude agent identity (GitHub Apps)"
+export SDLC_AGENT_REPO="$repo"  # the Apps and their config belong to this repo
 configured=0
 for identity in $(scripts/agent-identity.sh identities 2>/dev/null); do
   if ! agent="$(SDLC_AGENT_IDENTITY_NAME="$identity" scripts/agent-identity.sh show 2>/dev/null)"; then
-    todo "identity $identity isn't set up on this machine; run: scripts/agent-identity.sh create"
+    todo "identity $identity isn't set up for $repo on this machine; run: scripts/agent-identity.sh create"
     continue
   fi
   configured=1

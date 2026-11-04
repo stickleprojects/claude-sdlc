@@ -16,36 +16,35 @@ All the local personas share one App. Each comment is signed `— Claude (<perso
 
 To give a persona its own App later, add an `identity` line in `personas.conf`, point the persona at it, and run `setup --identity <name>`, or re-run `create --per-persona`.
 
-## Set it up (once, about 5 minutes)
+## Set it up (once per repo, about 5 minutes)
 
 For a step-by-step walkthrough with every prompt and page you'll see, read [setup-agent-apps.md](setup-agent-apps.md).
 
-1. **Create the App or Apps.** Run this from any repo that has the pipeline:
+Each repo that uses the pipeline gets its own App(s), named after the repo: `jobhunt-app-claude`, or `jobhunt-app-plan`, `jobhunt-app-build`, …. Keys, config and the persona mapping are kept per repo, so one repo's Apps never act in another.
+
+1. **Create the App or Apps,** in the repo:
    ```
    scripts/agent-identity.sh create
    ```
    It asks before anything opens:
-   - **one App for everything** (recommended), or **Apps per persona**;
+   - **the name prefix**, defaulting to the repo's name made safe for GitHub (lowercase letters, digits and dashes; at most 24 characters, so `-po-review` still fits GitHub's 34-character limit);
+   - **one App for everything** (`<prefix>-claude`, recommended), or **Apps per persona** (`<prefix>-<persona>`);
    - with Apps per persona: **which personas get an App of their own** (e.g. plan, build, dev), then **which of those Apps each other persona shares** (e.g. intent, spec and po-review share plan's);
-   - then it lists the Apps it will create, who each serves, and which can change workflows, and asks **Continue?**
+   - then it lists the Apps it will create, who each serves and which can change workflows, and asks **Continue?**
 
-   Without a terminal, or to script it: `--per-persona` (one App each), or `--groups "plan+intent+spec+po-review,build,dev"` (each group shares the App named after its first persona), and `--yes` to skip the confirmation.
+   Then, for each App, your browser opens GitHub's *Create GitHub App* page with everything filled in (name, permissions, no webhook, private). Click **Create GitHub App**, then on the install page pick this repo and click **Install**. GitHub sends you back for the next App.
 
-   Then your browser opens on GitHub's *Create GitHub App* page with everything filled in: the name (`<owner>-claude`, or `<owner>-claude-<persona>`), permissions, no webhook, private. For each App:
-   - click **Create GitHub App**;
-   - on the install page, choose *Only select repositories*, pick the repos and click **Install**. GitHub then sends you back for the next App.
+   It stores each App's private key in your keyring and its id and name in `~/.config/sdlc/<owner>_<repo>/<identity>.env`. With more than one App it also writes `~/.config/sdlc/<owner>_<repo>/personas.conf`, which maps each persona to its App and overrides the repo's copy.
 
-   It stores each App's private key in your keyring (Seahorse: *claude-sdlc GitHub App private key (<identity>)*) and its id and name in `~/.config/sdlc/<identity>.env`. With more than one App it also writes `~/.config/sdlc/personas.conf`, which maps each persona to its App and overrides the repo's copy. Choosing one App on a later run moves that file aside.
+   For scripts: `--name <prefix>`, `--per-persona` or `--groups "plan+intent+spec+po-review,build,dev"`, and `--yes`. Also `--org <org>` and `--no-browser`.
 
-   Options: `--name <app name>` if the default is taken (App names are unique across GitHub, 34 characters at most); `--org <org>` to create the Apps under an organization; `--no-browser` to print the URL instead.
-
-   **Permissions:** contents, pull requests and issues read and write; actions, checks, commit statuses and metadata read. Workflows write goes to the App that serves `build` and `dev`, so in per-persona mode only those two can change `.github/workflows/`.
-2. **Configure each repo:** `scripts/bootstrap-github.sh --mode team --skip-token`. Step 8 checks each App is installed on the repo, and gives the workflows the App that `spec-ci` uses (the `SDLC_AGENT_APP_ID`/`_SLUG` variables and the `SDLC_AGENT_APP_KEY` secret). Team mode makes GitHub require a code owner's (your) approval on every PR.
+   **Permissions:** contents, pull requests and issues read and write; actions, checks, commit statuses and metadata read. Workflows write goes only to the App that serves `build` or `dev`.
+2. **Configure the repo:** `scripts/bootstrap-github.sh --mode team --skip-token`. Step 8 checks each App is installed, and gives the workflows the App that `spec-ci` uses (the `SDLC_AGENT_APP_ID`/`_SLUG` variables and the `SDLC_AGENT_APP_KEY` secret). Team mode makes GitHub require a code owner's (your) approval on every PR.
 3. **Check:** `scripts/agent-identity.sh check` should print `ok: a token for this repo was issued`.
 
-**Adding a repo later:** install the App(s) on it from the App's page (*Install App* → *Configure*), then run step 2 there.
+**Another repo:** run the same three steps there.
 
-**By hand instead:** create the App under *Settings → Developer settings → GitHub Apps* with the permissions above, generate a private key, install it, and run `scripts/agent-identity.sh setup [--identity <name>] --app-id <id> --key <file.pem>`.
+**By hand instead:** create the App under *Settings → Developer settings → GitHub Apps* with the permissions above, generate a private key, install it on the repo, and run `scripts/agent-identity.sh setup [--identity <name>] --app-id <id> --key <file.pem>` in that repo.
 
 ## Start sessions as the agent
 

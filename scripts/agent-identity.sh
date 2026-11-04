@@ -15,7 +15,8 @@
 #          Print the identity a persona (local or CI) acts as.
 #        scripts/agent-identity.sh setup [--identity <name>] --app-id <id> --key <file.pem>
 #          One-off per machine. Stores the App's private key in the keyring (secret-tool,
-#          i.e. Seahorse on GNOME) and its id, slug and bot user in ~/.config/sdlc/<name>.env.
+#          i.e. Seahorse on GNOME) and its id, slug and bot user in
+#          ~/.config/sdlc/<owner>_<repo>/<name>.env.
 #        scripts/agent-identity.sh check
 #          Is the App configured, installed on this repo, and able to issue a token?
 #        scripts/agent-identity.sh show
@@ -31,8 +32,8 @@
 #          scripts/agent-session.sh and the SessionStart hook in docs/agent-identity.md.
 #          Prints nothing when the App isn't configured, so sessions fall back to the person.
 #
-# Env: SDLC_AGENT_CONFIG  config file (default ~/.config/sdlc/<identity>.env)
-#      SDLC_PERSONAS  persona registry (default ~/.config/sdlc/personas.conf if it exists,
+# Env: SDLC_AGENT_CONFIG  config file (default ~/.config/sdlc/<owner>_<repo>/<identity>.env)
+#      SDLC_PERSONAS  persona registry (default ~/.config/sdlc/<owner>_<repo>/personas.conf if it exists,
 #                     which `create --per-persona` writes, else .claude/personas.conf here)
 #      SDLC_AGENT_KEY_STORE_DIR  keep private keys as <identity>.pem files here, not the keyring
 #      SDLC_AGENT_KEY_FILE  read the private key from this file instead of the keyring
@@ -51,19 +52,31 @@ die() { echo "agent-identity: $*" >&2; exit 1; }
 
 personas_file() {
   if [[ -n "${SDLC_PERSONAS:-}" ]]; then echo "$SDLC_PERSONAS"; return; fi
-  local user="${XDG_CONFIG_HOME:-$HOME/.config}/sdlc/personas.conf"
+  local user="${XDG_CONFIG_HOME:-$HOME/.config}/sdlc/$(repo_key)/personas.conf"
   if [[ -f "$user" ]]; then echo "$user"; return; fi
   local top
   top="$(git rev-parse --show-toplevel 2>/dev/null || dirname "$(dirname "$self")")"
   echo "$top/.claude/personas.conf"
 }
 
+# Apps belong to one repo, so everything about them is kept per repo: owner/name becomes
+# owner_name (same rule as create-agent-apps.py). Outside a GitHub checkout: _norepo.
+repo_key() {
+  local r
+  r="$(repo_name 2>/dev/null)" || { echo _norepo; return; }
+  r="${r,,}"
+  sed -E 's/[^a-z0-9_.-]+/-/g' <<<"${r//\//_}"
+}
+
 # Use identity $1: sets where its config, key and token cache live.
 use_identity() {
   identity="$1"
   [[ "$identity" =~ ^[a-z0-9-]+$ ]] || die "bad identity name: $identity"
-  config="${SDLC_AGENT_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/sdlc/$identity.env}"
-  keyring_attrs=(service claude-sdlc account "github-app-private-key:$identity")
+  local rk
+  rk="$(repo_key)"
+  config="${SDLC_AGENT_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/sdlc/$rk/$identity.env}"
+  keyring_attrs=(service claude-sdlc account "github-app-private-key:$rk:$identity")
+  key_store="${SDLC_AGENT_KEY_STORE_DIR:+$SDLC_AGENT_KEY_STORE_DIR/$rk/$identity.pem}"
 }
 
 # The identity a persona acts as, from the registry. Only github-app identities qualify, and
@@ -81,7 +94,6 @@ identity_for() {
   echo "$id"
 }
 
-use_identity agent
 
 load_config() {
   [[ -f "$config" ]] || return 1
@@ -92,7 +104,7 @@ load_config() {
 
 private_key() {
   if [[ -n "${SDLC_AGENT_KEY_FILE:-}" ]]; then cat "$SDLC_AGENT_KEY_FILE"; return; fi
-  if [[ -n "${SDLC_AGENT_KEY_STORE_DIR:-}" ]]; then cat "$SDLC_AGENT_KEY_STORE_DIR/$identity.pem"; return; fi
+  if [[ -n "$key_store" ]]; then cat "$key_store"; return; fi
   command -v secret-tool >/dev/null || die "secret-tool not found; install libsecret-tools or set SDLC_AGENT_KEY_FILE"
   secret-tool lookup "${keyring_attrs[@]}" || die "no private key in the keyring; run: $0 setup"
 }
@@ -247,7 +259,7 @@ check() {
   token >/dev/null && echo "ok: a token for this repo was issued"
 }
 
-[[ -n "${SDLC_AGENT_IDENTITY_NAME:-}" ]] && use_identity "$SDLC_AGENT_IDENTITY_NAME"
+use_identity "${SDLC_AGENT_IDENTITY_NAME:-agent}"
 
 case "${1:-}" in
   setup) shift; setup "$@" ;;
@@ -266,5 +278,5 @@ case "${1:-}" in
   token) token ;;
   git-credential) shift; git_credential "$@" ;;
   env) shift; print_env "$@" ;;
-  *) sed -n '2,42p' "$0" >&2; exit 2 ;;
+  *) sed -n '2,44p' "$0" >&2; exit 2 ;;
 esac

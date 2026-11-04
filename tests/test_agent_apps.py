@@ -22,21 +22,23 @@ def apps(monkeypatch, tmp_path):
     module = importlib.util.module_from_spec(spec)
     monkeypatch.setitem(sys.modules, "apps", module)  # dataclasses look the module up
     spec.loader.exec_module(module)
+    module.REPO_KEY = "o_r"
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     monkeypatch.setenv("SDLC_AGENT_KEY_STORE_DIR", str(tmp_path / "keys"))
     return module
 
 
 def test_one_app_serves_every_local_persona(apps):
-    [agent] = apps.plan(PERSONAS, per_persona=False, prefix="stickleprojects-claude")
+    [agent] = apps.plan(PERSONAS, per_persona=False, prefix="jobhunt-app")
     assert agent.name == "agent" and agent.personas == LOCAL
-    assert agent.app_name == "stickleprojects-claude"
+    assert agent.app_name == "jobhunt-app-claude"
     assert agent.permissions["workflows"] == "write"
 
 
 def test_per_persona_apps_get_only_what_they_need(apps):
-    identities = apps.plan(PERSONAS, per_persona=True, prefix="stickleprojects-claude")
+    identities = apps.plan(PERSONAS, per_persona=True, prefix="jobhunt-app")
     assert [i.name for i in identities] == [f"agent-{p}" for p in LOCAL]
+    assert identities[2].app_name == "jobhunt-app-plan"
     assert all(len(i.app_name) <= 34 for i in identities)
     perms = {i.personas[0]: i.permissions for i in identities}
     assert "workflows" in perms["build"] and "workflows" in perms["dev"]
@@ -102,18 +104,22 @@ def test_browser_flow_creates_installs_and_moves_to_the_next_app(apps, monkeypat
         assert status == 200 and "All done" in body and flow.done.is_set()
     finally:
         server.shutdown()
-    config = (tmp_path / "config/sdlc/agent-intent.env").read_text()
+    config = (tmp_path / "config/sdlc/o_r/agent-intent.env").read_text()
     assert "SDLC_AGENT_APP_ID=11" in config and "SDLC_AGENT_APP_SLUG=s-claude-intent" in config
     assert "SDLC_AGENT_BOT_ID=900" in config
-    assert (tmp_path / "keys/agent-spec.pem").read_text() == "KEY-2"
-    assert oct((tmp_path / "keys/agent-spec.pem").stat().st_mode)[-3:] == "600"
+    assert (tmp_path / "keys/o_r/agent-spec.pem").read_text() == "KEY-2"
+    assert oct((tmp_path / "keys/o_r/agent-spec.pem").stat().st_mode)[-3:] == "600"
 
 
 def test_per_persona_override_maps_each_persona_and_the_script_follows_it(apps, tmp_path):
     identities = apps.plan(PERSONAS, per_persona=True, prefix="s-claude")
     apps.write_personas_override(PERSONAS, identities, per_persona=True)
-    override = tmp_path / "config/sdlc/personas.conf"
-    env = {"XDG_CONFIG_HOME": str(tmp_path / "config"), "SDLC_PERSONAS": ""}
+    override = tmp_path / "config/sdlc/o_r/personas.conf"
+    env = {
+        "XDG_CONFIG_HOME": str(tmp_path / "config"),
+        "SDLC_PERSONAS": "",
+        "SDLC_AGENT_REPO": "o/r",
+    }
 
     def ident(*args):
         return run(["bash", str(REPO / "scripts/agent-identity.sh"), *args], env=env)
@@ -134,7 +140,7 @@ def _answers(*replies):
 
 
 def test_prompt_one_app_for_everything(apps):
-    assert apps.choose_groups(LOCAL, "s-claude", _answers("1")) == [LOCAL]
+    assert apps.choose_groups(LOCAL, "s", _answers("1")) == [LOCAL]
     assert apps.choose_groups(LOCAL, "s-claude", _answers("")) == [LOCAL], "Enter = recommended"
 
 
@@ -166,11 +172,11 @@ def test_prompt_asks_again_after_a_bad_answer(apps, capsys):
 
 
 def test_nothing_is_created_unless_confirmed(apps, capsys):
-    identities = apps.build_identities([LOCAL], LOCAL, "s-claude")
+    identities = apps.build_identities([LOCAL], LOCAL, "jobhunt-app")
     assert apps.confirm(identities, _answers("")) is True
     assert apps.confirm(identities, _answers("n")) is False
     out = capsys.readouterr().out
-    assert "About to create 1 GitHub App:" in out and "s-claude" in out
+    assert "About to create 1 GitHub App:" in out and "jobhunt-app-claude" in out
 
 
 def test_groups_flag_must_cover_each_persona_once(apps):
@@ -190,9 +196,47 @@ def test_shared_app_mapping_in_the_override(apps, tmp_path):
     groups = [["plan", "intent", "spec", "po-review"], ["build"], ["dev"]]
     identities = apps.build_identities(groups, LOCAL, "s-claude")
     apps.write_personas_override(PERSONAS, identities, per_persona=True)
-    env = {"XDG_CONFIG_HOME": str(tmp_path / "config"), "SDLC_PERSONAS": ""}
+    env = {
+        "XDG_CONFIG_HOME": str(tmp_path / "config"),
+        "SDLC_PERSONAS": "",
+        "SDLC_AGENT_REPO": "o/r",
+    }
     of = lambda p: run(  # noqa: E731
         ["bash", str(REPO / "scripts/agent-identity.sh"), "identity-of", p], env=env
     ).stdout.strip()
     assert of("intent") == "agent-plan" and of("spec-ci") == "agent-plan"
     assert of("dev") == "agent-dev"
+
+
+@pytest.mark.parametrize(
+    ("name", "prefix"),
+    [
+        ("jobhunt-app", "jobhunt-app"),
+        ("JobHunt_App", "jobhunt-app"),
+        ("my.cool  repo!", "my-cool-repo"),
+        ("--x--", "x"),
+        ("a" * 40, "a" * 24),
+        ("!!!", ""),
+    ],
+)
+def test_prefix_is_made_safe_for_github(apps, name, prefix):
+    assert apps.safe_prefix(name) == prefix
+    assert len(f"{apps.safe_prefix(name)}-po-review") <= 34
+
+
+def test_prefix_is_asked_first_and_defaults_to_the_repo(apps, capsys):
+    assert apps.ask_prefix("jobhunt-app", _answers("")) == "jobhunt-app"
+    assert apps.ask_prefix("jobhunt-app", _answers("Job Hunt")) == "job-hunt"
+    assert "using job-hunt" in capsys.readouterr().out
+    assert apps.ask_prefix("jobhunt-app", _answers("!!", "jh")) == "jh"
+
+
+def test_repo_key_matches_the_bash_side(apps, tmp_path):
+    assert apps.repo_key("Stickleprojects/JobHunt-App") == "stickleprojects_jobhunt-app"
+    env = {"XDG_CONFIG_HOME": str(tmp_path), "SDLC_AGENT_REPO": "Stickleprojects/JobHunt-App"}
+    (tmp_path / "sdlc/stickleprojects_jobhunt-app").mkdir(parents=True)
+    (tmp_path / "sdlc/stickleprojects_jobhunt-app/agent.env").write_text(
+        "SDLC_AGENT_APP_ID=1\nSDLC_AGENT_APP_SLUG=jobhunt-app-claude\n"
+    )
+    out = run(["bash", str(REPO / "scripts/agent-identity.sh"), "show"], env=env)
+    assert out.stdout.strip() == "1 jobhunt-app-claude"

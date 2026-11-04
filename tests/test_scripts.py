@@ -463,8 +463,8 @@ def agent_env(tmp_path):
         check=True,
     )
     cfg = tmp_path / "config"
-    (cfg / "sdlc").mkdir(parents=True)
-    (cfg / "sdlc" / "agent.env").write_text(
+    (cfg / "sdlc" / "o_r").mkdir(parents=True)
+    (cfg / "sdlc" / "o_r" / "agent.env").write_text(
         "SDLC_AGENT_APP_ID=123\nSDLC_AGENT_APP_SLUG=stickle-claude\nSDLC_AGENT_BOT_ID=999\n"
     )
     fake = tmp_path / "bin"
@@ -577,6 +577,15 @@ def test_agent_session_starts_claude_with_the_identity(agent_env):
     assert out.returncode == 0, out.stderr
     assert "GIT_COMMITTER_NAME=stickle-claude[bot]" in out.stdout
     assert "SDLC_AGENT_PERSONA=dev" in out.stdout
+
+
+def test_each_repo_has_its_own_apps(agent_env):
+    # An App made for o/r doesn't leak into another repo on the same machine.
+    _, env = agent_env
+    assert identity(env, "show").stdout.strip() == "123 stickle-claude"
+    other = identity({**env, "SDLC_AGENT_REPO": "o/jobhunt-app"}, "show")
+    assert other.returncode == 1
+    assert identity({**env, "SDLC_AGENT_REPO": "o/jobhunt-app"}, "env").stdout == ""
 
 
 def test_workflows_guard_against_agent_loops():

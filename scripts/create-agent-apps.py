@@ -4,9 +4,12 @@
 Usage: scripts/agent-identity.sh create [--per-persona | --groups G] [--name PREFIX] [--org ORG]
                                         [--yes] [--no-browser]
 
-  (no flags, in a terminal)  asks: one App for everything, or one per persona, and for each
-                             persona whether to reuse an App already chosen; then shows what it
-                             will create and asks to continue before opening the browser
+Run it in each repo that uses the pipeline: the Apps belong to that repo, and are named after it.
+
+  (no flags, in a terminal)  asks for the name prefix (default: the repo's name, made safe),
+                             then: one App for everything (<prefix>-claude) or Apps per persona
+                             (<prefix>-plan, ...), and which App each other persona shares; then
+                             shows what it will create and asks to continue before any browser
   (no flags, no terminal)    one App, `agent`, for every local persona
   --per-persona              one App per local persona (`agent-build`, `agent-plan`, ...)
   --groups G                 your own grouping, e.g. "intent+spec+plan+po-review,build+dev"
@@ -32,6 +35,7 @@ import argparse
 import html
 import json
 import os
+import re
 import secrets
 import subprocess
 import sys
@@ -47,6 +51,11 @@ from urllib.parse import parse_qs, quote, urlparse
 GITHUB = os.environ.get("SDLC_GITHUB_WEB", "https://github.com")
 API = os.environ.get("SDLC_GITHUB_API", "https://api.github.com")
 NAME_LIMIT = 34  # GitHub App names are at most 34 characters
+# Room for the longest suffix, "-po-review", within the limit.
+PREFIX_LIMIT = NAME_LIMIT - len("-po-review")
+# owner_repo of the repo the Apps are for. Its config, keys and persona mapping are kept apart
+# from other repos': ~/.config/sdlc/<owner>_<repo>/. Set by main(); tests set it directly.
+REPO_KEY = ""
 
 # What every Claude identity needs: commit and push, open PRs, comment and label, read CI.
 BASE_PERMISSIONS = {
@@ -79,7 +88,19 @@ class Identity:
 
 
 def config_dir() -> Path:
-    return Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "sdlc"
+    base = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "sdlc"
+    return base / REPO_KEY if REPO_KEY else base
+
+
+def safe_prefix(name: str) -> str:
+    """A GitHub-App-safe name prefix: lowercase letters, digits and single dashes, short enough
+    for every persona suffix. "JobHunt_App" -> "jobhunt-app"."""
+    cleaned = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+    return cleaned[:PREFIX_LIMIT].rstrip("-")
+
+
+def repo_key(repo: str) -> str:
+    return re.sub(r"[^a-z0-9_.-]+", "-", repo.lower().replace("/", "_"))
 
 
 def read_registry(path: Path) -> tuple[dict[str, str], list[tuple[str, str, str]]]:
@@ -112,7 +133,7 @@ def build_identities(groups: list[list[str]], local: list[str], prefix: str) -> 
     if sorted(seen) != sorted(local) or len(seen) != len(set(seen)):
         raise SystemExit(f"each of these personas must be in exactly one group: {', '.join(local)}")
     if len(groups) == 1:
-        return [Identity("agent", list(groups[0]), prefix[:NAME_LIMIT])]
+        return [Identity("agent", list(groups[0]), f"{prefix}-claude"[:NAME_LIMIT])]
     return [Identity(f"agent-{g[0]}", list(g), f"{prefix}-{g[0]}"[:NAME_LIMIT]) for g in groups]
 
 
@@ -158,7 +179,7 @@ def _pick_many(ask, question: str, options: list[str]) -> list[int]:
 def choose_groups(local: list[str], prefix: str, ask=input) -> list[list[str]]:
     """Ask: one App for everything, or Apps per persona. With Apps per persona, first pick
     which personas get an App of their own, then which of those each other persona shares."""
-    one = f"One App for everything ({prefix}): every persona signs as itself (recommended)"
+    one = f"One App for everything ({prefix}-claude): every persona signs as itself (recommended)"
     each = "Apps per persona: choose which personas get their own App; the rest share one of them"
     if _pick(ask, "How many GitHub Apps should Claude use?", [one, each]) == 1:
         return [local]
@@ -183,7 +204,7 @@ def describe(identities: list[Identity]) -> str:
         lines.append(f"  {i.app_name:<34}  for {', '.join(i.personas)}{extra}")
     lines.append(
         "For each one, your browser opens GitHub: click Create GitHub App, then install it"
-        " on your repos."
+        " on this repo."
     )
     return "\n".join(lines)
 
@@ -193,11 +214,12 @@ def confirm(identities: list[Identity], ask=input) -> bool:
     return ask("Continue? [Y/n] ").strip().lower() in ("", "y", "yes")
 
 
-def manifest(identity: Identity, base_url: str, owner: str) -> dict:
+def manifest(identity: Identity, base_url: str, owner: str, repo: str = "") -> dict:
     return {
         "name": identity.app_name,
-        "url": f"{GITHUB}/{owner}",
-        "description": f"Claude ({', '.join(identity.personas)}) for the claude-sdlc pipeline.",
+        "url": f"{GITHUB}/{repo or owner}",
+        "description": f"Claude ({', '.join(identity.personas)}) for {repo or owner}, via the"
+        " claude-sdlc pipeline.",
         "public": False,
         "hook_attributes": {"url": f"{base_url}/hook", "active": False},
         "redirect_url": f"{base_url}/created",
@@ -229,15 +251,15 @@ def bot_id(slug: str) -> int:
 def store_key(identity: str, pem: str) -> str:
     store = os.environ.get("SDLC_AGENT_KEY_STORE_DIR")
     if store:
-        path = Path(store) / f"{identity}.pem"
+        path = Path(store) / REPO_KEY / f"{identity}.pem"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.touch(mode=0o600)
         path.write_text(pem)
         return str(path)
-    label = f"claude-sdlc GitHub App private key ({identity})"
+    label = f"claude-sdlc GitHub App private key ({REPO_KEY} {identity})"
     subprocess.run(
         ["secret-tool", "store", "--label", label, "service", "claude-sdlc",
-         "account", f"github-app-private-key:{identity}"],
+         "account", f"github-app-private-key:{REPO_KEY}:{identity}"],
         input=pem, text=True, check=True,
     )  # fmt: skip
     return f"keyring ({label})"
@@ -280,7 +302,7 @@ def write_personas_override(registry: Path, identities: list[Identity], per_pers
         if parts[:2] == ["identity", "agent"]:
             for i in identities:
                 lines.append(
-                    f"identity {i.name}  github-app  ~/.config/sdlc/{i.name}.env + keyring"
+                    f"identity {i.name}  github-app  ~/.config/sdlc/{REPO_KEY}/{i.name}.env + keyring"
                 )
     override.parent.mkdir(parents=True, exist_ok=True)
     override.write_text(
@@ -296,6 +318,7 @@ class Flow:
     identities: list[Identity]
     owner: str
     org: str | None
+    repo: str = ""
     index: int = 0
     state: str = field(default_factory=lambda: secrets.token_urlsafe(16))
     done: threading.Event = field(default_factory=threading.Event)
@@ -360,7 +383,7 @@ def make_handler(flow: Flow):
                 if flow.org
                 else f"{GITHUB}/settings/apps/new"
             )
-            data = html.escape(json.dumps(manifest(ident, base, flow.org or flow.owner)))
+            data = html.escape(json.dumps(manifest(ident, base, flow.org or flow.owner, flow.repo)))
             n, total = flow.index + 1, len(flow.identities)
             self.send(
                 200,
@@ -397,7 +420,10 @@ def make_handler(flow: Flow):
     return Handler
 
 
-def owner_from_git() -> str:
+def repo_from_git() -> str:
+    """owner/name of origin, or "" outside a GitHub checkout. SDLC_AGENT_REPO overrides it."""
+    if os.environ.get("SDLC_AGENT_REPO"):
+        return os.environ["SDLC_AGENT_REPO"]
     try:
         url = subprocess.run(
             ["git", "remote", "get-url", "origin"], capture_output=True, text=True, check=True
@@ -405,7 +431,19 @@ def owner_from_git() -> str:
     except (subprocess.CalledProcessError, FileNotFoundError):
         return ""
     path = url.removesuffix(".git").split("github.com")[-1].lstrip(":/")
-    return path.split("/")[0]
+    return path if path.count("/") == 1 else ""
+
+
+def ask_prefix(default: str, ask=input) -> str:
+    """The first question: what Claude's Apps for this repo are called."""
+    while True:
+        answer = ask(f"Name prefix for this repo's Claude Apps [{default}]: ").strip() or default
+        prefix = safe_prefix(answer)
+        if prefix:
+            if prefix != answer:
+                print(f"  using {prefix} (lowercase letters, digits and dashes only)")
+            return prefix
+        print("  please use some letters or digits")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -416,9 +454,7 @@ def main(argv: list[str] | None = None) -> int:
     mode.add_argument("--per-persona", action="store_true", help="one App per local persona")
     mode.add_argument("--groups", help='personas sharing an App, e.g. "intent+spec,build+dev"')
     parser.add_argument("--yes", action="store_true", help="don't ask to confirm")
-    parser.add_argument(
-        "--name", help="App name (prefix with --per-persona); default <owner>-claude"
-    )
+    parser.add_argument("--name", help="App name prefix; default: the repo's name, made safe")
     parser.add_argument("--org", help="create the Apps under this organization, not your account")
     parser.add_argument("--registry", type=Path, help="personas.conf (default: the repo's)")
     parser.add_argument("--port", type=int, default=0, help="local port (default: any free one)")
@@ -426,12 +462,23 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     registry = args.registry or Path(__file__).resolve().parents[1] / ".claude" / "personas.conf"
-    owner = args.org or owner_from_git()
-    if not owner and not args.name:
-        raise SystemExit("can't tell the GitHub owner from origin; pass --name or --org")
-    prefix = args.name or f"{owner}-claude"
+    global REPO_KEY
+    repo = repo_from_git()
+    if not repo:
+        raise SystemExit("run this in a repo whose origin is on GitHub (or set SDLC_AGENT_REPO)")
+    REPO_KEY = repo_key(repo)
+    owner = args.org or repo.split("/")[0]
     local = local_personas(registry)
     interactive = sys.stdin.isatty() and sys.stdout.isatty()
+    default_prefix = safe_prefix(repo.split("/")[1])
+    if args.name:
+        prefix = safe_prefix(args.name)
+    elif interactive:
+        prefix = ask_prefix(default_prefix)
+    else:
+        prefix = default_prefix
+    if not prefix:
+        raise SystemExit("the name prefix needs letters or digits")
     if args.groups:
         groups = parse_groups(args.groups)
     elif args.per_persona:
@@ -445,7 +492,7 @@ def main(argv: list[str] | None = None) -> int:
         print("Nothing created.")
         return 1
 
-    flow = Flow(identities, owner, args.org)
+    flow = Flow(identities, owner, args.org, repo)
     server = ThreadingHTTPServer(("127.0.0.1", args.port), make_handler(flow))
     url = f"http://127.0.0.1:{server.server_address[1]}/start"
     threading.Thread(target=server.serve_forever, daemon=True).start()
@@ -462,7 +509,7 @@ def main(argv: list[str] | None = None) -> int:
     for line in flow.log:
         print(f"  {line}")
     if flow.log:
-        print("Next, in each repo: scripts/bootstrap-github.sh --mode team --skip-token")
+        print("Next, in this repo: scripts/bootstrap-github.sh --mode team --skip-token")
     return 0 if finished else 1
 
 
