@@ -2,6 +2,7 @@
 
 import importlib.util
 import json
+import re
 import sys
 import threading
 import urllib.error
@@ -326,3 +327,134 @@ def test_main_use_shares_an_app_across_repos(apps, tmp_path, monkeypatch, capsys
         text = (tmp_path / f"config/sdlc/{key}/agent.env").read_text()
         assert f"SDLC_AGENT_USE={shared.resolve()}" in text
     assert "installations/new" in capsys.readouterr().out
+
+
+# --- what GitHub can answer when the App is created ---------------------------------------------
+
+
+@pytest.fixture
+def fake_api(apps, monkeypatch):
+    """A local stand-in for api.github.com's manifest conversion endpoint. Set .status and
+    .body for what it answers."""
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    class State:
+        status, body = (
+            201,
+            json.dumps({"id": 1, "slug": "x", "pem": "-----BEGIN RSA PRIVATE KEY-----"}),
+        )
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_POST(self):  # noqa: N802
+            body = State.body.encode()
+            self.send_response(State.status)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    monkeypatch.setattr(apps, "API", f"http://127.0.0.1:{server.server_address[1]}")
+    yield State
+    server.shutdown()
+
+
+@pytest.mark.parametrize(
+    ("status", "body", "reason"),
+    [
+        (404, '{"message": "Not Found"}', "expired or was already used"),
+        (422, '{"message": "Name has already been taken"}', "Name has already been taken"),
+        (401, '{"message": "Bad credentials"}', "refused the request: Bad credentials"),
+        (403, "{}", "refused the request"),
+        (502, "<html>bad gateway</html>", "GitHub had an error (502)"),
+        (201, "not json at all", "wasn't JSON"),
+        (201, '["a list"]', "wasn't an App"),
+        (201, '{"id": 1, "slug": "x"}', "missing the App's pem"),
+        (201, '{"id": 1, "slug": "x", "pem": "garbage"}', "missing the App's key"),
+    ],
+)
+def test_conversion_failures_become_readable_errors(apps, fake_api, status, body, reason):
+    fake_api.status, fake_api.body = status, body
+    with pytest.raises(apps.ConversionError, match=re.escape(reason)):
+        apps.convert("code")
+
+
+def test_conversion_timeout_is_readable(apps, monkeypatch):
+    def slow(*_a, **_k):
+        raise TimeoutError("timed out")
+
+    monkeypatch.setattr(apps.urllib.request, "urlopen", slow)
+    with pytest.raises(apps.ConversionError, match="didn't answer"):
+        apps.convert("code")
+
+
+def test_good_conversion(apps, fake_api):
+    assert apps.convert("code")["slug"] == "x"
+
+
+def _serve(apps, flow):
+    server = apps.ThreadingHTTPServer(("127.0.0.1", 0), apps.make_handler(flow))
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server, f"http://127.0.0.1:{server.server_address[1]}"
+
+
+def _state(base):
+    form = _Form()
+    form.feed(_get(f"{base}/start")[1])
+    return form.action.split("state=")[1]
+
+
+def test_failed_exchange_writes_nothing_and_can_be_retried(apps, monkeypatch, tmp_path, capsys):
+    [agent] = apps.plan(PERSONAS, False, "jh")
+    answers = iter([apps.ConversionError("the code has expired or was already used"), None])
+
+    def convert(code):
+        result = next(answers)
+        if isinstance(result, Exception):
+            raise result
+        return {"id": 3, "slug": "jh-claude", "pem": "-----BEGIN KEY-----"}
+
+    monkeypatch.setattr(apps, "convert", convert)
+    monkeypatch.setattr(apps, "bot_id", lambda slug: 1)
+    flow = apps.Flow([agent], "o", None, "o/r")
+    server, base = _serve(apps, flow)
+    try:
+        state = _state(base)
+        status, body, _ = _get(f"{base}/created?code=a&state={state}")
+        assert status == 502 and "Try again" in body and "Generate a private key" in body
+        assert not (tmp_path / "config/sdlc/o_r/agent.env").exists(), "nothing written"
+        assert _get(f"{base}/created?code=a&state={state}")[0] == 400, "the spent state is refused"
+        status, _, location = _get(f"{base}/created?code=b&state={_state(base)}")
+        assert status == 302 and "jh-claude/installations/new" in location
+    finally:
+        server.shutdown()
+    assert "SDLC_AGENT_APP_SLUG=jh-claude" in (tmp_path / "config/sdlc/o_r/agent.env").read_text()
+    assert "may already exist on GitHub" in capsys.readouterr().err
+
+
+def test_skipping_an_app_records_it_with_the_ways_to_recover(apps):
+    identities = apps.plan(PERSONAS, True, "jh")[:2]
+    flow = apps.Flow(identities, "o", None, "o/r")
+    server, base = _serve(apps, flow)
+    try:
+        _get(f"{base}/start")
+        assert _get(f"{base}/next")[0] == 302
+    finally:
+        server.shutdown()
+    assert [i.app_name for i in flow.skipped] == ["jh-intent"]
+    hint = apps.recovery_hint("jh-intent", "agent-intent")
+    assert "settings/apps/jh-intent" in hint and "Generate a private key" in hint
+    assert "setup --identity agent-intent" in hint and "Delete GitHub App" in hint
+
+
+def test_start_page_explains_sign_in_and_taken_names(apps):
+    flow = apps.Flow(apps.plan(PERSONAS, False, "jh"), "o", None, "o/r")
+    server, base = _serve(apps, flow)
+    try:
+        body = _get(f"{base}/start")[1]
+    finally:
+        server.shutdown()
+    assert "sign in" in body and "name is taken" in body and "/next" in body

@@ -2,6 +2,7 @@
 # Configure a GitHub repo for this pipeline. Safe to re-run: each step checks, then fixes.
 #
 # Usage: scripts/bootstrap-github.sh [--repo owner/name] [--mode solo|team] [--dry-run] [--skip-token]
+#                                    [--update-agent-key]
 #        scripts/bootstrap-github.sh --gitignore-only   (step 9 alone; needs no GitHub access)
 #
 # Every setting below was learned the hard way when this repo was first set up:
@@ -29,7 +30,7 @@
 #  11. workspace trust    run `claude` here once; until then .claude/settings.json allow rules are ignored
 set -euo pipefail
 
-repo="" mode=solo dry=0 skip_token=0 print_protection=0 gitignore_only=0
+repo="" mode=solo dry=0 skip_token=0 print_protection=0 gitignore_only=0 update_agent_key=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --repo) repo="$2"; shift 2 ;;
@@ -38,7 +39,8 @@ while [[ $# -gt 0 ]]; do
     --skip-token) skip_token=1; shift ;;
     --print-protection) print_protection=1; shift ;;  # print the step 6 JSON and exit (tests)
     --gitignore-only) gitignore_only=1; shift ;;       # run only step 9, no GitHub calls
-    -h|--help) sed -n '2,29p' "$0"; exit 0 ;;
+    --update-agent-key) update_agent_key=1; shift ;;   # step 8: re-store the App key secret (after rekey)
+    -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -231,7 +233,8 @@ else
     else run gh variable set "${pair%%=*}" -R "$repo" --body "${pair#*=}"; ((dry)) || ok "set variable ${pair%%=*}"
     fi
   done
-  if gh secret list -R "$repo" --json name -q '.[].name' | grep -qx SDLC_AGENT_APP_KEY; then ok "secret SDLC_AGENT_APP_KEY"
+  if ((update_agent_key == 0)) && gh secret list -R "$repo" --json name -q '.[].name' | grep -qx SDLC_AGENT_APP_KEY; then
+    ok "secret SDLC_AGENT_APP_KEY (after a rekey, re-run with --update-agent-key)"
   elif ((dry)); then echo "    would store $ci's private key as secret SDLC_AGENT_APP_KEY"
   else SDLC_AGENT_IDENTITY_NAME="$ci" scripts/agent-identity.sh key | gh secret set SDLC_AGENT_APP_KEY -R "$repo"; ok "stored secret SDLC_AGENT_APP_KEY ($ci)"
   fi

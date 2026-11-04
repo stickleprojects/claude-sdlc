@@ -272,15 +272,62 @@ def manifest(identity: Identity, base_url: str, owner: str, repo: str = "") -> d
     }
 
 
+class ConversionError(Exception):
+    """GitHub didn't hand over the new App's credentials; the message says why, for a person."""
+
+
 def convert(code: str) -> dict:
-    """Exchange the one-time code for the App's id, slug and private key."""
+    """Exchange the one-time code for the App's id, slug and private key.
+
+    Not retried: the code works once, so a second POST after a timeout would fail even if the
+    first one succeeded. Every failure becomes a ConversionError with a readable reason."""
     request = urllib.request.Request(
         f"{API}/app-manifests/{quote(code)}/conversions",
         method="POST",
         headers={"Accept": "application/vnd.github+json"},
     )
-    with urllib.request.urlopen(request, timeout=30) as response:
-        return json.load(response)
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            app = json.load(response)
+    except urllib.error.HTTPError as err:
+        detail = ""
+        try:
+            detail = json.load(err).get("message", "")
+        except (ValueError, AttributeError, OSError):
+            pass
+        reasons = {
+            404: "the code has expired or was already used (each code works once, for an hour)",
+            422: "GitHub couldn't make the App from the manifest",
+            401: "GitHub refused the request",
+            403: "GitHub refused the request",
+        }
+        reason = reasons.get(err.code) or (
+            f"GitHub had an error ({err.code})" if err.code >= 500 else f"HTTP {err.code}"
+        )
+        raise ConversionError(f"{reason}{': ' + detail if detail else ''}") from err
+    except (TimeoutError, urllib.error.URLError) as err:
+        raise ConversionError(f"GitHub didn't answer ({getattr(err, 'reason', err)})") from err
+    except ValueError as err:
+        raise ConversionError("GitHub's reply wasn't JSON") from err
+    if not isinstance(app, dict):
+        raise ConversionError("GitHub's reply wasn't an App")
+    missing = [k for k in ("id", "slug", "pem") if not app.get(k)]
+    if missing or not str(app["pem"]).startswith("-----BEGIN"):
+        raise ConversionError(f"GitHub's reply is missing the App's {', '.join(missing) or 'key'}")
+    return app
+
+
+def recovery_hint(app_name: str, identity: str) -> str:
+    """What to do when an App may exist on GitHub without its key here: it was created but
+    the code exchange failed, or GitHub said the name is taken because it was made before."""
+    return (
+        f"{app_name} may already exist on GitHub without its key on this machine. Either:\n"
+        f"  - keep it: open {GITHUB}/settings/apps/{app_name}, click 'Generate a private key',"
+        f" then run\n    scripts/agent-identity.sh setup --identity {identity}"
+        " --app-id <its App ID> --key <downloaded .pem>\n"
+        f"  - or delete it on that page (Advanced, Delete GitHub App) and run create again\n"
+        "  - or run create again with another --name"
+    )
 
 
 def bot_id(slug: str) -> int:
@@ -452,6 +499,7 @@ class Flow:
     state: str = field(default_factory=lambda: secrets.token_urlsafe(16))
     done: threading.Event = field(default_factory=threading.Event)
     log: list[str] = field(default_factory=list)
+    skipped: list[Identity] = field(default_factory=list)
 
     @property
     def current(self) -> Identity | None:
@@ -495,6 +543,10 @@ def make_handler(flow: Flow):
             elif url.path == "/created":
                 self.created(query)
             elif url.path in ("/installed", "/next"):
+                ident = flow.current
+                if ident is not None and not ident.slug:  # skipped before it was created
+                    flow.skipped.append(ident)
+                    print(f"  skipped {ident.app_name}", flush=True)
                 flow.advance()
                 self.send(302, location=f"{base}/start")
             else:
@@ -520,6 +572,10 @@ def make_handler(flow: Flow):
                     f"Create {ident.app_name} ({n} of {total})",
                     f"<p>For: {html.escape(', '.join(ident.personas))}. GitHub will ask you to "
                     "confirm the name and create the App, then to install it.</p>"
+                    "<p>If GitHub asks you to sign in, do, then come back to this page: the"
+                    " form may not survive the sign-in. If GitHub says the name is taken, you"
+                    " probably made this App before: <a href='/next'>skip it</a>, and the"
+                    " terminal will say how to reuse it.</p>"
                     f"<form id=f method=post action='{target}?state={flow.state}'>"
                     f"<input type=hidden name=manifest value='{data}'>"
                     "<button>Continue to GitHub</button></form>"
@@ -536,8 +592,20 @@ def make_handler(flow: Flow):
                 return
             try:
                 app = convert(query["code"])
-            except urllib.error.URLError as err:
-                self.send(502, page("GitHub refused the code", f"<p>{html.escape(str(err))}</p>"))
+            except ConversionError as err:
+                flow.state = secrets.token_urlsafe(16)  # the old code is spent either way
+                hint = recovery_hint(ident.app_name, ident.name)
+                print(f"  {ident.app_name}: {err}\n{hint}", file=sys.stderr, flush=True)
+                self.send(
+                    502,
+                    page(
+                        f"{ident.app_name}: GitHub didn't hand over the App",
+                        f"<p>{html.escape(str(err))}.</p><pre>{html.escape(hint)}</pre>"
+                        "<p><a href='/start'>Try again</a> (if GitHub then says the name is"
+                        " taken, use one of the options above) or <a href='/next'>skip this"
+                        " App</a>.</p>",
+                    ),
+                )
                 return
             ident.slug, ident.app_id = app["slug"], int(app["id"])
             where = store_key(ident.slug, app["pem"])
@@ -689,6 +757,9 @@ def main(argv: list[str] | None = None) -> int:
     print(write_personas_override(registry, identities, per_persona=len(identities) > 1))
     for line in flow.log:
         print(f"  {line}")
+    for ident in flow.skipped:
+        print(f"Skipped {ident.app_name}. If GitHub said the name is taken:")
+        print(recovery_hint(ident.app_name, ident.name))
     print("Next, in this repo: scripts/bootstrap-github.sh --mode team --skip-token")
     return 0 if finished else 1
 

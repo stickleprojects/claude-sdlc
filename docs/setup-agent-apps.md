@@ -208,6 +208,38 @@ The default places are above. Everything can go elsewhere:
 
 When a config lives somewhere other than the default place, the default place gets a one-line pointer to it (`SDLC_AGENT_USE=<file>`). So many repos and personas can point at one file, and changing that file (rotating its key, say) changes it for all of them. `use`, `setup` and `create` never replace an existing config or pointer without `--force` (or, in `create`, your yes).
 
+## When something goes wrong
+
+Start with:
+
+```
+scripts/agent-identity.sh doctor
+```
+
+It checks each link in turn: the config, the key, whether GitHub accepts the key, whether the App is installed on this repo, and a token. It stops at the first broken one, with the fix:
+
+| What you see | What it means | What to do |
+|---|---|---|
+| GitHub says **"Name has already been taken"** while creating | You (or someone) made an App with that name before | Keep it: on its page (`https://github.com/settings/apps/<name>`) click **Generate a private key**, then `scripts/agent-identity.sh setup --identity <identity> --app-id <its App ID> --key <the .pem>`. Or delete it there (*Advanced → Delete GitHub App*) and run `create` again, or use another name. Skip the App on the local page (*skip this App*), and the terminal prints these options. |
+| The local page says **"GitHub didn't hand over the App"** | The App was made, but the one-time code expired (codes last an hour, and work once), timed out or came back incomplete. Nothing was saved | Same options as above (the App may exist without its key), or **Try again** |
+| GitHub asks you to **sign in** and then shows an empty form | The pre-filled form didn't survive the sign-in | Go back to the local page and continue again |
+| GitHub says you **can't create Apps** (organizations) | Creating Apps in an organization needs an owner or "App manager" | Ask an owner, or create them under your own account (drop `--org`) |
+| `GitHub rejected …'s credentials` | The key was deleted or replaced on GitHub, the App id is wrong, the App was deleted, or the clock is off | `doctor` tells which. **A new key doesn't mean a new App:** see *Replacing a key* below. Only a deleted App needs `create --force` |
+| `… isn't installed on <repo>` | The App exists but this repo isn't in its installation | Use the link it prints, add the repo, **Save** |
+| `installation … suspended` | Someone suspended the App's installation | Unsuspend it at https://github.com/settings/installations |
+| `didn't answer after 3 tries`, `had an error (5xx)` | Network trouble or a GitHub outage (each call is tried 3 times) | Try again later; https://www.githubstatus.com |
+
+### Replacing a key (without deleting the App)
+
+An App can have several private keys, and an old key keeps working until you delete it. So a key can be replaced safely, and only deliberately:
+
+1. On the App's page, `https://github.com/settings/apps/<name>`, under *Private keys*, click **Generate a private key**. A `.pem` downloads. GitHub has no API for this, so it can't happen by accident.
+2. Run `scripts/agent-identity.sh rekey --key <the .pem>`. It checks first that GitHub accepts the key **for that App**, and refuses anything else. Then it asks before replacing the stored key, because every repo sharing the App uses it. Scripted: add `--yes`.
+3. Update CI in each repo that uses the App: `scripts/bootstrap-github.sh --update-agent-key --skip-token`.
+4. Delete the old key on the App's page, and the downloaded `.pem`.
+
+Deleting and re-creating the App is only needed when the App itself has been deleted.
+
 ## Changing your mind later
 
 - **Different grouping or name:** run `create` again in the repo and answer differently. Apps you no longer use can be deleted on GitHub (*Settings → Developer settings → GitHub Apps → the App → Advanced → Delete*).

@@ -22,6 +22,12 @@
 #          One-off per machine. Stores the App's private key in the keyring (secret-tool,
 #          i.e. Seahorse on GNOME) and its id, slug and bot user in
 #          ~/.config/sdlc/<owner>_<repo>/<name>.env.
+#        scripts/agent-identity.sh doctor
+#          Check every link (config, key, GitHub accepting it, installation, token) and say how
+#          to fix the first broken one.
+#        scripts/agent-identity.sh rekey [--key <new .pem>] [--yes]
+#          Swap in a new private key you generated on the App's page (the App itself stays).
+#          Refuses a key GitHub doesn't accept for this App; asks before replacing.
 #        scripts/agent-identity.sh check
 #          Is the App configured, installed on this repo, and able to issue a token?
 #        scripts/agent-identity.sh show
@@ -167,11 +173,58 @@ app_jwt() {
   printf '%s.%s\n' "$unsigned" "$sig"
 }
 
-github() {  # method path [json-body], authenticated as the App (JWT)
-  local args=(-fsS -X "$1" -H "Accept: application/vnd.github+json"
-    -H "Authorization: Bearer $(app_jwt)" -H "X-GitHub-Api-Version: 2022-11-28")
+# Call the API as the App. Prints the body on success. On failure prints what went wrong and
+# what to do to stderr, and returns 1. No answer and 5xx are retried, 3 tries in all.
+github() {  # method path [json-body]
+  local jwt out status body try delay="${SDLC_RETRY_DELAY:-2}"
+  jwt="$(app_jwt)" || return 1
+  local args=(-sS --max-time 30 -X "$1" -H "Accept: application/vnd.github+json"
+    -H "Authorization: Bearer $jwt" -H "X-GitHub-Api-Version: 2022-11-28" -w '\n%{http_code}')
   [[ $# -ge 3 ]] && args+=(-d "$3")
-  curl "${args[@]}" "$api$2"
+  for try in 1 2 3; do
+    out="$(curl "${args[@]}" "$api$2" 2>/dev/null)" || out=$'\n000'
+    status="${out##*$'\n'}"
+    body="${out%$'\n'*}"
+    case "$status" in
+      2??) printf '%s\n' "$body"; return 0 ;;
+      000|5??) ((try < 3)) && sleep $((delay * try)) ;;
+      *) break ;;
+    esac
+  done
+  explain "$status" "$2" "$body" >&2
+  return 1
+}
+
+# Why a GitHub call failed, and the fix, in words a person can act on.
+explain() {  # status path body
+  local msg slug="${SDLC_AGENT_APP_SLUG:-the App}" repo
+  msg="$(jq -r '.message // empty' <<<"$3" 2>/dev/null || true)"
+  repo="$(repo_name 2>/dev/null || echo "this repo")"
+  case "$1" in
+    401)
+      echo "agent-identity: GitHub rejected $slug's credentials${msg:+ ($msg)}."
+      if [[ "$msg" == *iat* || "$msg" == *exp* || "$msg" == *"time"* ]]; then
+        echo "  This machine's clock looks wrong; set it (timedatectl) and try again."
+      else
+        echo "  The key may have been deleted or replaced on GitHub, the App id may be wrong, or the App was deleted."
+      fi
+      echo "  Run: $0 doctor" ;;
+    403)
+      echo "agent-identity: GitHub refused $slug${msg:+ ($msg)}."
+      echo "  If its installation on $repo is suspended, unsuspend it: https://github.com/settings/installations"
+      echo "  Otherwise the App lacks a permission: https://github.com/settings/apps/$slug/permissions" ;;
+    404)
+      if [[ "$2" == */installation ]]; then
+        echo "agent-identity: $slug isn't installed on $repo."
+        echo "  Install it: https://github.com/apps/$slug/installations/new"
+      else
+        echo "agent-identity: GitHub says not found${msg:+ ($msg)}: the App or its installation may have been deleted."
+        echo "  Run: $0 doctor"
+      fi ;;
+    000) echo "agent-identity: GitHub didn't answer after 3 tries (network, proxy or GitHub outage). Try again later." ;;
+    5??) echo "agent-identity: GitHub had an error ($1) after 3 tries. Try again later; https://www.githubstatus.com" ;;
+    *) echo "agent-identity: GitHub answered $1${msg:+: $msg}." ;;
+  esac
 }
 
 repo_name() {
@@ -197,10 +250,11 @@ token() {
     expires="$(jq -r '.expires_epoch // 0' "$cache")"
     if ((expires - now > 600)); then jq -r .token "$cache"; return; fi
   fi
-  id="$(github GET "/repos/$repo/installation" | jq -r .id)" \
-    || die "the App '$SDLC_AGENT_APP_SLUG' isn't installed on $repo: https://github.com/apps/$SDLC_AGENT_APP_SLUG/installations/new"
-  json="$(github POST "/app/installations/$id/access_tokens")" || die "GitHub refused a token for $repo"
-  [[ "$(jq -r '.token // empty' <<<"$json")" == gh* ]] || die "GitHub's reply has no token for $repo"
+  json="$(github GET "/repos/$repo/installation")" || exit 1
+  id="$(jq -r '.id // empty' <<<"$json" 2>/dev/null || true)"
+  [[ "$id" =~ ^[0-9]+$ ]] || die "GitHub's reply about $repo's installation has no id"
+  json="$(github POST "/app/installations/$id/access_tokens")" || exit 1
+  [[ "$(jq -r '.token // empty' <<<"$json" 2>/dev/null || true)" == gh* ]] || die "GitHub's reply has no token for $repo"
   expires="$(date -d "$(jq -r .expires_at <<<"$json")" +%s 2>/dev/null || echo $((now + 3000)))"
   (umask 077; jq --argjson e "$expires" '{token, expires_epoch: $e}' <<<"$json" > "$cache")
   jq -r .token <<<"$json"
@@ -335,6 +389,86 @@ use_app() {
   fi
 }
 
+rekey_help() {
+  echo "If $SDLC_AGENT_APP_SLUG still exists (https://github.com/settings/apps/$SDLC_AGENT_APP_SLUG):"
+  echo "         click 'Generate a private key' there, then run: $0 rekey --key <downloaded .pem>"
+  echo "       If it was deleted: make a new App with $0 create --force"
+}
+
+# Check each link from config to token; stop at the first broken one and say how to fix it.
+doctor() {
+  local repo app err slug
+  repo="$(repo_name)"
+  err="$(mktemp)"
+  fail() { echo "  FAIL: $1"; echo "  fix:  $2"; rm -f "$err"; exit 1; }
+  echo "Checking identity '$identity' for $repo"
+  load_config || fail "no App config at $default_config" \
+    "make one with $0 create, or share an App you already have with $0 use <its config file>"
+  echo "  ok:   config $config: $SDLC_AGENT_APP_SLUG (app $SDLC_AGENT_APP_ID)"
+  private_key 2>"$err" | openssl pkey -noout 2>/dev/null \
+    || fail "the private key can't be read ($(tr '\n' ' ' <"$err"))" "$(rekey_help)"
+  echo "  ok:   private key readable (${SDLC_AGENT_KEY:-keyring:github-app-private-key:$SDLC_AGENT_APP_SLUG})"
+  app="$(github GET /app 2>"$err")" || fail "GitHub doesn't accept the key: $(tr '\n' ' ' <"$err")" "$(rekey_help)"
+  slug="$(jq -r '.slug // empty' <<<"$app" 2>/dev/null || true)"
+  [[ "$slug" == "$SDLC_AGENT_APP_SLUG" ]] \
+    || fail "the key and App id belong to '${slug:-?}', but the config says $SDLC_AGENT_APP_SLUG" "$(rekey_help)"
+  echo "  ok:   GitHub accepts the key for $slug"
+  github GET "/repos/$repo/installation" >/dev/null 2>"$err" \
+    || fail "$(head -1 "$err" | sed 's/^agent-identity: //')" "$(sed -n 2p "$err" | sed 's/^ *//')"
+  echo "  ok:   installed on $repo"
+  rm -f "$runtime/$identity-${repo//\//_}.json"
+  (token) >/dev/null 2>"$err" || fail "no token: $(tr '\n' ' ' <"$err")" "see the message above"
+  echo "  ok:   token issued: $slug[bot] can act on $repo"
+  rm -f "$err"
+}
+
+# Replace an App's stored private key with a new one you generated on GitHub. Refuses a key
+# GitHub doesn't accept for this App, and asks first: every repo sharing the App uses it.
+rekey() {
+  local key="" yes=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --key) key="$2"; shift 2 ;;
+      --yes) yes=1; shift ;;
+      --identity) use_identity "$2"; shift 2 ;;
+      *) die "unknown rekey option: $1" ;;
+    esac
+  done
+  load_config || die "no App config for '$identity' in $(repo_name); nothing to rekey"
+  if [[ -z "$key" ]]; then
+    echo "To give $SDLC_AGENT_APP_SLUG a new key (nothing is deleted, the App stays):"
+    echo "  1. open https://github.com/settings/apps/$SDLC_AGENT_APP_SLUG"
+    echo "  2. under 'Private keys', click 'Generate a private key'; a .pem downloads"
+    echo "  3. run: $0 rekey --key <that .pem>"
+    exit 2
+  fi
+  openssl pkey -in "$key" -noout 2>/dev/null || die "$key isn't a private key; nothing changed"
+  local app slug ref users
+  app="$(SDLC_AGENT_KEY_FILE="$key" github GET /app)" \
+    || die "GitHub doesn't accept $key for app $SDLC_AGENT_APP_ID ($SDLC_AGENT_APP_SLUG); nothing changed"
+  slug="$(jq -r '.slug // empty' <<<"$app" 2>/dev/null || true)"
+  [[ "$slug" == "$SDLC_AGENT_APP_SLUG" ]] || die "$key is for '$slug', not $SDLC_AGENT_APP_SLUG; nothing changed"
+  ref="${SDLC_AGENT_KEY:-keyring:github-app-private-key:$SDLC_AGENT_APP_SLUG}"
+  users="$({ grep -rlxF "SDLC_AGENT_USE=$config" "${XDG_CONFIG_HOME:-$HOME/.config}/sdlc" 2>/dev/null || true; } | wc -l)"
+  if ((yes == 0)); then
+    [[ -t 0 ]] || die "rekey replaces the key that every repo using $slug relies on; add --yes to confirm"
+    local answer
+    read -rp "Replace the stored key for $slug ($ref; $((users + 1)) config(s) use it)? [y/N] " answer
+    [[ "$answer" == [yY]* ]] || { echo "nothing changed"; exit 1; }
+  fi
+  case "$ref" in
+    file:*) (umask 077; cp "$key" "${ref#file:}") ;;
+    keyring:*) secret-tool store --label "claude-sdlc GitHub App private key ($slug)" \
+      service claude-sdlc account "${ref#keyring:}" < "$key" ;;
+  esac
+  rm -f "$runtime"/*.json
+  echo "stored the new key for $slug at $ref"
+  echo "next:"
+  echo "  - update CI in each repo using it: scripts/bootstrap-github.sh --update-agent-key --skip-token"
+  echo "  - once every machine and CI has it, delete the old key: https://github.com/settings/apps/$slug"
+  echo "  - delete the downloaded file: $key"
+}
+
 check() {
   load_config || { echo "not configured: see docs/agent-identity.md"; exit 1; }
   echo "identity: $identity, app: $SDLC_AGENT_APP_SLUG[bot] (id $SDLC_AGENT_APP_ID)"
@@ -347,6 +481,8 @@ use_identity "${SDLC_AGENT_IDENTITY_NAME:-agent}"
 case "${1:-}" in
   setup) shift; setup "$@" ;;
   use) shift; use_app "$@" ;;
+  doctor) doctor ;;
+  rekey) shift; rekey "$@" ;;
   create)  # always from the repo's registry, so re-running doesn't stack on an old override
     shift
     top="$(git rev-parse --show-toplevel 2>/dev/null || dirname "$(dirname "$self")")"
@@ -362,5 +498,5 @@ case "${1:-}" in
   token) token ;;
   git-credential) shift; git_credential "$@" ;;
   env) shift; print_env "$@" ;;
-  *) sed -n '2,49p' "$0" >&2; exit 2 ;;
+  *) sed -n '2,55p' "$0" >&2; exit 2 ;;
 esac
