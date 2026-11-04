@@ -1,6 +1,7 @@
 """Layer 1: the pipeline's shell scripts."""
 
 import json
+import shutil
 
 import pytest
 
@@ -240,3 +241,24 @@ def test_verifier_runs_on_a_set_model():
     agent = (REPO / ".claude/agents/verifier.md").read_text()
     front = agent.split("---")[1]
     assert "\nmodel: sonnet\n" in front
+
+
+# --- commit guards: .gitignore baseline --------------------------------------------------------
+
+
+def test_bootstrap_adds_missing_gitignore_lines_once(tmp_path):
+    repo = init_repo(tmp_path / "r")
+    (repo / "templates").mkdir()
+    shutil.copy(REPO / "templates" / "gitignore", repo / "templates" / "gitignore")
+    (repo / ".gitignore").write_text("node_modules/\nmy-own-thing/\n")
+    first = run(["bash", str(REPO / "scripts/bootstrap-github.sh"), "--gitignore-only"], cwd=repo)
+    assert first.returncode == 0, first.stderr
+    text = (repo / ".gitignore").read_text()
+    assert text.startswith("node_modules/\nmy-own-thing/\n")
+    assert text.count("node_modules/") == 1
+    for line in [".venv/", "__pycache__/", ".env", "!.env.example", "dist/"]:
+        assert f"\n{line}\n" in text
+    second = run(["bash", str(REPO / "scripts/bootstrap-github.sh"), "--gitignore-only"], cwd=repo)
+    assert second.returncode == 0
+    assert (repo / ".gitignore").read_text() == text
+    assert "has every baseline line" in second.stdout

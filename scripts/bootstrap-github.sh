@@ -2,6 +2,7 @@
 # Configure a GitHub repo for this pipeline. Safe to re-run: each step checks, then fixes.
 #
 # Usage: scripts/bootstrap-github.sh [--repo owner/name] [--mode solo|team] [--dry-run] [--skip-token]
+#        scripts/bootstrap-github.sh --gitignore-only   (step 7 alone; needs no GitHub access)
 #
 # Every setting below was learned the hard way when this repo was first set up:
 #   1. executable bits    NTFS/Windows checkouts commit scripts as 100644; hooks then fail silently
@@ -15,12 +16,14 @@
 #                               the production-gate hook stops the agent from merging or approving.
 #        --mode team            1 code-owner approval: several people, or Claude under its own bot
 #                               account, so authors and approvers are different GitHub users.
+#   7. .gitignore         adds any line of templates/gitignore that's missing; a stray `git add -A`
+#                         once committed ~82,000 node_modules and build files
 # Steps it can only check or print (they need a browser or a human):
-#   7. Claude GitHub app  https://github.com/apps/claude, needed by claude-code-action
-#   8. workspace trust    run `claude` here once; until then .claude/settings.json allow rules are ignored
+#   8. Claude GitHub app  https://github.com/apps/claude, needed by claude-code-action
+#   9. workspace trust    run `claude` here once; until then .claude/settings.json allow rules are ignored
 set -euo pipefail
 
-repo="" mode=solo dry=0 skip_token=0 print_protection=0
+repo="" mode=solo dry=0 skip_token=0 print_protection=0 gitignore_only=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --repo) repo="$2"; shift 2 ;;
@@ -28,6 +31,7 @@ while [[ $# -gt 0 ]]; do
     --dry-run) dry=1; shift ;;
     --skip-token) skip_token=1; shift ;;
     --print-protection) print_protection=1; shift ;;  # print the step 6 JSON and exit (tests)
+    --gitignore-only) gitignore_only=1; shift ;;       # run only step 7, no GitHub calls
     -h|--help) sed -n '2,23p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
@@ -52,16 +56,40 @@ protection_json() {
 }
 if ((print_protection)); then protection_json; exit 0; fi
 
+ok()   { printf '  \033[32m✓\033[0m %s\n' "$*"; }
+todo() { printf '  \033[33m!\033[0m %s\n' "$*"; }
+step() { printf '\n\033[1m%s\033[0m\n' "$*"; }
+run()  { if ((dry)); then printf '    would run: %s\n' "$*"; else "$@"; fi; }
+
+# Step 7: append every line of templates/gitignore that .gitignore lacks. Idempotent.
+merge_gitignore() {
+  local line missing=()
+  if [[ ! -f templates/gitignore ]]; then
+    todo "templates/gitignore not found; run make sync-sdlc first"
+    return 0
+  fi
+  while IFS= read -r line; do
+    [[ -z "$line" || "$line" == \#* ]] && continue
+    [[ -f .gitignore ]] && grep -qxF -- "$line" .gitignore && continue
+    missing+=("$line")
+  done < templates/gitignore
+  if ((${#missing[@]} == 0)); then ok ".gitignore has every baseline line"
+  elif ((dry)); then echo "    would add to .gitignore: ${missing[*]}"
+  else
+    { if [[ -s .gitignore ]]; then echo; fi
+      echo "# claude-sdlc baseline (templates/gitignore)"
+      printf '%s\n' "${missing[@]}"; } >> .gitignore
+    todo "added ${#missing[@]} line(s) to .gitignore; commit it in a PR"
+  fi
+}
+
 cd "$(git rev-parse --show-toplevel)"
+if ((gitignore_only)); then merge_gitignore; exit 0; fi
 for tool in gh git jq; do command -v "$tool" >/dev/null || { echo "missing: $tool" >&2; exit 1; }; done
 gh auth status >/dev/null 2>&1 || { echo "run: gh auth login" >&2; exit 1; }
 repo="${repo:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
 owner="${repo%%/*}"
 
-ok()   { printf '  \033[32m✓\033[0m %s\n' "$*"; }
-todo() { printf '  \033[33m!\033[0m %s\n' "$*"; }
-step() { printf '\n\033[1m%s\033[0m\n' "$*"; }
-run()  { if ((dry)); then printf '    would run: %s\n' "$*"; else "$@"; fi; }
 
 echo "Configuring $repo$( ((dry)) && echo ' (dry run)')"
 
@@ -158,10 +186,13 @@ else
   todo "could not protect main: $(head -c 200 /tmp/bootstrap-err). Private repos on a free plan need GitHub Pro."
 fi
 
-step "7. Claude GitHub app (manual)"
+step "7. .gitignore baseline"
+merge_gitignore
+
+step "8. Claude GitHub app (manual)"
 todo "install it on $repo: https://github.com/apps/claude → Configure → Only select repositories"
 
-step "8. Claude Code workspace trust (manual)"
+step "9. Claude Code workspace trust (manual)"
 todo "run 'claude' in this folder once and accept the trust prompt"
 
 echo
