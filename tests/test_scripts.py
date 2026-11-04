@@ -1,6 +1,7 @@
 """Layer 1: the pipeline's shell scripts."""
 
 import json
+import re
 
 import pytest
 
@@ -240,3 +241,26 @@ def test_verifier_runs_on_a_set_model():
     agent = (REPO / ".claude/agents/verifier.md").read_text()
     front = agent.split("---")[1]
     assert "\nmodel: sonnet\n" in front
+
+
+# --- review skills -----------------------------------------------------------------------
+
+REVIEW_SKILLS = [".claude/skills/po-review/SKILL.md", ".claude/skills/review-findings/SKILL.md"]
+
+
+@pytest.mark.parametrize("path", REVIEW_SKILLS)
+def test_review_skills_sign_replies_and_avoid_graphql_pr_commands(path):
+    # Replies go out under the person's account; `gh pr edit`/`gh pr view` can fail in orgs
+    # hit by the Projects (classic) GraphQL deprecation.
+    skill = (REPO / path).read_text()
+    assert "(posted from Claude Code)" in skill
+    commands = re.findall(r"^\s*(gh pr \w+|git add -A|git add \.)", skill, re.MULTILINE)
+    commands += re.findall(r"`(gh pr (?:edit|view|checkout) [^`]*)`", skill)
+    assert commands == []
+
+
+def test_review_findings_resolves_threads_and_checks_for_bot_commits():
+    skill = (REPO / ".claude/skills/review-findings/SKILL.md").read_text()
+    assert "resolveReviewThread" in skill
+    assert "If GraphQL fails" in skill
+    assert "HEAD..origin/<branch>" in skill

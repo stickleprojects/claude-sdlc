@@ -40,6 +40,7 @@ def test_sync_installs_framework_owned_files(consumer):
     for rel in [
         ".claude/hooks/production-gate.sh",
         ".claude/skills/intent/SKILL.md",
+        ".claude/skills/review-findings/SKILL.md",
         ".claude/settings.json",
         ".github/workflows/claude-review.yml",
         ".github/workflows/pr-title.yml",
