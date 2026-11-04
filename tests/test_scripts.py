@@ -586,3 +586,64 @@ def test_workflows_guard_against_agent_loops():
     assert "allowed_bots: ${{ vars.SDLC_AGENT_APP_SLUG }}" in review
     spec = (REPO / ".github/workflows/spec-from-intent.yml").read_text()
     assert "actions/create-github-app-token" in spec
+
+
+# --- tests-locked: bug fixes lock their tests automatically -------------------------------------
+
+
+@pytest.fixture
+def bug_branch(tmp_path):
+    repo = init_repo(tmp_path / "r")
+    commit(
+        repo,
+        "bug: 0003-overlap",
+        {"changes/0003-overlap/bug.md": "# bug\n", "changes/0004-feat/intent.md": "# i\n"},
+    )
+    git(repo, "switch", "-q", "-c", "build/0003-overlap")
+    return repo
+
+
+def locked(repo, path="", env=None):
+    args = ["bash", str(REPO / "scripts/tests-locked.sh")] + ([path] if path else [])
+    clean = {"SDLC_LOCK_TESTS": "", "SDLC_CHANGE": "", **(env or {})}
+    return run(args, cwd=repo, env=clean).returncode == 0
+
+
+def test_bug_tests_stay_editable_until_the_failing_test_is_committed(bug_branch):
+    assert not locked(bug_branch, "tests/test_overlap.py")
+    commit(bug_branch, "test(0003-overlap): failing test for overlap", {"tests/t.py": "x\n"})
+    assert locked(bug_branch, "tests/test_overlap.py")
+    assert locked(bug_branch, "app/src/__tests__/overlap.test.tsx")
+    assert locked(bug_branch, "app/e2e/screens.spec.ts")
+    assert not locked(bug_branch, "src/overlap.py"), "code stays editable"
+
+
+def test_features_are_not_locked_by_a_test_commit(bug_branch):
+    git(bug_branch, "switch", "-q", "-c", "build/0004-feat")
+    commit(bug_branch, "test(0004-feat): add tests", {"tests/t.py": "x\n"})
+    assert not locked(bug_branch, "tests/t.py")
+
+
+def test_explicit_setting_wins(bug_branch):
+    assert locked(bug_branch, "tests/t.py", {"SDLC_LOCK_TESTS": "1"})
+    commit(bug_branch, "test(0003-overlap): failing test", {"tests/t.py": "x\n"})
+    assert not locked(bug_branch, "tests/t.py", {"SDLC_LOCK_TESTS": "0"})
+
+
+def test_change_can_be_named_explicitly(bug_branch):
+    git(bug_branch, "switch", "-q", "-c", "wip")
+    commit(bug_branch, "test(0003-overlap): failing test", {"tests/t.py": "x\n"})
+    assert not locked(bug_branch, "tests/t.py")
+    assert locked(bug_branch, "tests/t.py", {"SDLC_CHANGE": "0003-overlap"})
+
+
+def test_agent_session_locks_tests_for_a_bug_fix(bug_branch):
+    commit(bug_branch, "test(0003-overlap): failing test", {"tests/t.py": "x\n"})
+    out = run(
+        ["bash", str(REPO / "scripts/agent-session.sh")],
+        cwd=bug_branch,
+        env={"SDLC_CLAUDE": "env", "SDLC_LOCK_TESTS": "", "XDG_CONFIG_HOME": str(bug_branch)},
+    )
+    assert out.returncode == 0, out.stderr
+    assert "SDLC_LOCK_TESTS=1" in out.stdout
+    assert "tests locked" in out.stderr

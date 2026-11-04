@@ -50,6 +50,7 @@ def test_sync_installs_framework_owned_files(consumer):
         "scripts/sync-sdlc.sh",
         "scripts/spec-pr.sh",
         "scripts/agent-identity.sh",
+        "scripts/tests-locked.sh",
         ".claude/personas.conf",
     ]:
         assert (consumer / rel).exists(), rel

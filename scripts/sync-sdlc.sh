@@ -35,6 +35,7 @@ main() {
     "scripts/spec-pr.sh:scripts/spec-pr.sh"
     "scripts/agent-identity.sh:scripts/agent-identity.sh"
     "scripts/agent-session.sh:scripts/agent-session.sh"
+    "scripts/tests-locked.sh:scripts/tests-locked.sh"
     "scripts/sync-sdlc.sh:scripts/sync-sdlc.sh"
     "templates:templates"
     "prompts:prompts"
