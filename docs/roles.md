@@ -141,7 +141,7 @@ To regenerate a spec by hand, run `claude`, then `/spec changes/NNNN-<name>`.
 1. Read the Claude review summary and its inline findings. Every *Important* finding is either fixed or dismissed with a reason. If the PR changed since the review, add the `review` label to review it again.
    - **A PR that changes `.github/workflows/claude-*.yml` gets no AI review**, though its check is green. A comment on the PR says so. Review those by hand, with extra care: they control what the agent may do.
 2. Check that the diff matches `spec.md` and `plan.md` for its change.
-3. **Solo mode:** merge it. The required checks must be green, and nobody can bypass them. **Team mode:** approve it, then merge. Branch protection requires your approval, and Claude's review never counts as one.
+3. **Solo mode:** merge it. The required checks must be green, and nobody can bypass them. If GitHub says the branch is out of date with `main`, click *Update branch* and wait for the checks again: branch protection requires PRs to be up to date, so you see when one is behind. The branch is deleted when it merges. **Team mode:** approve it, then merge. Branch protection requires your approval, and Claude's review never counts as one.
 
 **Stays with you:** The merge decision. The agent opens and updates PRs but can't approve or merge them: the production-gate hook blocks it.
 

@@ -2,7 +2,7 @@
 # Configure a GitHub repo for this pipeline. Safe to re-run: each step checks, then fixes.
 #
 # Usage: scripts/bootstrap-github.sh [--repo owner/name] [--mode solo|team] [--dry-run] [--skip-token]
-#        scripts/bootstrap-github.sh --gitignore-only   (step 7 alone; needs no GitHub access)
+#        scripts/bootstrap-github.sh --gitignore-only   (step 8 alone; needs no GitHub access)
 #
 # Every setting below was learned the hard way when this repo was first set up:
 #   1. executable bits    NTFS/Windows checkouts commit scripts as 100644; hooks then fail silently
@@ -10,17 +10,20 @@
 #   3. CODEOWNERS         names the repo owner; team mode requires a code owner's review
 #   4. Claude token       CLAUDE_CODE_OAUTH_TOKEN secret (from `claude setup-token`; Pro/Max plan)
 #   5. Actions → PRs      Spec from intent opens PRs; GitHub blocks that by default
-#   6. branch protection  PR + `check` and `pr-title` statuses, no admin bypass, and:
+#   6. branch protection  PR + `check` and `pr-title` statuses, no admin bypass, branches must be
+#                         up to date with main before merging (otherwise nobody is told that an
+#                         open PR is behind main), and:
 #        --mode solo (default)  0 approvals: one person, with Claude using their gh login. GitHub
 #                               can't tell them apart, so the human gate is the merge click, and
 #                               the production-gate hook stops the agent from merging or approving.
 #        --mode team            1 code-owner approval: several people, or Claude under its own bot
 #                               account, so authors and approvers are different GitHub users.
-#   7. .gitignore         adds any line of templates/gitignore that's missing; a stray `git add -A`
+#   7. delete branches    delete_branch_on_merge, so merged PR branches don't pile up
+#   8. .gitignore         adds any line of templates/gitignore that's missing; a stray `git add -A`
 #                         once committed ~82,000 node_modules and build files
 # Steps it can only check or print (they need a browser or a human):
-#   8. Claude GitHub app  https://github.com/apps/claude, needed by claude-code-action
-#   9. workspace trust    run `claude` here once; until then .claude/settings.json allow rules are ignored
+#   9. Claude GitHub app  https://github.com/apps/claude, needed by claude-code-action
+#  10. workspace trust    run `claude` here once; until then .claude/settings.json allow rules are ignored
 set -euo pipefail
 
 repo="" mode=solo dry=0 skip_token=0 print_protection=0 gitignore_only=0
@@ -31,8 +34,8 @@ while [[ $# -gt 0 ]]; do
     --dry-run) dry=1; shift ;;
     --skip-token) skip_token=1; shift ;;
     --print-protection) print_protection=1; shift ;;  # print the step 6 JSON and exit (tests)
-    --gitignore-only) gitignore_only=1; shift ;;       # run only step 7, no GitHub calls
-    -h|--help) sed -n '2,23p' "$0"; exit 0 ;;
+    --gitignore-only) gitignore_only=1; shift ;;       # run only step 8, no GitHub calls
+    -h|--help) sed -n '2,26p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -42,7 +45,7 @@ protection_json() {
   local approvals=0 code_owners=false
   [[ "$mode" == team ]] && approvals=1 code_owners=true
   jq -n --argjson n "$approvals" --argjson co "$code_owners" '{
-    required_status_checks: { strict: false, contexts: ["check", "pr-title"] },
+    required_status_checks: { strict: true, contexts: ["check", "pr-title"] },
     enforce_admins: true,
     required_pull_request_reviews: {
       require_code_owner_reviews: $co,
@@ -61,7 +64,7 @@ todo() { printf '  \033[33m!\033[0m %s\n' "$*"; }
 step() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 run()  { if ((dry)); then printf '    would run: %s\n' "$*"; else "$@"; fi; }
 
-# Step 7: append every line of templates/gitignore that .gitignore lacks. Idempotent.
+# Step 8: append every line of templates/gitignore that .gitignore lacks. Idempotent.
 merge_gitignore() {
   local line missing=()
   if [[ ! -f templates/gitignore ]]; then
@@ -165,10 +168,11 @@ else
 fi
 
 step "6. Branch protection on main ($mode mode)"
-summary="PR + 'check' and 'pr-title' statuses, no admin bypass"
+summary="PR + 'check' and 'pr-title' statuses, up to date with main, no admin bypass"
 [[ "$mode" == team ]] && summary+=", 1 code-owner approval" || summary+=", 0 approvals (you merge; the hook stops the agent)"
 # Compare the settings that matter, normalised, with what this mode wants.
 shape='{checks: (.required_status_checks.contexts | sort),
+        strict: .required_status_checks.strict,
         admins: (if (.enforce_admins | type) == "object" then .enforce_admins.enabled else .enforce_admins end),
         approvals: .required_pull_request_reviews.required_approving_review_count,
         owners: .required_pull_request_reviews.require_code_owner_reviews}'
@@ -186,13 +190,21 @@ else
   todo "could not protect main: $(head -c 200 /tmp/bootstrap-err). Private repos on a free plan need GitHub Pro."
 fi
 
-step "7. .gitignore baseline"
+step "7. Delete PR branches after merge"
+if [[ "$(gh api "repos/$repo" -q .delete_branch_on_merge)" == true ]]; then
+  ok "already on"
+else
+  run gh api -X PATCH "repos/$repo" -F delete_branch_on_merge=true --silent
+  ((dry)) || ok "turned on"
+fi
+
+step "8. .gitignore baseline"
 merge_gitignore
 
-step "8. Claude GitHub app (manual)"
+step "9. Claude GitHub app (manual)"
 todo "install it on $repo: https://github.com/apps/claude → Configure → Only select repositories"
 
-step "9. Claude Code workspace trust (manual)"
+step "10. Claude Code workspace trust (manual)"
 todo "run 'claude' in this folder once and accept the trust prompt"
 
 echo

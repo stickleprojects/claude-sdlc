@@ -221,6 +221,7 @@ def test_bootstrap_protection_modes(mode, approvals, code_owners):
     protection = json.loads(result.stdout)
     assert protection["enforce_admins"] is True, "nobody bypasses required checks"
     assert sorted(protection["required_status_checks"]["contexts"]) == ["check", "pr-title"]
+    assert protection["required_status_checks"]["strict"] is True, "PRs must be up to date"
     reviews = protection["required_pull_request_reviews"]
     assert reviews["required_approving_review_count"] == approvals
     assert reviews["require_code_owner_reviews"] is code_owners
@@ -262,3 +263,18 @@ def test_bootstrap_adds_missing_gitignore_lines_once(tmp_path):
     assert second.returncode == 0
     assert (repo / ".gitignore").read_text() == text
     assert "has every baseline line" in second.stdout
+
+
+def test_bootstrap_turns_on_branch_deletion_idempotently():
+    script = (REPO / "scripts/bootstrap-github.sh").read_text()
+    assert '-q .delete_branch_on_merge)" == true ]]' in script
+    assert "-F delete_branch_on_merge=true" in script
+    # The protection comparison includes `strict`, so an existing rule without it is updated.
+    assert "strict: .required_status_checks.strict" in script
+
+
+def test_bootstrap_help_lists_every_step():
+    help_text = run(["scripts/bootstrap-github.sh", "--help"]).stdout
+    for n in range(1, 11):
+        assert f"{n:>2}. " in help_text or f"#   {n}. " in help_text, n
+    assert "set -euo" not in help_text
