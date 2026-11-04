@@ -57,7 +57,9 @@ Claude recognises it as a bug and asks only what happens, what should happen, ho
 
 ## Product owner
 
-**When:** An `intent:`, `bug:` or `spec:` PR asks for your review. GitHub notifies you when it's opened. The spec PR is opened automatically when your intent merges.
+**When:** An `intent:`, `bug:` or `spec:` PR asks for your review. GitHub notifies you when it's opened. The spec PR is opened automatically when your intent merges. Each change gets its own spec PR, titled `spec(NNNN-<name>): …`.
+
+> **Spec PRs need one click before their checks run.** They're opened by `github-actions[bot]`, and GitHub holds the checks and the review on PRs from that account until someone approves them. If the PR shows *Approve and run workflows*, click it.
 
 **Where you work:** you can use two tools, which do different jobs.
 

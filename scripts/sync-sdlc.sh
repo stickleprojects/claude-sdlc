@@ -31,6 +31,7 @@ main() {
     ".github/workflows:.github/workflows"
     "scripts/agent.sh:scripts/agent.sh"
     "scripts/bootstrap-github.sh:scripts/bootstrap-github.sh"
+    "scripts/spec-pr.sh:scripts/spec-pr.sh"
     "scripts/sync-sdlc.sh:scripts/sync-sdlc.sh"
     "templates:templates"
     "prompts:prompts"
