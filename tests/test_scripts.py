@@ -647,3 +647,19 @@ def test_agent_session_locks_tests_for_a_bug_fix(bug_branch):
     assert out.returncode == 0, out.stderr
     assert "SDLC_LOCK_TESTS=1" in out.stdout
     assert "tests locked" in out.stderr
+
+
+def test_every_session_loads_the_agent_identity():
+    settings = json.loads((REPO / ".claude/settings.json").read_text())
+    commands = [h["command"] for e in settings["hooks"]["SessionStart"] for h in e["hooks"]]
+    assert '"$CLAUDE_PROJECT_DIR"/scripts/agent-session.sh --hook' in commands
+
+
+def test_session_hook_is_a_no_op_without_setup(tmp_path):
+    env_file = tmp_path / "env"
+    out = run(
+        ["bash", str(REPO / "scripts/agent-session.sh"), "--hook"],
+        env={"CLAUDE_ENV_FILE": str(env_file), "XDG_CONFIG_HOME": str(tmp_path)},
+    )
+    assert out.returncode == 0
+    assert not env_file.exists() or env_file.read_text() == ""
