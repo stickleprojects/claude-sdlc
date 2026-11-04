@@ -302,7 +302,8 @@ def write_personas_override(registry: Path, identities: list[Identity], per_pers
         if parts[:2] == ["identity", "agent"]:
             for i in identities:
                 lines.append(
-                    f"identity {i.name}  github-app  ~/.config/sdlc/{REPO_KEY}/{i.name}.env + keyring"
+                    f"identity {i.name}  github-app"
+                    f"  ~/.config/sdlc/{REPO_KEY}/{i.name}.env + keyring"
                 )
     override.parent.mkdir(parents=True, exist_ok=True)
     override.write_text(
