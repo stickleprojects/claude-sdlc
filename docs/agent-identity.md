@@ -48,13 +48,7 @@ scripts/agent-session.sh --persona dev
 
 Everything after the persona goes to `claude`. In that session, `git` commits as `<app>[bot]` and pushes with the App's token; your SSH remote is rewritten to HTTPS for the session only. `gh` uses a fresh App token on each call. Nothing changes in your git config.
 
-**To make every session use it without the wrapper,** add a SessionStart hook to `.claude/settings.json`. Settings are protected from agent edits, so a person adds it:
-
-```json
-"SessionStart": [
-  { "hooks": [ { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/scripts/agent-session.sh --hook" } ] }
-]
-```
+**Plain `claude` sessions use it too.** `.claude/settings.json` has a SessionStart hook (`scripts/agent-session.sh --hook`) that loads the same environment into every session's Bash commands. The wrapper is only needed to pick a persona (`--persona`) or to start a bug fix with its tests locked.
 
 Without the App set up, both routes do nothing, and the session acts as you, as before.
 
