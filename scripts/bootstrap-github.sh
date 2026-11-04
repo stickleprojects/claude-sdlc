@@ -19,7 +19,7 @@
 #        --mode team            1 code-owner approval: several people, or Claude under its own bot
 #                               account, so authors and approvers are different GitHub users.
 #   7. delete branches    delete_branch_on_merge, so merged PR branches don't pile up
-#   8. agent identity     if scripts/agent-identity.sh is set up: checks the App is installed here, and
+#   8. agent identity     if scripts/agent-identity.sh create was run: checks each App is installed, and
 #                         sets the SDLC_AGENT_APP_ID/_SLUG variables and SDLC_AGENT_APP_KEY secret
 #                         the workflows use. With an agent identity, use --mode team.
 #   9. .gitignore         adds any line of templates/gitignore that's missing; a stray `git add -A`
@@ -201,16 +201,29 @@ else
   ((dry)) || ok "turned on"
 fi
 
-step "8. Claude agent identity (GitHub App)"
-if ! agent="$(scripts/agent-identity.sh show 2>/dev/null)"; then
-  todo "not set up on this machine: Claude sessions act as you. See docs/agent-identity.md"
+step "8. Claude agent identity (GitHub Apps)"
+configured=0
+for identity in $(scripts/agent-identity.sh identities 2>/dev/null); do
+  if ! agent="$(SDLC_AGENT_IDENTITY_NAME="$identity" scripts/agent-identity.sh show 2>/dev/null)"; then
+    todo "identity $identity isn't set up on this machine; run: scripts/agent-identity.sh create"
+    continue
+  fi
+  configured=1
+  read -r _ app_slug <<<"$agent"
+  if SDLC_AGENT_IDENTITY_NAME="$identity" SDLC_AGENT_REPO="$repo" scripts/agent-identity.sh token >/dev/null 2>/tmp/bootstrap-err; then
+    ok "$identity: $app_slug[bot] can act on $repo"
+  else
+    todo "$identity: install $app_slug on $repo: https://github.com/apps/$app_slug/installations/new"
+  fi
+done
+# The workflows act as the identity the spec-ci persona maps to.
+ci="$(scripts/agent-identity.sh identity-of spec-ci 2>/dev/null || true)"
+if ((configured == 0)); then
+  todo "no App set up: Claude sessions act as you. Create one with: scripts/agent-identity.sh create [--per-persona]"
+elif ! agent="$(SDLC_AGENT_IDENTITY_NAME="$ci" scripts/agent-identity.sh show 2>/dev/null)"; then
+  todo "the CI identity ($ci, used by spec-ci) isn't set up; the spec workflow will use GITHUB_TOKEN"
 else
   read -r app_id app_slug <<<"$agent"
-  if SDLC_AGENT_REPO="$repo" scripts/agent-identity.sh token >/dev/null 2>/tmp/bootstrap-err; then
-    ok "$app_slug[bot] can act on $repo"
-  else
-    todo "install the App on $repo: https://github.com/apps/$app_slug/installations/new ($(head -c 150 /tmp/bootstrap-err))"
-  fi
   vars=$(gh variable list -R "$repo" --json name,value -q '.[] | "\(.name)=\(.value)"' 2>/dev/null || true)
   for pair in "SDLC_AGENT_APP_ID=$app_id" "SDLC_AGENT_APP_SLUG=$app_slug"; do
     if grep -qxF "$pair" <<<"$vars"; then ok "variable ${pair%%=*}"
@@ -218,8 +231,8 @@ else
     fi
   done
   if gh secret list -R "$repo" --json name -q '.[].name' | grep -qx SDLC_AGENT_APP_KEY; then ok "secret SDLC_AGENT_APP_KEY"
-  elif ((dry)); then echo "    would store the App's private key as secret SDLC_AGENT_APP_KEY"
-  else scripts/agent-identity.sh key | gh secret set SDLC_AGENT_APP_KEY -R "$repo"; ok "stored secret SDLC_AGENT_APP_KEY"
+  elif ((dry)); then echo "    would store $ci's private key as secret SDLC_AGENT_APP_KEY"
+  else SDLC_AGENT_IDENTITY_NAME="$ci" scripts/agent-identity.sh key | gh secret set SDLC_AGENT_APP_KEY -R "$repo"; ok "stored secret SDLC_AGENT_APP_KEY ($ci)"
   fi
   [[ "$mode" == team ]] || todo "Claude has its own identity: re-run with --mode team so GitHub requires your approval on its PRs"
 fi

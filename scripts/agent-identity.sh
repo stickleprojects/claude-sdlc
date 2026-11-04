@@ -5,7 +5,14 @@
 # Which persona uses which identity is set in .claude/personas.conf. The default identity is
 # `agent`; `--persona <name>` picks the identity that persona is mapped to.
 #
-# Usage: scripts/agent-identity.sh setup [--identity <name>] --app-id <id> --key <file.pem>
+# Usage: scripts/agent-identity.sh create [--per-persona] [--name <app name>] [--org <org>]
+#          Create the App(s) in your browser with GitHub's manifest flow, and store them as
+#          `setup` would: one App for every persona (default), or one per persona.
+#        scripts/agent-identity.sh identities
+#          List the github-app identities the personas use, one per line.
+#        scripts/agent-identity.sh identity-of <persona>
+#          Print the identity a persona (local or CI) acts as.
+#        scripts/agent-identity.sh setup [--identity <name>] --app-id <id> --key <file.pem>
 #          One-off per machine. Stores the App's private key in the keyring (secret-tool,
 #          i.e. Seahorse on GNOME) and its id, slug and bot user in ~/.config/sdlc/<name>.env.
 #        scripts/agent-identity.sh check
@@ -24,7 +31,9 @@
 #          Prints nothing when the App isn't configured, so sessions fall back to the person.
 #
 # Env: SDLC_AGENT_CONFIG  config file (default ~/.config/sdlc/<identity>.env)
-#      SDLC_PERSONAS  persona registry (default .claude/personas.conf in this repo)
+#      SDLC_PERSONAS  persona registry (default ~/.config/sdlc/personas.conf if it exists,
+#                     which `create --per-persona` writes, else .claude/personas.conf here)
+#      SDLC_AGENT_KEY_STORE_DIR  keep private keys as <identity>.pem files here, not the keyring
 #      SDLC_AGENT_KEY_FILE  read the private key from this file instead of the keyring
 #      SDLC_AGENT_REPO  owner/name (default: from `git remote get-url origin`)
 #      SDLC_GITHUB_API  API base URL (default https://api.github.com; tests point it elsewhere)
@@ -41,6 +50,8 @@ die() { echo "agent-identity: $*" >&2; exit 1; }
 
 personas_file() {
   if [[ -n "${SDLC_PERSONAS:-}" ]]; then echo "$SDLC_PERSONAS"; return; fi
+  local user="${XDG_CONFIG_HOME:-$HOME/.config}/sdlc/personas.conf"
+  if [[ -f "$user" ]]; then echo "$user"; return; fi
   local top
   top="$(git rev-parse --show-toplevel 2>/dev/null || dirname "$(dirname "$self")")"
   echo "$top/.claude/personas.conf"
@@ -54,7 +65,8 @@ use_identity() {
   keyring_attrs=(service claude-sdlc account "github-app-private-key:$identity")
 }
 
-# The identity a persona acts as, from the registry. Only local github-app personas qualify.
+# The identity a persona acts as, from the registry. Only github-app identities qualify, and
+# only local personas unless $2 is "any" (bootstrap asks for the CI persona spec-ci).
 identity_for() {
   local file line
   file="$(personas_file)"
@@ -62,7 +74,7 @@ identity_for() {
   line="$(awk -v p="$1" '$1 == "persona" && $2 == p {print $3, $4}' "$file")"
   [[ -n "$line" ]] || die "unknown persona '$1'; the personas are listed in $file"
   read -r id where <<<"$line"
-  [[ "$where" == local ]] || die "persona '$1' runs in $where, not in a local session"
+  [[ "$where" == local || "${2:-}" == any ]] || die "persona '$1' runs in $where, not in a local session"
   awk -v i="$id" '$1 == "identity" && $2 == i {print $3}' "$file" | grep -qx github-app \
     || die "persona '$1' maps to identity '$id', which isn't a github-app identity in $file"
   echo "$id"
@@ -79,6 +91,7 @@ load_config() {
 
 private_key() {
   if [[ -n "${SDLC_AGENT_KEY_FILE:-}" ]]; then cat "$SDLC_AGENT_KEY_FILE"; return; fi
+  if [[ -n "${SDLC_AGENT_KEY_STORE_DIR:-}" ]]; then cat "$SDLC_AGENT_KEY_STORE_DIR/$identity.pem"; return; fi
   command -v secret-tool >/dev/null || die "secret-tool not found; install libsecret-tools or set SDLC_AGENT_KEY_FILE"
   secret-tool lookup "${keyring_attrs[@]}" || die "no private key in the keyring; run: $0 setup"
 }
@@ -237,11 +250,20 @@ check() {
 
 case "${1:-}" in
   setup) shift; setup "$@" ;;
+  create)  # always from the repo's registry, so re-running doesn't stack on an old override
+    shift
+    top="$(git rev-parse --show-toplevel 2>/dev/null || dirname "$(dirname "$self")")"
+    exec python3 "$(dirname "$self")/create-agent-apps.py" --registry "$top/.claude/personas.conf" "$@" ;;
+  identity-of) identity_for "${2:?persona}" any ;;
+  identities)
+    file="$(personas_file)"
+    awk '$1 == "identity" && $3 == "github-app" {k[$2] = 1} $1 == "persona" {u[$3] = 1}
+         END {for (i in u) if (i in k) print i}' "$file" | sort ;;
   check) check ;;
   show) load_config || exit 1; echo "$SDLC_AGENT_APP_ID $SDLC_AGENT_APP_SLUG" ;;
   key) private_key ;;
   token) token ;;
   git-credential) shift; git_credential "$@" ;;
   env) shift; print_env "$@" ;;
-  *) sed -n '2,34p' "$0" >&2; exit 2 ;;
+  *) sed -n '2,42p' "$0" >&2; exit 2 ;;
 esac
