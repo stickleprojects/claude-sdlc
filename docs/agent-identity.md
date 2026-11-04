@@ -34,7 +34,7 @@ Each repo that uses the pipeline gets its own App(s), named after the repo: `job
 
    Then, for each App, your browser opens GitHub's *Create GitHub App* page with everything filled in (name, permissions, no webhook, private). Click **Create GitHub App**, then on the install page pick this repo and click **Install**. GitHub sends you back for the next App.
 
-   It stores each App's private key in your keyring and its id and name in `~/.config/sdlc/<owner>_<repo>/<identity>.env`. With more than one App it also writes `~/.config/sdlc/<owner>_<repo>/personas.conf`, which maps each persona to its App and overrides the repo's copy.
+   It stores each App's private key in your keyring, under the App's name, and its config (id, name, where the key is) in `~/.config/sdlc/<owner>_<repo>/<identity>.env`, unless you choose other places. With more than one App it also writes `~/.config/sdlc/<owner>_<repo>/personas.conf`, which maps each persona to its App and overrides the repo's copy.
 
    For scripts: `--name <prefix>`, `--per-persona` or `--groups "plan+intent+spec+po-review,build,dev"`, and `--yes`. Also `--org <org>` and `--no-browser`.
 
@@ -42,7 +42,9 @@ Each repo that uses the pipeline gets its own App(s), named after the repo: `job
 2. **Configure the repo:** `scripts/bootstrap-github.sh --mode team --skip-token`. Step 8 checks each App is installed, and gives the workflows the App that `spec-ci` uses (the `SDLC_AGENT_APP_ID`/`_SLUG` variables and the `SDLC_AGENT_APP_KEY` secret). Team mode makes GitHub require a code owner's (your) approval on every PR.
 3. **Check:** `scripts/agent-identity.sh check` should print `ok: a token for this repo was issued`.
 
-**Another repo:** run the same three steps there.
+**Another repo:** run the same three steps there. To use **the same App** there (or for every repo), reuse it when `create` offers it, or run `scripts/agent-identity.sh use <its config file>`, then install the App on the repo.
+
+**Nothing overwrites anything.** Keys are stored under the App's own name, which is unique on GitHub. A config records where its key is, so repos sharing an App share one key. `create`, `setup` and `use` never replace an existing config without asking (`--force` when scripted). Configs and keys can live anywhere (`--config`, `--config-dir`, `--keys-dir`, `--key-file`, `use <file>`); see [setup-agent-apps.md](setup-agent-apps.md#choosing-where-things-live).
 
 **By hand instead:** create the App under *Settings → Developer settings → GitHub Apps* with the permissions above, generate a private key, install it on the repo, and run `scripts/agent-identity.sh setup [--identity <name>] --app-id <id> --key <file.pem>` in that repo.
 

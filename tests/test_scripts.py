@@ -672,3 +672,35 @@ def test_session_hook_is_a_no_op_without_setup(tmp_path):
     )
     assert out.returncode == 0
     assert not env_file.exists() or env_file.read_text() == ""
+
+
+def test_repos_share_one_app_and_one_key_with_use(agent_env):
+    tmp, env = agent_env
+    shared = tmp / "shared" / "claude.env"
+    shared.parent.mkdir()
+    key = env["SDLC_AGENT_KEY_FILE"]
+    shared.write_text(
+        f"SDLC_AGENT_APP_ID=55\nSDLC_AGENT_APP_SLUG=one-claude\nSDLC_AGENT_KEY=file:{key}\n"
+    )
+    no_key_env = {k: v for k, v in env.items() if k != "SDLC_AGENT_KEY_FILE"} | {
+        "SDLC_AGENT_KEY_FILE": ""
+    }
+    for repo in ["o/jobhunt-app", "o/sandbox"]:
+        e = {**no_key_env, "SDLC_AGENT_REPO": repo}
+        linked = identity(e, "use", str(shared))
+        assert linked.returncode == 0, linked.stderr
+        assert identity(e, "show").stdout.strip() == "55 one-claude"
+        assert identity(e, "token").stdout.strip() == "ghs_test", "key read from the shared file"
+    assert shared.read_text().count("SDLC_AGENT_APP_ID=55") == 1, "the shared config is untouched"
+
+
+def test_use_and_setup_refuse_to_replace_an_existing_config(agent_env):
+    tmp, env = agent_env
+    other = tmp / "other.env"
+    other.write_text("SDLC_AGENT_APP_ID=9\nSDLC_AGENT_APP_SLUG=other\n")
+    refused = identity(env, "use", str(other))
+    assert refused.returncode == 1 and "already exists" in refused.stderr
+    assert "stickle-claude" in (tmp / "config/sdlc/o_r/agent.env").read_text()
+    assert identity(env, "use", str(other), "--force").returncode == 0
+    setup = identity(env, "setup", "--app-id", "1", "--key", env["SDLC_AGENT_KEY_FILE"])
+    assert setup.returncode == 1 and "already exists" in setup.stderr

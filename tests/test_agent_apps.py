@@ -23,6 +23,7 @@ def apps(monkeypatch, tmp_path):
     monkeypatch.setitem(sys.modules, "apps", module)  # dataclasses look the module up
     spec.loader.exec_module(module)
     module.REPO_KEY = "o_r"
+    module.KEYS_DIR = tmp_path / "keys"
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     monkeypatch.setenv("SDLC_AGENT_KEY_STORE_DIR", str(tmp_path / "keys"))
     return module
@@ -107,8 +108,10 @@ def test_browser_flow_creates_installs_and_moves_to_the_next_app(apps, monkeypat
     config = (tmp_path / "config/sdlc/o_r/agent-intent.env").read_text()
     assert "SDLC_AGENT_APP_ID=11" in config and "SDLC_AGENT_APP_SLUG=s-claude-intent" in config
     assert "SDLC_AGENT_BOT_ID=900" in config
-    assert (tmp_path / "keys/o_r/agent-spec.pem").read_text() == "KEY-2"
-    assert oct((tmp_path / "keys/o_r/agent-spec.pem").stat().st_mode)[-3:] == "600"
+    # Keys are filed under the App's own name, so they can't replace another App's key.
+    assert (tmp_path / "keys/s-claude-spec.pem").read_text() == "KEY-2"
+    assert oct((tmp_path / "keys/s-claude-spec.pem").stat().st_mode)[-3:] == "600"
+    assert f"SDLC_AGENT_KEY=file:{tmp_path}/keys/s-claude-intent.pem" in config
 
 
 def test_per_persona_override_maps_each_persona_and_the_script_follows_it(apps, tmp_path):
@@ -240,3 +243,86 @@ def test_repo_key_matches_the_bash_side(apps, tmp_path):
     )
     out = run(["bash", str(REPO / "scripts/agent-identity.sh"), "show"], env=env)
     assert out.stdout.strip() == "1 jobhunt-app-claude"
+
+
+# --- reuse, locations and not overwriting ------------------------------------------------------
+
+
+def _app_config(path, slug="shared-claude", app_id=7):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        f"SDLC_AGENT_APP_ID={app_id}\nSDLC_AGENT_APP_SLUG={slug}\nSDLC_AGENT_KEY=file:/k/{slug}.pem\n"
+    )
+    return path
+
+
+def test_existing_apps_are_found_once_through_pointers(apps, tmp_path):
+    shared = _app_config(tmp_path / "anywhere/shared.env")
+    apps.write_pointer(tmp_path / "config/sdlc/o_a/agent.env", shared)
+    apps.write_pointer(tmp_path / "config/sdlc/o_b/agent.env", shared)
+    _app_config(tmp_path / "config/sdlc/o_c/agent-plan.env", "c-plan", 9)
+    found = apps.find_existing_apps([shared])
+    assert sorted(slug for slug, _ in found) == ["c-plan", "shared-claude"]
+
+
+def test_reusing_an_app_links_this_repo_without_creating_anything(apps, tmp_path):
+    shared = _app_config(tmp_path / "anywhere/shared.env")
+    reuse = apps.choose_existing(LOCAL, [("shared-claude", shared)], _answers("2"))
+    assert reuse.existing == shared and reuse.personas == LOCAL
+    assert apps.clashes([reuse]) == []
+    apps.link_existing(reuse)
+    pointer = tmp_path / "config/sdlc/o_r/agent.env"
+    assert pointer.read_text().endswith(f"SDLC_AGENT_USE={shared.resolve()}\n")
+    assert apps.clashes([reuse]) == [], "pointing at it already is not a clash"
+    text = apps.describe([reuse])
+    assert "Reusing (nothing created, no key changed)" in text and "About to create" not in text
+
+
+def test_each_new_app_can_instead_be_an_existing_one(apps, tmp_path):
+    shared = _app_config(tmp_path / "anywhere/shared.env")
+    identities = apps.build_identities(
+        [["plan", "intent", "spec", "po-review"], ["build"], ["dev"]], LOCAL, "jh"
+    )
+    apps.choose_sources(identities, [("shared-claude", shared)], _answers("2", "1", "1"))
+    assert [i.existing for i in identities] == [shared, None, None]
+    assert "About to create 2 GitHub Apps" in apps.describe(identities)
+
+
+def test_existing_configs_are_never_replaced_silently(apps, tmp_path):
+    [agent] = apps.plan(PERSONAS, False, "jh")
+    assert apps.clashes([agent]) == []
+    _app_config(tmp_path / "config/sdlc/o_r/agent.env", "old-app")
+    assert apps.clashes([agent]) == [tmp_path / "config/sdlc/o_r/agent.env"]
+    other = _app_config(tmp_path / "anywhere/other.env", "other")
+    reuse = apps.Identity("agent", LOCAL, "other", slug="other", existing=other)
+    assert apps.clashes([reuse]) == [tmp_path / "config/sdlc/o_r/agent.env"]
+
+
+def test_new_config_can_live_anywhere_with_a_pointer_left_behind(apps, tmp_path):
+    [agent] = apps.plan(PERSONAS, False, "jh")
+    agent.config_path = tmp_path / "my/place/jh-claude.env"
+    agent.slug, agent.app_id = "jh-claude", 5
+    apps.write_config(agent, 0, "keyring:github-app-private-key:jh-claude")
+    assert (
+        "SDLC_AGENT_KEY=keyring:github-app-private-key:jh-claude" in agent.config_path.read_text()
+    )
+    pointer = (tmp_path / "config/sdlc/o_r/agent.env").read_text()
+    assert f"SDLC_AGENT_USE={agent.config_path.resolve()}" in pointer
+
+
+def test_main_refuses_to_replace_without_force(apps, tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("SDLC_AGENT_REPO", "o/r")
+    _app_config(tmp_path / "config/sdlc/o_r/agent.env", "old-app")
+    assert apps.main(["--registry", str(PERSONAS), "--yes", "--no-browser"]) == 1
+    assert "Not replacing" in capsys.readouterr().out
+
+
+def test_main_use_shares_an_app_across_repos(apps, tmp_path, monkeypatch, capsys):
+    shared = _app_config(tmp_path / "anywhere/shared.env")
+    for repo in ["o/a", "o/b"]:
+        monkeypatch.setenv("SDLC_AGENT_REPO", repo)
+        assert apps.main(["--registry", str(PERSONAS), "--use", str(shared), "--yes"]) == 0
+    for key in ["o_a", "o_b"]:
+        text = (tmp_path / f"config/sdlc/{key}/agent.env").read_text()
+        assert f"SDLC_AGENT_USE={shared.resolve()}" in text
+    assert "installations/new" in capsys.readouterr().out

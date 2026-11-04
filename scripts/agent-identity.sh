@@ -13,7 +13,12 @@
 #          List the github-app identities the personas use, one per line.
 #        scripts/agent-identity.sh identity-of <persona>
 #          Print the identity a persona (local or CI) acts as.
+#        scripts/agent-identity.sh use <app config file> [--identity <name>] [--force]
+#          Share an App that already exists (made for another repo, or a shared config kept
+#          wherever you like): point this repo's identity at its config. Creates nothing and
+#          copies no key, so every repo using it shares the one App and the one key.
 #        scripts/agent-identity.sh setup [--identity <name>] --app-id <id> --key <file.pem>
+#                                         [--config <file>] [--key-file <path>] [--force]
 #          One-off per machine. Stores the App's private key in the keyring (secret-tool,
 #          i.e. Seahorse on GNOME) and its id, slug and bot user in
 #          ~/.config/sdlc/<owner>_<repo>/<name>.env.
@@ -35,7 +40,7 @@
 # Env: SDLC_AGENT_CONFIG  config file (default ~/.config/sdlc/<owner>_<repo>/<identity>.env)
 #      SDLC_PERSONAS  persona registry (default ~/.config/sdlc/<owner>_<repo>/personas.conf if it exists,
 #                     which `create --per-persona` writes, else .claude/personas.conf here)
-#      SDLC_AGENT_KEY_STORE_DIR  keep private keys as <identity>.pem files here, not the keyring
+#      SDLC_AGENT_KEY_STORE_DIR  create: keep new Apps' keys as <app>.pem files here (= --keys-dir)
 #      SDLC_AGENT_KEY_FILE  read the private key from this file instead of the keyring
 #      SDLC_AGENT_REPO  owner/name (default: from `git remote get-url origin`)
 #      SDLC_GITHUB_API  API base URL (default https://api.github.com; tests point it elsewhere)
@@ -72,11 +77,8 @@ repo_key() {
 use_identity() {
   identity="$1"
   [[ "$identity" =~ ^[a-z0-9-]+$ ]] || die "bad identity name: $identity"
-  local rk
-  rk="$(repo_key)"
-  config="${SDLC_AGENT_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/sdlc/$rk/$identity.env}"
-  keyring_attrs=(service claude-sdlc account "github-app-private-key:$rk:$identity")
-  key_store="${SDLC_AGENT_KEY_STORE_DIR:+$SDLC_AGENT_KEY_STORE_DIR/$rk/$identity.pem}"
+  default_config="${XDG_CONFIG_HOME:-$HOME/.config}/sdlc/$(repo_key)/$identity.env"
+  config="${SDLC_AGENT_CONFIG:-$default_config}"
 }
 
 # The identity a persona acts as, from the registry. Only github-app identities qualify, and
@@ -95,18 +97,55 @@ identity_for() {
 }
 
 
+# Load the identity's config. A config may be a pointer (SDLC_AGENT_USE=<file>) to one kept
+# anywhere, which is how several repos and personas share one App: they all point at one
+# file, which names one key. Sets $config to the file actually used.
 load_config() {
-  [[ -f "$config" ]] || return 1
-  # shellcheck disable=SC1090
-  source "$config"
+  local hops=0
+  unset SDLC_AGENT_APP_ID SDLC_AGENT_APP_SLUG SDLC_AGENT_BOT_ID SDLC_AGENT_KEY
+  while :; do
+    [[ -f "$config" ]] || return 1
+    unset SDLC_AGENT_USE
+    # shellcheck disable=SC1090
+    source "$config"
+    [[ -n "${SDLC_AGENT_USE:-}" ]] || break
+    ((++hops <= 5)) || die "too many SDLC_AGENT_USE pointers from $config"
+    config="$SDLC_AGENT_USE"
+  done
   [[ -n "${SDLC_AGENT_APP_ID:-}" && -n "${SDLC_AGENT_APP_SLUG:-}" ]]
 }
 
+# The App's private key, from where its config says (SDLC_AGENT_KEY=keyring:<account> or
+# file:<path>). Configs without it use the keyring entry named after the App.
 private_key() {
   if [[ -n "${SDLC_AGENT_KEY_FILE:-}" ]]; then cat "$SDLC_AGENT_KEY_FILE"; return; fi
-  if [[ -n "$key_store" ]]; then cat "$key_store"; return; fi
-  command -v secret-tool >/dev/null || die "secret-tool not found; install libsecret-tools or set SDLC_AGENT_KEY_FILE"
-  secret-tool lookup "${keyring_attrs[@]}" || die "no private key in the keyring; run: $0 setup"
+  local ref="${SDLC_AGENT_KEY:-keyring:github-app-private-key:${SDLC_AGENT_APP_SLUG:-}}"
+  case "$ref" in
+    file:*) cat "${ref#file:}" || die "can't read the key file ${ref#file:}" ;;
+    keyring:*)
+      command -v secret-tool >/dev/null || die "secret-tool not found; install libsecret-tools, or keep the key in a file (SDLC_AGENT_KEY=file:<path>)"
+      secret-tool lookup service claude-sdlc account "${ref#keyring:}" \
+        || die "no private key in the keyring under ${ref#keyring:}; run: $0 setup" ;;
+    *) die "SDLC_AGENT_KEY in $config must be keyring:<account> or file:<path>, got: $ref" ;;
+  esac
+}
+
+# Point this repo's identity at the config file $1 (unless it is that file).
+write_pointer() {
+  local target
+  target="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
+  [[ "$target" == "$default_config" ]] && return 0
+  mkdir -p "$(dirname "$default_config")"
+  {
+    echo "# Points this repo's identity at a config kept elsewhere (agent-identity.sh)."
+    echo "SDLC_AGENT_USE=$target"
+  } > "$default_config"
+}
+
+# Refuse to replace an existing config unless --force: it may name an App other repos use.
+guard_overwrite() {  # path force
+  [[ -e "$1" && "$2" != 1 ]] || return 0
+  die "$1 already exists (it may name an App other repos use). Use --force to replace it, or 'use' to point at it"
 }
 
 b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
@@ -220,36 +259,80 @@ EOF
 }
 
 setup() {
-  local app_id="" key=""
+  local app_id="" key="" target="" key_file="" force=0
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --app-id) app_id="$2"; shift 2 ;;
-      --identity) use_identity "$2"; shift 2 ;;
       --key) key="$2"; shift 2 ;;
+      --identity) use_identity "$2"; shift 2 ;;
+      --config) target="$2"; shift 2 ;;
+      --key-file) key_file="$2"; shift 2 ;;
+      --force) force=1; shift ;;
       *) die "unknown setup option: $1" ;;
     esac
   done
-  [[ -n "$app_id" && -f "$key" ]] || die "usage: $0 setup --app-id <id> --key <downloaded .pem>"
+  [[ -n "$app_id" && -f "$key" ]] || die "usage: $0 setup --app-id <id> --key <downloaded .pem> [--identity <name>] [--config <file>] [--key-file <path>] [--force]"
   openssl pkey -in "$key" -noout 2>/dev/null || die "$key isn't a private key"
-  if [[ -z "${SDLC_AGENT_KEY_FILE:-}" ]]; then
-    command -v secret-tool >/dev/null || die "secret-tool not found; install libsecret-tools"
-    secret-tool store --label "claude-sdlc GitHub App private key ($identity)" "${keyring_attrs[@]}" < "$key"
-    echo "stored the private key in the keyring (Seahorse: 'claude-sdlc GitHub App private key ($identity)')"
-  fi
+  target="${target:-$default_config}"
+  guard_overwrite "$target" "$force"
+  [[ "$target" == "$default_config" ]] || guard_overwrite "$default_config" "$force"
   SDLC_AGENT_APP_ID="$app_id"
-  local app slug bot_id
-  app="$(SDLC_AGENT_KEY_FILE="${SDLC_AGENT_KEY_FILE:-$key}" github GET /app)" || die "GitHub rejected the App id or key"
+  local app slug bot_id ref
+  app="$(SDLC_AGENT_KEY_FILE="$key" github GET /app)" || die "GitHub rejected the App id or key"
   slug="$(jq -r .slug <<<"$app")"
+  # The key is stored under the App's own (globally unique) name, so it can't replace
+  # another App's key. Storing the same App's key again just rewrites the same entry.
+  if [[ -n "$key_file" ]]; then
+    mkdir -p "$(dirname "$key_file")"
+    (umask 077; cp "$key" "$key_file")
+    ref="file:$(cd "$(dirname "$key_file")" && pwd)/$(basename "$key_file")"
+  else
+    command -v secret-tool >/dev/null || die "secret-tool not found; install libsecret-tools or pass --key-file <path>"
+    secret-tool store --label "claude-sdlc GitHub App private key ($slug)" \
+      service claude-sdlc account "github-app-private-key:$slug" < "$key"
+    ref="keyring:github-app-private-key:$slug"
+  fi
   bot_id="$(curl -fsS "$api/users/$slug%5Bbot%5D" | jq -r .id)" || bot_id=0
-  mkdir -p "$(dirname "$config")"
-  cat > "$config" <<EOF
-# claude-sdlc agent identity (scripts/agent-identity.sh). Not secret: the key is in the keyring.
-SDLC_AGENT_APP_ID=$app_id
-SDLC_AGENT_APP_SLUG=$slug
-SDLC_AGENT_BOT_ID=$bot_id
-EOF
-  echo "wrote $config: $slug[bot] (app $app_id)"
-  echo "now delete the downloaded key file ($key); the keyring holds the only copy you need"
+  mkdir -p "$(dirname "$target")"
+  {
+    echo "# claude-sdlc agent identity (scripts/agent-identity.sh). Not secret: the key is at"
+    echo "# SDLC_AGENT_KEY. Several repos and personas may point at this file to share the App."
+    echo "SDLC_AGENT_APP_ID=$app_id"
+    echo "SDLC_AGENT_APP_SLUG=$slug"
+    echo "SDLC_AGENT_BOT_ID=$bot_id"
+    echo "SDLC_AGENT_KEY=$ref"
+  } > "$target"
+  write_pointer "$target"
+  echo "wrote $target: $slug[bot] (app $app_id), key at $ref"
+  echo "now delete the downloaded key file ($key)"
+}
+
+# Share an existing App: point this repo's identity at its config. Nothing is created on
+# GitHub and no key is copied or changed.
+use_app() {
+  local target="" force=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --identity) use_identity "$2"; shift 2 ;;
+      --force) force=1; shift ;;
+      -*) die "unknown use option: $1" ;;
+      *) target="$1"; shift ;;
+    esac
+  done
+  [[ -f "$target" ]] || die "usage: $0 use <app config file> [--identity <name>] [--force]"
+  local abs
+  abs="$(cd "$(dirname "$target")" && pwd)/$(basename "$target")"
+  config="$abs"
+  load_config || die "$target isn't an App config (needs SDLC_AGENT_APP_ID and SDLC_AGENT_APP_SLUG)"
+  if [[ -f "$default_config" && "$abs" != "$default_config" ]] \
+    && ! grep -qxF "SDLC_AGENT_USE=$abs" "$default_config"; then
+    guard_overwrite "$default_config" "$force"
+  fi
+  write_pointer "$abs"
+  echo "$identity in $(repo_name) now uses $SDLC_AGENT_APP_SLUG[bot] ($abs)"
+  if token >/dev/null 2>&1; then echo "ok: it can act on $(repo_name)"
+  else echo "install it on $(repo_name): https://github.com/apps/$SDLC_AGENT_APP_SLUG/installations/new"
+  fi
 }
 
 check() {
@@ -263,6 +346,7 @@ use_identity "${SDLC_AGENT_IDENTITY_NAME:-agent}"
 
 case "${1:-}" in
   setup) shift; setup "$@" ;;
+  use) shift; use_app "$@" ;;
   create)  # always from the repo's registry, so re-running doesn't stack on an old override
     shift
     top="$(git rev-parse --show-toplevel 2>/dev/null || dirname "$(dirname "$self")")"
@@ -274,9 +358,9 @@ case "${1:-}" in
          END {for (i in u) if (i in k) print i}' "$file" | sort ;;
   check) check ;;
   show) load_config || exit 1; echo "$SDLC_AGENT_APP_ID $SDLC_AGENT_APP_SLUG" ;;
-  key) private_key ;;
+  key) load_config || exit 1; private_key ;;
   token) token ;;
   git-credential) shift; git_credential "$@" ;;
   env) shift; print_env "$@" ;;
-  *) sed -n '2,44p' "$0" >&2; exit 2 ;;
+  *) sed -n '2,49p' "$0" >&2; exit 2 ;;
 esac
