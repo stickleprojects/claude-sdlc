@@ -48,6 +48,7 @@ def test_sync_installs_framework_owned_files(consumer):
         "REVIEW.md",
         "tools/sdlc/src/sdlc/cli.py",
         "scripts/sync-sdlc.sh",
+        "scripts/spec-pr.sh",
     ]:
         assert (consumer / rel).exists(), rel
     assert not (consumer / ".github/workflows/release.yml").exists(), "framework-only workflow"
@@ -106,6 +107,17 @@ def test_change_lifecycle_in_consumer(consumer):
     broken = make(consumer, "validate")
     assert broken.returncode != 0
     assert "Constraints" in broken.stderr
+
+
+def test_bug_change_in_consumer(consumer):
+    # The consumer's Makefile passes only NAME; TYPE reaches the CLI through make's environment.
+    assert make(consumer, "new-change", "NAME=export-hangs", "TYPE=bug").returncode == 0
+    folder = consumer / "changes" / "0001-export-hangs"
+    assert (folder / "bug.md").exists()
+    assert not (folder / "intent.md").exists()
+    assert make(consumer, "validate").returncode == 0
+    assert make(consumer, "status").stdout.strip() == "0001-export-hangs\tbug"
+    assert (consumer / "templates" / "bug-spec.md").exists()
 
 
 def test_hooks_guard_the_consumer(consumer):

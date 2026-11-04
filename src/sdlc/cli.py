@@ -12,18 +12,26 @@ from pathlib import Path
 
 from sdlc.artifacts import change_dirs, check_change, next_slug, stage
 
+# `make new-change NAME=x TYPE=bug`: make exports command-line variables to recipes, so the
+# type arrives as $TYPE even when a consumer's Makefile doesn't pass it on.
+KINDS = {"feature": "intent.md", "bug": "bug.md"}
+
 NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 
 
-def cmd_new(root: Path, name: str) -> int:
+def cmd_new(root: Path, name: str, kind: str = "feature") -> int:
     if not NAME_RE.match(name):
         print(f"name must be kebab-case, got {name!r}", file=sys.stderr)
         return 2
+    if kind not in KINDS:
+        print(f"type must be one of {', '.join(KINDS)}, got {kind!r}", file=sys.stderr)
+        return 2
+    first = KINDS[kind]
     slug = next_slug(root, name)
     target = root / "changes" / slug
     target.mkdir(parents=True)
-    shutil.copy(root / "templates" / "intent.md", target / "intent.md")
-    print(target / "intent.md")
+    shutil.copy(root / "templates" / first, target / first)
+    print(target / first)
     return 0
 
 
@@ -92,14 +100,20 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="sdlc")
     parser.add_argument("--root", type=Path, default=Path.cwd(), help="repository root")
     sub = parser.add_subparsers(dest="command", required=True)
-    new = sub.add_parser("new", help="start a change from templates/intent.md")
+    new = sub.add_parser("new", help="start a change from templates/intent.md (or bug.md)")
     new.add_argument("name", help="kebab-case name, e.g. add-login")
+    new.add_argument(
+        "--type",
+        dest="kind",
+        default=os.environ.get("TYPE") or "feature",
+        help="feature (intent.md, the default) or bug (bug.md); defaults to $TYPE",
+    )
     sub.add_parser("check", help="validate every change folder")
     sub.add_parser("status", help="show the stage each change has reached")
 
     args = parser.parse_args(argv)
     if args.command == "new":
-        return cmd_new(args.root, args.name)
+        return cmd_new(args.root, args.name, args.kind)
     if args.command == "check":
         return cmd_check(args.root)
     return cmd_status(args.root)

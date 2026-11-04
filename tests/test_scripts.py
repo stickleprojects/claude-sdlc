@@ -1,6 +1,7 @@
 """Layer 1: the pipeline's shell scripts."""
 
 import json
+import os
 import re
 import shutil
 
@@ -292,6 +293,8 @@ def test_bootstrap_help_lists_every_step():
     for n in range(1, 11):
         assert f"{n:>2}. " in help_text or f"#   {n}. " in help_text, n
     assert "set -euo" not in help_text
+
+
 # --- review skills -----------------------------------------------------------------------
 
 REVIEW_SKILLS = [".claude/skills/po-review/SKILL.md", ".claude/skills/review-findings/SKILL.md"]
@@ -313,3 +316,114 @@ def test_review_findings_resolves_threads_and_checks_for_bot_commits():
     assert "resolveReviewThread" in skill
     assert "If GraphQL fails" in skill
     assert "HEAD..origin/<branch>" in skill
+
+
+def test_pr_title_accepts_bug_artifact_prs():
+    workflow = (REPO / ".github/workflows/pr-title.yml").read_text()
+    assert "|intent|bug|spec|plan'" in workflow
+
+
+# --- spec-pr: one spec PR per change --------------------------------------------------------
+
+FAKE_GH = """#!/usr/bin/env bash
+# Records each call; answers from $FAKE_GH_DIR/<name> files keyed by what the call asks for.
+echo "$*" >> "$FAKE_GH_DIR/calls"
+case "$*" in
+  *"head=$OWNER:spec/"*)
+    all="$*"; branch="${all#*head=$OWNER:}"; branch="${branch%% *}"
+    f="$FAKE_GH_DIR/open-${branch//\//_}"; [[ -f "$f" ]] && cat "$f"
+    [[ -f "$FAKE_GH_DIR/fail" ]] && exit 1 ;;
+  *"pulls?state=open&per_page"*) cat "$FAKE_GH_DIR/legacy" 2>/dev/null || true ;;
+  *"/files"*) cat "$FAKE_GH_DIR/legacy-files" 2>/dev/null || true ;;
+  *"repos/o/r/pulls -f title"*) echo 42 ;;
+esac
+exit 0
+"""
+
+
+@pytest.fixture
+def spec_repo(tmp_path):
+    remote = tmp_path / "remote.git"
+    git(tmp_path, "init", "-q", "--bare", str(remote))
+    repo = init_repo(tmp_path / "work")
+    commit(
+        repo,
+        "chore: changes",
+        {
+            "changes/0001-a/intent.md": "# a\n",
+            "changes/0002-b/bug.md": "# b\n",
+            "changes/0003-c/intent.md": "# c\n",
+            "changes/0003-c/spec.md": "# c spec\n",
+        },
+    )
+    git(repo, "remote", "add", "origin", str(remote))
+    fake = tmp_path / "fakebin"
+    fake.mkdir()
+    (fake / "gh").write_text(FAKE_GH)
+    (fake / "gh").chmod(0o755)
+    state = tmp_path / "gh"
+    state.mkdir()
+    env = {
+        "PATH": f"{fake}:{os.environ['PATH']}",
+        "FAKE_GH_DIR": str(state),
+        "OWNER": "o",
+        "GITHUB_REPOSITORY": "o/r",
+    }
+    return repo, remote, state, env
+
+
+def spec_pr(repo, env, *args):
+    return run(["bash", str(REPO / "scripts/spec-pr.sh"), *args], cwd=repo, env=env)
+
+
+def test_spec_pr_pending_skips_changes_with_an_open_spec_pr(spec_repo):
+    repo, _, state, env = spec_repo
+    (state / "open-spec_0001-a").write_text("18\n")
+    result = spec_pr(repo, env, "pending")
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.split() == ["changes/0002-b"]
+    assert "spec PR #18 is already open" in result.stderr
+
+
+def test_spec_pr_pending_fails_when_github_errors(spec_repo):
+    # Treating an API error as "no open PR" would open a duplicate.
+    repo, _, state, env = spec_repo
+    (state / "fail").write_text("")
+    assert spec_pr(repo, env, "pending").returncode != 0
+
+
+def test_spec_pr_open_pushes_one_branch_per_change_named_after_it(spec_repo):
+    repo, remote, state, env = spec_repo
+    (repo / "changes/0001-a/spec.md").write_text("# a spec\n")
+    (repo / "changes/0002-b/spec.md").write_text("# b spec\n")
+    (repo / "stray.txt").write_text("agent leftovers\n")
+    result = spec_pr(repo, env, "open", "changes/0001-a", "changes/0002-b")
+    assert result.returncode == 0, result.stderr
+    for slug, kind in [("0001-a", "intent"), ("0002-b", "bug")]:
+        files = git(remote, "show", "--name-only", "--format=%s", f"spec/{slug}").splitlines()
+        assert files[0] == f"spec({slug}): generate from accepted {kind}"
+        assert [f for f in files[1:] if f] == [f"changes/{slug}/spec.md"]
+    calls = (state / "calls").read_text()
+    assert "title=spec(0001-a): generate from accepted intent" in calls
+    assert "title=spec(0002-b): generate from accepted bug" in calls
+
+
+def test_spec_pr_open_closes_an_older_run_numbered_pr_it_supersedes(spec_repo):
+    repo, _, state, env = spec_repo
+    (repo / "changes/0001-a/spec.md").write_text("# a spec\n")
+    (state / "legacy").write_text("19\n")
+    (state / "legacy-files").write_text("changes/0001-a/spec.md\n")
+    result = spec_pr(repo, env, "open", "changes/0001-a")
+    assert result.returncode == 0, result.stderr
+    calls = (state / "calls").read_text()
+    assert "repos/o/r/issues/19/comments" in calls
+    assert "-X PATCH repos/o/r/pulls/19 --silent -f state=closed" in calls
+    assert "closed #19 (superseded by #42)" in result.stdout
+
+
+def test_spec_from_intent_queues_runs_and_uses_spec_pr():
+    workflow = (REPO / ".github/workflows/spec-from-intent.yml").read_text()
+    assert "group: spec-from-intent" in workflow
+    assert "cancel-in-progress: false" in workflow
+    assert "scripts/spec-pr.sh pending" in workflow
+    assert "GITHUB_RUN_ID" not in workflow
