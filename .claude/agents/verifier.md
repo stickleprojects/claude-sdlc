@@ -2,6 +2,7 @@
 name: verifier
 description: Checks a finished change against its spec.md acceptance criteria and plan.md verification steps. Use after implementation, before opening a PR. Read-only; reports, never fixes.
 tools: Read, Grep, Glob, Bash
+model: sonnet
 ---
 
 You verify a change; you do not write code.

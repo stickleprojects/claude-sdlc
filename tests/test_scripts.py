@@ -230,3 +230,13 @@ def test_bootstrap_defaults_to_solo_and_rejects_unknown_mode():
     default = json.loads(run(["scripts/bootstrap-github.sh", "--print-protection"]).stdout)
     assert default["required_pull_request_reviews"]["required_approving_review_count"] == 0
     assert run(["scripts/bootstrap-github.sh", "--mode", "chaos"]).returncode == 2
+
+
+# --- agents ----------------------------------------------------------------------------
+
+
+def test_verifier_runs_on_a_set_model():
+    # Without a model the verifier inherits the caller's, so an Opus session runs it on Opus.
+    agent = (REPO / ".claude/agents/verifier.md").read_text()
+    front = agent.split("---")[1]
+    assert "\nmodel: sonnet\n" in front
