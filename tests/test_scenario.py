@@ -49,6 +49,8 @@ def test_sync_installs_framework_owned_files(consumer):
         "tools/sdlc/src/sdlc/cli.py",
         "scripts/sync-sdlc.sh",
         "scripts/spec-pr.sh",
+        "scripts/agent-identity.sh",
+        ".claude/personas.conf",
     ]:
         assert (consumer / rel).exists(), rel
     assert not (consumer / ".github/workflows/release.yml").exists(), "framework-only workflow"

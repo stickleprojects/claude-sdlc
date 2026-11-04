@@ -24,4 +24,4 @@ Do not write a spec, a plan or any code at this stage.
 
 ## Committing
 
-When you commit, add the change's files by explicit path (`git add changes/<slug>/intent.md` or `…/bug.md`), never `git add -A` or `git add .`.
+When you commit, add the change's files by explicit path (`git add changes/<slug>/intent.md` or `…/bug.md`), never `git add -A` or `git add .`. Follow the `agent-identity` skill for commit trailers and PR signatures (persona `intent`).

@@ -51,7 +51,7 @@ Collect every decision first. Then make the changes.
 A finding is handled by one actor: either this session, or the GitHub bot (`@claude`). Never both, because two agents fixing the same finding produce conflicting commits.
 
 - **A finding the bot owns** has an `@claude` comment on its thread, or an `@claude` PR comment that names it. Leave it to the bot, and tell the person which ones you skipped.
-- **Before you push,** fetch and check whether the bot has pushed to the branch. Its commits are authored by `claude[bot]` or `github-actions[bot]`.
+- **Before you push,** fetch and check whether anyone else has pushed to the branch: the bot (`claude[bot]`, `github-actions[bot]`), a person, or another session under the agent's own identity (`<app>[bot]`). Any commit on the remote that you don't have counts, whoever wrote it.
 
   ```
   git fetch origin <branch>
@@ -62,17 +62,17 @@ A finding is handled by one actor: either this session, or the GitHub bot (`@cla
 
 ## Before you push
 
-Run the bot check above. Add files by explicit path (`git add <file>…`), never `git add -A` or `git add .`.
+Run the check above. Add files by explicit path (`git add <file>…`), never `git add -A` or `git add .`. Follow the `agent-identity` skill (`.claude/skills/agent-identity/SKILL.md`) for commit trailers, and never @-mention anyone.
 
 ## Reply and resolve
 
 A thread is closed with a reply that says what was decided or changed. Never resolve one silently.
 
-1. **Reply** on the thread. Replies go out under the person's GitHub account, so end each one with `(posted from Claude Code)`:
+1. **Reply** on the thread, signed as the `agent-identity` skill says. Under the agent's own identity (`SDLC_AGENT_IDENTITY` set), end with `— Claude (<persona>)`. Otherwise the reply appears under the person's GitHub account, so end it with `(posted from Claude Code)`:
 
    ```
    gh api repos/{owner}/{repo}/pulls/<N>/comments/<comment-id>/replies \
-     -f body="Fixed in <sha>: <what changed>. (posted from Claude Code)"
+     -f body="Fixed in <sha>: <what changed>. — Claude (dev)"
    ```
 
    For a dismissed finding, say why it was kept as it is.

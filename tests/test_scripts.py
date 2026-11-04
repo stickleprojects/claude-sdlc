@@ -290,7 +290,7 @@ def test_bootstrap_turns_on_branch_deletion_idempotently():
 
 def test_bootstrap_help_lists_every_step():
     help_text = run(["scripts/bootstrap-github.sh", "--help"]).stdout
-    for n in range(1, 11):
+    for n in range(1, 12):
         assert f"{n:>2}. " in help_text or f"#   {n}. " in help_text, n
     assert "set -euo" not in help_text
 
@@ -427,3 +427,162 @@ def test_spec_from_intent_queues_runs_and_uses_spec_pr():
     assert "cancel-in-progress: false" in workflow
     assert "scripts/spec-pr.sh pending" in workflow
     assert "GITHUB_RUN_ID" not in workflow
+
+
+# --- agent identity -------------------------------------------------------------------------
+
+PERSONAS = REPO / ".claude/personas.conf"
+
+
+def _registry():
+    rows = [line.split() for line in PERSONAS.read_text().splitlines() if line[:1].isalpha()]
+    identities = {r[1]: r[2] for r in rows if r[0] == "identity"}
+    personas = {r[1]: (r[2], r[3]) for r in rows if r[0] == "persona"}
+    return identities, personas
+
+
+def test_persona_registry_matches_the_skills_and_workflows():
+    identities, personas = _registry()
+    for name, (identity, where) in personas.items():
+        assert identity in identities, name
+        assert where in {"local", "ci"}, name
+    skill = (REPO / ".claude/skills/agent-identity/SKILL.md").read_text()
+    for name in re.findall(r"^\| `([a-z-]+)` \|", skill, re.MULTILINE):
+        assert personas.get(name, ("", ""))[1] == "local", f"skill persona {name} not in registry"
+    text = PERSONAS.read_text()
+    for wf in ["spec-from-intent.yml", "claude-review.yml", "claude-mention.yml"]:
+        assert (REPO / ".github/workflows" / wf).exists() and wf in text
+
+
+@pytest.fixture
+def agent_env(tmp_path):
+    key = tmp_path / "app.pem"
+    run(["openssl", "genrsa", "-out", str(key), "2048"], check=True)
+    run(
+        ["openssl", "rsa", "-in", str(key), "-pubout", "-out", str(tmp_path / "pub.pem")],
+        check=True,
+    )
+    cfg = tmp_path / "config"
+    (cfg / "sdlc").mkdir(parents=True)
+    (cfg / "sdlc" / "agent.env").write_text(
+        "SDLC_AGENT_APP_ID=123\nSDLC_AGENT_APP_SLUG=stickle-claude\nSDLC_AGENT_BOT_ID=999\n"
+    )
+    fake = tmp_path / "bin"
+    fake.mkdir()
+    # curl stub: logs the JWT it was given, answers the installation and token requests.
+    (fake / "curl").write_text(
+        "#!/usr/bin/env bash\n"
+        'for a in "$@"; do [[ "$a" == "Authorization: Bearer "* ]] \\\n'
+        '  && echo "${a#*Bearer }" > "$LOG/jwt"; done\n'
+        'echo "$*" >> "$LOG/curl"\n'
+        'case "$*" in\n'
+        '  *access_tokens*) echo \'{"token":"ghs_test","expires_at":"2099-01-01T00:00:00Z"}\';;\n'
+        '  *"/installation"*) echo \'{"id": 77}\' ;;\n'
+        "esac\n"
+    )
+    (fake / "curl").chmod(0o755)
+    env = {
+        "PATH": f"{fake}:{os.environ['PATH']}",
+        "XDG_CONFIG_HOME": str(cfg),
+        "XDG_RUNTIME_DIR": str(tmp_path / "run"),
+        "SDLC_AGENT_KEY_FILE": str(key),
+        "SDLC_AGENT_REPO": "o/r",
+        "SDLC_PERSONAS": str(PERSONAS),
+        "LOG": str(tmp_path),
+    }
+    return tmp_path, env
+
+
+def identity(env, *args, stdin=None):
+    return run(["bash", str(REPO / "scripts/agent-identity.sh"), *args], env=env, input=stdin)
+
+
+def test_token_is_minted_with_a_valid_jwt_and_cached(agent_env):
+    tmp, env = agent_env
+    first = identity(env, "token")
+    assert first.returncode == 0, first.stderr
+    assert first.stdout.strip() == "ghs_test"
+    header, payload, sig = (tmp / "jwt").read_text().strip().split(".")
+    pad = lambda s: s + "=" * (-len(s) % 4)  # noqa: E731
+    import base64
+
+    claims = json.loads(base64.urlsafe_b64decode(pad(payload)))
+    assert claims["iss"] == "123" and claims["exp"] - claims["iat"] <= 600
+    (tmp / "sig").write_bytes(base64.urlsafe_b64decode(pad(sig)))
+    (tmp / "msg").write_text(f"{header}.{payload}")
+    verify = run(
+        [
+            "openssl",
+            "dgst",
+            "-sha256",
+            "-verify",
+            str(tmp / "pub.pem"),
+            "-signature",
+            str(tmp / "sig"),
+            str(tmp / "msg"),
+        ]
+    )
+    assert verify.returncode == 0, verify.stdout + verify.stderr
+    calls = (tmp / "curl").read_text().count("\n")
+    assert identity(env, "token").stdout.strip() == "ghs_test"
+    assert (tmp / "curl").read_text().count("\n") == calls, "second call uses the cache"
+
+
+def test_token_fails_rather_than_printing_null(agent_env):
+    tmp, env = agent_env
+    stub = (tmp / "bin" / "curl").read_text().replace('"token":"ghs_test",', "")
+    (tmp / "bin" / "curl").write_text(stub)
+    out = identity(env, "token")
+    assert out.returncode != 0 and "null" not in out.stdout
+
+
+def test_git_credential_answers_only_for_github(agent_env):
+    _, env = agent_env
+    gh = identity(env, "git-credential", "get", stdin="protocol=https\nhost=github.com\n\n")
+    assert gh.stdout == "username=x-access-token\npassword=ghs_test\n"
+    other = identity(env, "git-credential", "get", stdin="protocol=https\nhost=gitlab.com\n\n")
+    assert other.stdout == ""
+
+
+def test_env_makes_git_act_as_the_bot_for_a_local_persona(agent_env):
+    _, env = agent_env
+    out = identity(env, "env", "--persona", "build")
+    assert out.returncode == 0, out.stderr
+    assert "GIT_AUTHOR_NAME='stickle-claude[bot]'" in out.stdout
+    assert "999+stickle-claude[bot]@users.noreply.github.com" in out.stdout
+    assert "SDLC_AGENT_PERSONA='build'" in out.stdout
+    assert "insteadOf" in out.stdout
+
+
+def test_env_rejects_unknown_and_ci_personas(agent_env):
+    _, env = agent_env
+    assert identity(env, "env", "--persona", "wizard").returncode == 1
+    reviewer = identity(env, "env", "--persona", "reviewer")
+    assert reviewer.returncode == 1 and "runs in ci" in reviewer.stderr
+
+
+def test_env_without_setup_falls_back_to_the_person(agent_env, tmp_path):
+    _, env = agent_env
+    out = identity({**env, "XDG_CONFIG_HOME": str(tmp_path / "empty")}, "env")
+    assert out.returncode == 0 and out.stdout == ""
+    assert "acts as you" in out.stderr
+
+
+def test_agent_session_starts_claude_with_the_identity(agent_env):
+    _, env = agent_env
+    out = run(
+        ["bash", str(REPO / "scripts/agent-session.sh"), "--persona", "dev"],
+        env={**env, "SDLC_CLAUDE": "env"},
+    )
+    assert out.returncode == 0, out.stderr
+    assert "GIT_COMMITTER_NAME=stickle-claude[bot]" in out.stdout
+    assert "SDLC_AGENT_PERSONA=dev" in out.stdout
+
+
+def test_workflows_guard_against_agent_loops():
+    mention = (REPO / ".github/workflows/claude-mention.yml").read_text()
+    assert "github.event.comment.user.type == 'User'" in mention
+    review = (REPO / ".github/workflows/claude-review.yml").read_text()
+    assert "allowed_bots: ${{ vars.SDLC_AGENT_APP_SLUG }}" in review
+    spec = (REPO / ".github/workflows/spec-from-intent.yml").read_text()
+    assert "actions/create-github-app-token" in spec

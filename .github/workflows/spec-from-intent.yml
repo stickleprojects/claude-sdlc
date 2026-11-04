@@ -23,7 +23,18 @@ jobs:
   spec:
     runs-on: ubuntu-latest
     steps:
+      # Open spec PRs as the agent's App identity when it's set up (docs/agent-identity.md):
+      # PRs opened with the default GITHUB_TOKEN don't run CI until someone approves them.
+      - name: Agent identity token
+        id: agent
+        if: vars.SDLC_AGENT_APP_ID != ''
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.SDLC_AGENT_APP_ID }}
+          private-key: ${{ secrets.SDLC_AGENT_APP_KEY }}
       - uses: actions/checkout@v4
+        with:
+          token: ${{ steps.agent.outputs.token || github.token }}
       - uses: ./.github/actions/setup-stack
       - name: Find intents and bugs without a spec (or an open spec PR)
         id: find
@@ -43,7 +54,8 @@ jobs:
       - name: Open one PR per change
         if: steps.find.outputs.pending != ''
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.agent.outputs.token || github.token }}
+          SDLC_AGENT_APP_SLUG: ${{ steps.agent.outputs.app-slug }}
           PENDING: ${{ steps.find.outputs.pending }}
         run: |
           # shellcheck disable=SC2086  # one change folder per word

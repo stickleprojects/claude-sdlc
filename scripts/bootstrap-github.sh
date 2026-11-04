@@ -2,7 +2,7 @@
 # Configure a GitHub repo for this pipeline. Safe to re-run: each step checks, then fixes.
 #
 # Usage: scripts/bootstrap-github.sh [--repo owner/name] [--mode solo|team] [--dry-run] [--skip-token]
-#        scripts/bootstrap-github.sh --gitignore-only   (step 8 alone; needs no GitHub access)
+#        scripts/bootstrap-github.sh --gitignore-only   (step 9 alone; needs no GitHub access)
 #
 # Every setting below was learned the hard way when this repo was first set up:
 #   1. executable bits    NTFS/Windows checkouts commit scripts as 100644; hooks then fail silently
@@ -19,11 +19,14 @@
 #        --mode team            1 code-owner approval: several people, or Claude under its own bot
 #                               account, so authors and approvers are different GitHub users.
 #   7. delete branches    delete_branch_on_merge, so merged PR branches don't pile up
-#   8. .gitignore         adds any line of templates/gitignore that's missing; a stray `git add -A`
+#   8. agent identity     if scripts/agent-identity.sh is set up: checks the App is installed here, and
+#                         sets the SDLC_AGENT_APP_ID/_SLUG variables and SDLC_AGENT_APP_KEY secret
+#                         the workflows use. With an agent identity, use --mode team.
+#   9. .gitignore         adds any line of templates/gitignore that's missing; a stray `git add -A`
 #                         once committed ~82,000 node_modules and build files
 # Steps it can only check or print (they need a browser or a human):
-#   9. Claude GitHub app  https://github.com/apps/claude, needed by claude-code-action
-#  10. workspace trust    run `claude` here once; until then .claude/settings.json allow rules are ignored
+#  10. Claude GitHub app  https://github.com/apps/claude, needed by claude-code-action
+#  11. workspace trust    run `claude` here once; until then .claude/settings.json allow rules are ignored
 set -euo pipefail
 
 repo="" mode=solo dry=0 skip_token=0 print_protection=0 gitignore_only=0
@@ -34,8 +37,8 @@ while [[ $# -gt 0 ]]; do
     --dry-run) dry=1; shift ;;
     --skip-token) skip_token=1; shift ;;
     --print-protection) print_protection=1; shift ;;  # print the step 6 JSON and exit (tests)
-    --gitignore-only) gitignore_only=1; shift ;;       # run only step 8, no GitHub calls
-    -h|--help) sed -n '2,26p' "$0"; exit 0 ;;
+    --gitignore-only) gitignore_only=1; shift ;;       # run only step 9, no GitHub calls
+    -h|--help) sed -n '2,29p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -64,7 +67,7 @@ todo() { printf '  \033[33m!\033[0m %s\n' "$*"; }
 step() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 run()  { if ((dry)); then printf '    would run: %s\n' "$*"; else "$@"; fi; }
 
-# Step 8: append every line of templates/gitignore that .gitignore lacks. Idempotent.
+# Step 9: append every line of templates/gitignore that .gitignore lacks. Idempotent.
 merge_gitignore() {
   local line missing=()
   if [[ ! -f templates/gitignore ]]; then
@@ -198,13 +201,36 @@ else
   ((dry)) || ok "turned on"
 fi
 
-step "8. .gitignore baseline"
+step "8. Claude agent identity (GitHub App)"
+if ! agent="$(scripts/agent-identity.sh show 2>/dev/null)"; then
+  todo "not set up on this machine: Claude sessions act as you. See docs/agent-identity.md"
+else
+  read -r app_id app_slug <<<"$agent"
+  if SDLC_AGENT_REPO="$repo" scripts/agent-identity.sh token >/dev/null 2>/tmp/bootstrap-err; then
+    ok "$app_slug[bot] can act on $repo"
+  else
+    todo "install the App on $repo: https://github.com/apps/$app_slug/installations/new ($(head -c 150 /tmp/bootstrap-err))"
+  fi
+  vars=$(gh variable list -R "$repo" --json name,value -q '.[] | "\(.name)=\(.value)"' 2>/dev/null || true)
+  for pair in "SDLC_AGENT_APP_ID=$app_id" "SDLC_AGENT_APP_SLUG=$app_slug"; do
+    if grep -qxF "$pair" <<<"$vars"; then ok "variable ${pair%%=*}"
+    else run gh variable set "${pair%%=*}" -R "$repo" --body "${pair#*=}"; ((dry)) || ok "set variable ${pair%%=*}"
+    fi
+  done
+  if gh secret list -R "$repo" --json name -q '.[].name' | grep -qx SDLC_AGENT_APP_KEY; then ok "secret SDLC_AGENT_APP_KEY"
+  elif ((dry)); then echo "    would store the App's private key as secret SDLC_AGENT_APP_KEY"
+  else scripts/agent-identity.sh key | gh secret set SDLC_AGENT_APP_KEY -R "$repo"; ok "stored secret SDLC_AGENT_APP_KEY"
+  fi
+  [[ "$mode" == team ]] || todo "Claude has its own identity: re-run with --mode team so GitHub requires your approval on its PRs"
+fi
+
+step "9. .gitignore baseline"
 merge_gitignore
 
-step "9. Claude GitHub app (manual)"
+step "10. Claude GitHub app (manual)"
 todo "install it on $repo: https://github.com/apps/claude → Configure → Only select repositories"
 
-step "10. Claude Code workspace trust (manual)"
+step "11. Claude Code workspace trust (manual)"
 todo "run 'claude' in this folder once and accept the trust prompt"
 
 echo

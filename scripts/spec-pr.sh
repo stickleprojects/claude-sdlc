@@ -54,8 +54,16 @@ close_superseded() {  # $1 = change dir, $2 = new PR number
 open_prs() {
   local base d slug kind branch n
   base="$(git rev-parse HEAD)"
-  git config user.name "github-actions[bot]"
-  git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+  if [[ -n "${SDLC_AGENT_APP_SLUG:-}" ]]; then
+    # Commit as the agent's App identity, whose token opens the PR.
+    local bot="$SDLC_AGENT_APP_SLUG[bot]" id
+    id="$(gh api "users/$bot" --jq .id)"
+    git config user.name "$bot"
+    git config user.email "$id+$bot@users.noreply.github.com"
+  else
+    git config user.name "github-actions[bot]"
+    git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+  fi
   for d in "$@"; do
     if [[ ! -f "$d/spec.md" ]]; then
       echo "no spec produced for $d" >&2
@@ -72,7 +80,7 @@ open_prs() {
     git push -q -f -u origin "$branch"
     n="$(gh api "repos/$repo/pulls" -f title="spec($slug): generate from accepted $kind" \
       -f head="$branch" -f base=main \
-      -f body="Generated spec for \`$d\` from its accepted \`$kind.md\`. Product owner: review it (\`/po-review <this PR>\` in Claude Code) and resolve any flagged policy concerns." \
+      -f body="Generated spec for \`$d\` from its accepted \`$kind.md\`. Product owner: review it (\`/po-review <this PR>\` in Claude Code) and resolve any flagged policy concerns. — Claude (spec)" \
       --jq .number)"
     echo "opened #$n for $d"
     close_superseded "$d" "$n"
