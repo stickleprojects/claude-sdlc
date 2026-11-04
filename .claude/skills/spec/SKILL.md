@@ -1,11 +1,11 @@
 ---
 name: spec
-description: Stage 2 (Design). Turn an accepted changes/<slug>/intent.md into changes/<slug>/spec.md, applying the policy skills and flagging conflicts. Use when asked to write or regenerate a spec, or by the spec-from-intent CI job.
+description: Stage 2 (Design). Turn an accepted changes/<slug>/intent.md (or bug.md) into changes/<slug>/spec.md, applying the policy skills and flagging conflicts. Use when asked to write or regenerate a spec, or by the spec-from-intent CI job.
 ---
 
 # Write a spec from an intent
 
-Input: a change folder, `changes/<slug>/`, that contains an accepted `intent.md`.
+Input: a change folder, `changes/<slug>/`, that contains an accepted `intent.md`, or `bug.md` for a bug. For a bug, follow [For a bug](#for-a-bug) instead of the steps below.
 
 1. Read `intent.md`, `CLAUDE.md` and the code the intent touches.
 2. Copy `templates/spec.md` to `changes/<slug>/spec.md` and fill in every section:
@@ -20,3 +20,19 @@ Input: a change folder, `changes/<slug>/`, that contains an accepted `intent.md`
 5. Run `make validate`.
 
 Do not write a plan or code.
+
+## For a bug
+
+A bug gets a short spec.
+
+1. Read `bug.md`, `CLAUDE.md`, the existing spec of the feature it breaks (if there is one), and the code involved.
+2. Copy `templates/bug-spec.md` to `changes/<slug>/spec.md` and fill it in:
+   - **Requirements:** the correct behaviour, one per symptom in `bug.md` (R1, R2, …).
+   - **Acceptance criteria:** one test per symptom, which fails today and passes once fixed.
+   - Add **Policy concerns** only if a policy skill applies to the fix, and **Out of scope** only if the fix deliberately leaves something alone.
+3. If the bug reveals that the intended behaviour was never specified, or needs a product decision, say so under an **Open questions** heading for the product owner rather than deciding it.
+4. Run `make validate`.
+
+## Committing
+
+When you commit, add `changes/<slug>/spec.md` by explicit path, never `git add -A` or `git add .`.

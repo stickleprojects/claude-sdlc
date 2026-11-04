@@ -240,3 +240,8 @@ def test_verifier_runs_on_a_set_model():
     agent = (REPO / ".claude/agents/verifier.md").read_text()
     front = agent.split("---")[1]
     assert "\nmodel: sonnet\n" in front
+
+
+def test_pr_title_accepts_bug_artifact_prs():
+    workflow = (REPO / ".github/workflows/pr-title.yml").read_text()
+    assert "|intent|bug|spec|plan'" in workflow

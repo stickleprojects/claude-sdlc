@@ -96,6 +96,7 @@ Open any small PR. **check**, **pr-title** and **review** should pass, and Claud
 
 ```
 make new-change NAME=add-login  # start a change: changes/0001-add-login/intent.md
+make new-change NAME=export-hangs TYPE=bug   # a bug: bug.md, then a short spec
 make status                     # stage each change has reached
 make check                      # lint + tests + artifact chain
 ```

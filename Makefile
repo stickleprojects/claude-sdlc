@@ -7,7 +7,7 @@
 #   lint      static checks, no changes
 #   test      run the test suite
 #   validate  check the intent -> spec -> plan artifact chain
-#   new-change start a change: make new-change NAME=add-login
+#   new-change start a change: make new-change NAME=add-login (TYPE=bug for a bug: bug.md)
 #   status    show the stage each change has reached
 #   check     everything CI requires; exits non-zero on any failure
 
@@ -45,7 +45,7 @@ validate:
 check: lint test validate exec-bits
 
 new-change:
-	@test -n "$(NAME)" || { echo "usage: make new-change NAME=kebab-name"; exit 2; }
+	@test -n "$(NAME)" || { echo "usage: make new-change NAME=kebab-name [TYPE=bug]"; exit 2; }
 	$(SDLC) new $(NAME)
 
 status:

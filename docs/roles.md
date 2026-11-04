@@ -44,13 +44,20 @@ Find your role below. Each section covers when you're involved, what you do (wit
    git push -u origin HEAD && gh pr create --fill
    ```
 
+**Found a bug?** Something that doesn't work as specified, found in testing or use, takes a lighter path. Describe it the same way:
+```
+claude
+> /intent The export button spins forever on an empty list
+```
+Claude recognises it as a bug and asks only what happens, what should happen, how to reproduce it and where you saw it. It creates `changes/NNNN-<name>/bug.md` (by running `make new-change NAME=<name> TYPE=bug`) instead of an intent. Commit it on a `bug/<name>` branch with the message `bug: <name>`, and open a PR as above. Once it merges, a short spec is generated: one requirement and one acceptance test per symptom.
+
 **Stays with you:** Saying what the problem is. If Claude adds something you didn't mean, remove it.
 
 ---
 
 ## Product owner
 
-**When:** An `intent:` or `spec:` PR asks for your review. GitHub notifies you when it's opened. The spec PR is opened automatically when your intent merges.
+**When:** An `intent:`, `bug:` or `spec:` PR asks for your review. GitHub notifies you when it's opened. The spec PR is opened automatically when your intent merges.
 
 **Where you work:** you can use two tools, which do different jobs.
 
@@ -102,7 +109,7 @@ To regenerate a spec by hand, run `claude`, then `/spec changes/NNNN-<name>`.
    ```
    claude --worktree NNNN-<name>
    ```
-   For a bug fix, commit a failing test first, then lock the tests while Claude fixes the code:
+   For a bug fix (a change with `bug.md`), commit a failing test first, one per acceptance criterion, then lock the tests while Claude fixes the code:
    ```
    SDLC_LOCK_TESTS=1 claude --worktree NNNN-<name>
    ```

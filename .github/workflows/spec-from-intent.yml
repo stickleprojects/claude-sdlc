@@ -1,11 +1,11 @@
-# Stage 2 (Design), automated: when an accepted intent.md merges to main, generate
+# Stage 2 (Design), automated: when an accepted intent.md (or bug.md) merges to main, generate
 # spec.md and open it as a PR for the product owner. The agent never commits to main.
 name: Spec from intent
 
 on:
   push:
     branches: [main]
-    paths: ["changes/*/intent.md"]
+    paths: ["changes/*/intent.md", "changes/*/bug.md"]
   workflow_dispatch:
 
 permissions:
@@ -18,10 +18,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-stack
-      - name: Find intents without a spec
+      - name: Find intents and bugs without a spec
         id: find
         run: |
-          pending=$(for d in changes/*/; do [ -f "$d/intent.md" ] && [ ! -f "$d/spec.md" ] && echo "${d%/}"; done || true)
+          pending=$(for d in changes/*/; do { [ -f "$d/intent.md" ] || [ -f "$d/bug.md" ]; } && [ ! -f "$d/spec.md" ] && echo "${d%/}"; done || true)
           echo "pending<<EOF" >> "$GITHUB_OUTPUT"; echo "$pending" >> "$GITHUB_OUTPUT"; echo "EOF" >> "$GITHUB_OUTPUT"
       - name: Generate specs
         if: steps.find.outputs.pending != ''
