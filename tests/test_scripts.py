@@ -1,6 +1,7 @@
 """Layer 1: the pipeline's shell scripts."""
 
 import json
+import re
 import shutil
 
 import pytest
@@ -99,10 +100,23 @@ def test_bootstrap_creates_the_review_label_the_workflow_listens_for():
     assert "github.event.label.name == 'review'" in workflow
 
 
-def test_review_does_not_run_on_every_push():
+def test_review_reruns_on_push_only_while_labelled():
+    # Reviews use subscription limits (#11): a push is reviewed only if the PR has the label.
     workflow = (REPO / ".github/workflows/claude-review.yml").read_text()
-    assert "types: [opened, ready_for_review, labeled]" in workflow
-    assert "synchronize" not in workflow
+    assert "types: [opened, ready_for_review, labeled, synchronize]" in workflow
+    assert (
+        "github.event.action == 'synchronize' && "
+        "contains(github.event.pull_request.labels.*.name, 'review')"
+    ) in workflow
+    assert "cancel-in-progress: true" in workflow
+
+
+def test_review_label_is_sticky():
+    # Clearing the label after each review meant fix pushes went unreviewed when people forgot
+    # to re-add it.
+    workflow = (REPO / ".github/workflows/claude-review.yml").read_text()
+    assert "remove-label" not in workflow
+    assert "labels/review" not in workflow
 
 
 # --- next-version ----------------------------------------------------------------------
@@ -278,3 +292,24 @@ def test_bootstrap_help_lists_every_step():
     for n in range(1, 11):
         assert f"{n:>2}. " in help_text or f"#   {n}. " in help_text, n
     assert "set -euo" not in help_text
+# --- review skills -----------------------------------------------------------------------
+
+REVIEW_SKILLS = [".claude/skills/po-review/SKILL.md", ".claude/skills/review-findings/SKILL.md"]
+
+
+@pytest.mark.parametrize("path", REVIEW_SKILLS)
+def test_review_skills_sign_replies_and_avoid_graphql_pr_commands(path):
+    # Replies go out under the person's account; `gh pr edit`/`gh pr view` can fail in orgs
+    # hit by the Projects (classic) GraphQL deprecation.
+    skill = (REPO / path).read_text()
+    assert "(posted from Claude Code)" in skill
+    commands = re.findall(r"^\s*(gh pr \w+|git add -A|git add \.)", skill, re.MULTILINE)
+    commands += re.findall(r"`(gh pr (?:edit|view|checkout) [^`]*)`", skill)
+    assert commands == []
+
+
+def test_review_findings_resolves_threads_and_checks_for_bot_commits():
+    skill = (REPO / ".claude/skills/review-findings/SKILL.md").read_text()
+    assert "resolveReviewThread" in skill
+    assert "If GraphQL fails" in skill
+    assert "HEAD..origin/<branch>" in skill

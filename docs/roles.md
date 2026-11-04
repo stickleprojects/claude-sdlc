@@ -54,10 +54,12 @@ Find your role below. Each section covers when you're involved, what you do (wit
 
 **Where you work:** you can use two tools, which do different jobs.
 
-| | GitHub PR | Claude Code session |
+| | Claude Code session | GitHub PR |
 |---|---|---|
-| Purpose | **The gate.** Approving and merging *is* your acceptance, and it's the audit record | **A helper.** It explains findings, asks for your decisions and edits the artifact for you |
-| Use it for | Reading the review summary, then the final approve and merge | Working through findings and open questions |
+| Purpose | **Where you give feedback.** Claude explains each finding, asks for your decision, edits the artifact and replies on GitHub for you | **The gate.** Approving and merging *is* your acceptance, and it's the audit record |
+| Use it for | Working through findings and open questions | Reading the review summary, then the final approve and merge |
+
+You don't need to comment on GitHub yourself.
 
 **What you do**
 
@@ -67,9 +69,9 @@ Find your role below. Each section covers when you're involved, what you do (wit
    claude
    > /po-review 6
    ```
-   For each item, Claude quotes the spec text, explains the problem, suggests a fix and asks what you want. It then edits the artifact, records your decisions, pushes, and replies to each comment on GitHub.
-   If you prefer, you can edit the file directly in the GitHub UI or your editor instead.
-3. **Wait for the fresh review**, which `/po-review` asks for after it pushes. Check that its summary shows no open findings for you. If you edited the file yourself, add the `review` label to the PR to get one.
+   Claude goes through the items one at a time: it quotes the spec text, explains the problem, suggests a fix and asks what you want. Then it edits the artifact, records your decisions, pushes, replies on every thread (signed `(posted from Claude Code)`, since the reply appears under your account) and resolves it. If it can't resolve a thread, it tells you which ones to resolve on GitHub.
+   If you prefer, you can edit the file directly in the GitHub UI or your editor instead. Avoid tagging `@claude` on a thread you've also discussed with Claude Code: that starts a second agent on the same finding.
+3. **Wait for the fresh review**, which `/po-review` asks for after it pushes. Check that its summary shows no open findings for you. If you edited the file yourself and the PR has no `review` label, add it to get one.
 4. **Accept** by merging the PR, once its checks are green. In solo mode the merge *is* the approval. In team mode, a code owner approves first. Claude never merges for you: a hook blocks it.
 
 What you check at each gate:
@@ -112,7 +114,12 @@ To regenerate a spec by hand, run `claude`, then `/spec changes/NNNN-<name>`.
    > Use the verifier subagent on changes/NNNN-<name>
    gh pr create --fill
    ```
-5. Answer the review. On any review comment, tag `@claude` to have it push a fix to the branch. The review runs when the PR opens, not on every push. To review the latest push, add the `review` label; it removes itself so you can add it again.
+5. Answer the review in Claude Code:
+   ```
+   > Handle the review findings on PR <N>
+   ```
+   Claude goes through the findings one at a time and asks what you want. Then it fixes the code, pushes, replies on every thread and resolves it. Tagging `@claude` on a GitHub comment is an optional alternative, where the bot pushes the fix. Use one or the other for a finding, never both: before it pushes, Claude Code checks the branch for bot commits.
+   The review runs when the PR opens. To have every later push reviewed too, add the `review` label: it stays on, and each push to the PR is reviewed until you remove it. Claude Code adds it when it pushes fixes.
 
 **Stays with you:** Approving the plan, and deciding the work is done. When Claude makes the same mistake twice, add the correction to `CLAUDE.md`.
 
@@ -138,7 +145,7 @@ To regenerate a spec by hand, run `claude`, then `/spec changes/NNNN-<name>`.
 
 **What you do**
 
-1. Read the Claude review summary and its inline findings. Every *Important* finding is either fixed or dismissed with a reason. If the PR changed since the review, add the `review` label to review it again.
+1. Read the Claude review summary and its inline findings. Every *Important* finding is either fixed or dismissed with a reason, in a reply on its thread. If the PR changed since the review and has no `review` label, add it: that reviews the latest push, and every push after it.
    - **A PR that changes `.github/workflows/claude-*.yml` gets no AI review**, though its check is green. A comment on the PR says so. Review those by hand, with extra care: they control what the agent may do.
 2. Check that the diff matches `spec.md` and `plan.md` for its change.
 3. **Solo mode:** merge it. The required checks must be green, and nobody can bypass them. If GitHub says the branch is out of date with `main`, click *Update branch* and wait for the checks again: branch protection requires PRs to be up to date, so you see when one is behind. The branch is deleted when it merges. **Team mode:** approve it, then merge. Branch protection requires your approval, and Claude's review never counts as one.
