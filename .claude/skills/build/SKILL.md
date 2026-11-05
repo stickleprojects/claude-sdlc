@@ -32,6 +32,7 @@ Ask whenever something is ambiguous, but **one decision at a time**. Use AskUser
 - **spec.md is never edited on a build branch.**
 - **plan.md isn't edited here either.** If the plan is wrong or can't be built, stop and ask. A small implementation detail can be recorded as a deviation for the engineer. Anything that changes behaviour or a Verification row needs a plan PR first.
 - **Follow CLAUDE.md**, including any repo-specific rules about data, fixtures and outbound actions.
+- **Follow the `agent-identity` skill** whenever you commit, push, open the PR or post on GitHub: the `Requested-by:` trailer, signing with `— Claude` (or `(posted from Claude Code)` when acting as the person), no @-mentions, and fetch-and-merge before every push.
 - **Commit by explicit path** (`git add <file> …`), never `git add -A` or `git add .`. Check `git status` before each commit.
 - **Commit and push after each plan step,** so a dropped session loses little.
   - Code commits: `feat(<slug>): <what>` (in a large build, `feat(<slug>): M<n> <what>`).
@@ -40,10 +41,10 @@ Ask whenever something is ambiguous, but **one decision at a time**. Use AskUser
   These messages reach `main` when the PR merges with a merge commit. That's why they don't use `build(...)`, which in conventional commits means build-system changes.
 - **Merge, never rebase, on `build/<slug>`.** build.md records commit shas, and a rebase rewrites them all, so every `done` milestone would reopen. Bring in `origin/main` with `git merge`.
 - **Bug fixes: the failing test comes first, then it's locked.** If the plan's first step is a failing test (per the `plan` skill):
-  1. The first commit is the failing test on its own: `test(<slug>): failing test for <symptom>`. Push it.
-  2. From then on those test files must not change. In a large build, record them in build.md's **Locked tests** line (`<sha>`: the files) and add `git diff --exit-code <sha> -- <files>` to the **Done when** of every milestone. The checks then catch an edit in every later session, whatever the session's environment.
+  1. The first commit is the failing test on its own: `test(<slug>): failing test for <symptom>`. Push it. For a change with `bug.md`, that commit locks the files it touched: the protect-paths hook asks `scripts/tests-locked.sh` on every edit. New tests in other files (coverage, regression guards) can still be written.
+  2. Those test files must not change. In a large build, record them in build.md's **Locked tests** line (`<sha>`: the files) and add `git diff --exit-code <sha> -- <files>` to the **Done when** of every milestone. The checks then catch an edit in every later session, whatever the session's environment.
   3. In a small build, run that same `git diff --exit-code` before opening the PR.
-  4. If the repo has its own lock as well (`SDLC_LOCK_TESTS=1`, or a mechanism CLAUDE.md names), use it too. If the test itself is wrong, stop and ask; never edit it to get past the check.
+  4. If the repo has its own lock as well (a mechanism CLAUDE.md names), use it too. The `git diff` check also catches an edit made some other way than the edit tools, such as `sed`. If the test itself is wrong, stop and ask; never edit it to get past the check.
 - **Flaky tests are bugs. Fix them; don't rerun past them.** A test is flaky if it fails and then passes on a rerun with no change, or passes on its own but fails in the full suite. When you see one:
   1. **Reproduce it.** Run it repeatedly, for example 20 times: on its own, in the full suite, and under load (parallel workers, a cold cache).
   2. **Find the cause.** Usually timing (real timers, sleeps, tight timeouts), state shared between tests, the real clock, async work that isn't awaited, network, or a cold cache.
@@ -85,7 +86,7 @@ Then:
 
 ## 3. Size the build
 
-Read CLAUDE.md, then `spec.md` and `plan.md` in full. Decide whether this is one session's work.
+Read CLAUDE.md, then `intent.md` (or `bug.md`), `spec.md` and `plan.md` in full. Decide whether this is one session's work.
 
 **Small: build it now** when all of these hold:
 - the plan has at most three steps;
@@ -157,7 +158,7 @@ For a small build after its steps, and for a large build as part of its last mil
 1. **Run `make check` and `make coverage`.** Both must exit 0.
 2. **Run the `verifier` subagent** on `changes/<slug>`. Fix any FAIL that's within the plan. If a fix would change the plan or the spec, stop and ask.
 3. **Open the PR** with `gh api` (see the rules above).
-   - Title: `feat(<slug>): <summary>` (a bug fix: `fix(<slug>): <summary>`).
+   - Title: `feat(<slug>): <summary>` (a change with `bug.md`: `fix(<slug>): <summary>`).
    - Body: what was built; the verifier's per-criterion results; the coverage per suite against its threshold; the deviations; the plan's manual end-to-end steps, for the engineer. End it with the attribution line the session asks for.
    - Don't add the `review` label. The review already runs when the PR opens.
 4. **Large build:** record the PR in build.md (`Status: PR open (#N)`), commit and push.
