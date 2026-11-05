@@ -100,3 +100,24 @@ def test_agent_cannot_merge_or_approve(command, blocked):
     assert result.returncode == (2 if blocked else 0), result.stderr
     if blocked:
         assert "human decision" in result.stderr
+
+
+def test_protect_paths_locks_a_bug_fixes_tests_after_its_failing_test(tmp_path):
+    # The hook asks scripts/tests-locked.sh, so nobody has to set SDLC_LOCK_TESTS=1.
+    import shutil
+
+    from conftest import commit, git, init_repo
+
+    repo = init_repo(tmp_path / "r")
+    (repo / "scripts").mkdir()
+    shutil.copy2(REPO / "scripts/tests-locked.sh", repo / "scripts/tests-locked.sh")
+    commit(repo, "bug: 0003-x", {"changes/0003-x/bug.md": "# bug\n"})
+    git(repo, "switch", "-q", "-c", "build/0003-x")
+    payload = {"tool_input": {"file_path": str(repo / "tests/test_x.py")}}
+    env = {"SDLC_LOCK_TESTS": ""}
+    assert hook("protect-paths.sh", payload, env=env, cwd=repo).returncode == 0
+    commit(repo, "test(0003-x): failing test for x", {"tests/test_x.py": "x\n"})
+    locked = hook("protect-paths.sh", payload, env=env, cwd=repo)
+    assert locked.returncode == 2 and "bug fix" in locked.stderr
+    code = {"tool_input": {"file_path": str(repo / "src/x.py")}}
+    assert hook("protect-paths.sh", code, env=env, cwd=repo).returncode == 0

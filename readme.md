@@ -96,11 +96,13 @@ Open any small PR. **check**, **pr-title** and **review** should pass, and Claud
 
 ```
 make new-change NAME=add-login  # start a change: changes/0001-add-login/intent.md
+make new-change NAME=export-hangs TYPE=bug   # a bug: bug.md, then a short spec
 make status                     # stage each change has reached
+make next REF=origin/main       # each change's next step, and the skill to run
 make check                      # lint + tests + artifact chain
 ```
 
-In Claude Code, the stages are skills: `/intent`, `/spec`, `/plan`, plus `/po-review <PR#>` for product owners. The `verifier` subagent checks finished work. Who does what: [docs/roles.md](docs/roles.md).
+In Claude Code you need five skills: `/intent` (something new), `/plan`, `/build`, `/pr [N]` (work through a PR's review) and `/next` (where everything is). Each one works out where a change is and offers the right next step, so the specialised skills (`spec`, `po-review`, `review-findings`, …) never need remembering ([routing](.claude/skills/routing.md)). The `verifier` subagent checks finished work. Who does what: [docs/roles.md](docs/roles.md).
 
 ## How it is put together
 
@@ -108,7 +110,7 @@ In Claude Code, the stages are skills: `/intent`, `/spec`, `/plan`, plus `/po-re
 |---|---|---|
 | Plan | `changes/NNNN-*/intent.md` | `/intent` skill |
 | Design | `spec.md` | `/spec` skill; the *Spec from intent* workflow opens a spec PR when an intent merges |
-| Build | `plan.md` + code | plan mode, `/plan`, worktrees, hooks (format on edit, protected paths) |
+| Build | `plan.md`, optional `build.md`, code | plan mode, `/plan`, `/build` (small plans in one session; larger ones as approved milestones), worktrees, hooks (format on edit, protected paths) |
 | Test | tests, evals | `make check`; *Agent evals* (on demand for now) |
 | Deploy | PR | *Claude review* follows [REVIEW.md](REVIEW.md); `@claude` fixes; production gate hook |
 

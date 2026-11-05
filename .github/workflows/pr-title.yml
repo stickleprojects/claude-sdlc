@@ -16,7 +16,7 @@ jobs:
       - env:
           TITLE: ${{ github.event.pull_request.title }}
         run: |
-          types='feat|fix|docs|chore|ci|refactor|test|perf|build|revert|intent|spec|plan'
+          types='feat|fix|docs|chore|ci|refactor|test|perf|build|revert|intent|bug|spec|plan'
           if [[ "$TITLE" =~ ^($types)(\([a-z0-9-]+\))?!?:\ .+ ]]; then
             echo "ok: $TITLE"
           else

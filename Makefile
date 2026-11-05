@@ -7,11 +7,12 @@
 #   lint      static checks, no changes
 #   test      run the test suite
 #   validate  check the intent -> spec -> plan artifact chain
-#   new-change start a change: make new-change NAME=add-login
+#   new-change start a change: make new-change NAME=add-login (TYPE=bug for a bug: bug.md)
 #   status    show the stage each change has reached
+#   next      each change's next step and the skill that owns it (CHANGE=, REF=origin/main)
 #   check     everything CI requires; exits non-zero on any failure
 
-.PHONY: setup fmt lint test validate check exec-bits new-change status evals deploy-dev deploy-prod
+.PHONY: setup fmt lint test validate check exec-bits new-change status next evals deploy-dev deploy-prod
 
 # How to run the pipeline's own CLI (Python, via uv). Repos on another stack point this
 # at their copy of the tool, e.g. `uv run --project tools/sdlc sdlc`.
@@ -45,11 +46,16 @@ validate:
 check: lint test validate exec-bits
 
 new-change:
-	@test -n "$(NAME)" || { echo "usage: make new-change NAME=kebab-name"; exit 2; }
+	@test -n "$(NAME)" || { echo "usage: make new-change NAME=kebab-name [TYPE=bug]"; exit 2; }
 	$(SDLC) new $(NAME)
 
 status:
 	@$(SDLC) status
+
+# Each change's next step and the skill that owns it; the entry skills route by it.
+# CHANGE=0002 limits it to one change, REF=origin/main reads what's merged.
+next:
+	@$(SDLC) next $(CHANGE) $(if $(REF),--ref $(REF))
 
 # Committed scripts must be executable; a non-executable hook is skipped silently.
 exec-bits:

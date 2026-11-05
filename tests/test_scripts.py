@@ -1,6 +1,9 @@
 """Layer 1: the pipeline's shell scripts."""
 
 import json
+import os
+import re
+import shutil
 
 import pytest
 
@@ -102,6 +105,13 @@ def test_review_does_not_run_on_every_push():
     workflow = (REPO / ".github/workflows/claude-review.yml").read_text()
     assert "types: [opened, ready_for_review, labeled]" in workflow
     assert "synchronize" not in workflow
+
+
+def test_review_clears_its_label_through_the_rest_api():
+    # `gh pr edit` fails in orgs hit by the Projects (classic) GraphQL deprecation.
+    workflow = (REPO / ".github/workflows/claude-review.yml").read_text()
+    assert "gh pr edit" not in workflow
+    assert 'gh api -X DELETE "repos/$GITHUB_REPOSITORY/issues/$PR/labels/review"' in workflow
 
 
 # --- next-version ----------------------------------------------------------------------
@@ -220,6 +230,7 @@ def test_bootstrap_protection_modes(mode, approvals, code_owners):
     protection = json.loads(result.stdout)
     assert protection["enforce_admins"] is True, "nobody bypasses required checks"
     assert sorted(protection["required_status_checks"]["contexts"]) == ["check", "pr-title"]
+    assert protection["required_status_checks"]["strict"] is True, "PRs must be up to date"
     reviews = protection["required_pull_request_reviews"]
     assert reviews["required_approving_review_count"] == approvals
     assert reviews["require_code_owner_reviews"] is code_owners
@@ -240,3 +251,624 @@ def test_verifier_runs_on_a_set_model():
     agent = (REPO / ".claude/agents/verifier.md").read_text()
     front = agent.split("---")[1]
     assert "\nmodel: sonnet\n" in front
+
+
+# --- commit guards: .gitignore baseline --------------------------------------------------------
+
+
+def test_bootstrap_adds_missing_gitignore_lines_once(tmp_path):
+    repo = init_repo(tmp_path / "r")
+    (repo / "templates").mkdir()
+    shutil.copy(REPO / "templates" / "gitignore", repo / "templates" / "gitignore")
+    (repo / ".gitignore").write_text("node_modules/\nmy-own-thing/\n")
+    first = run(["bash", str(REPO / "scripts/bootstrap-github.sh"), "--gitignore-only"], cwd=repo)
+    assert first.returncode == 0, first.stderr
+    text = (repo / ".gitignore").read_text()
+    assert text.startswith("node_modules/\nmy-own-thing/\n")
+    assert text.count("node_modules/") == 1
+    for line in [".venv/", "__pycache__/", ".env", "!.env.example", "dist/"]:
+        assert f"\n{line}\n" in text
+    second = run(["bash", str(REPO / "scripts/bootstrap-github.sh"), "--gitignore-only"], cwd=repo)
+    assert second.returncode == 0
+    assert (repo / ".gitignore").read_text() == text
+    assert "has every baseline line" in second.stdout
+
+
+def test_bootstrap_turns_on_branch_deletion_idempotently():
+    script = (REPO / "scripts/bootstrap-github.sh").read_text()
+    assert '-q .delete_branch_on_merge)" == true ]]' in script
+    assert "-F delete_branch_on_merge=true" in script
+    # The protection comparison includes `strict`, so an existing rule without it is updated.
+    assert "strict: .required_status_checks.strict" in script
+
+
+def test_bootstrap_can_refresh_the_app_key_secret():
+    script = (REPO / "scripts/bootstrap-github.sh").read_text()
+    assert "--update-agent-key) update_agent_key=1" in script
+    assert "((update_agent_key == 0)) && gh secret list" in script
+
+
+def test_bootstrap_help_lists_every_step():
+    help_text = run(["scripts/bootstrap-github.sh", "--help"]).stdout
+    for n in range(1, 12):
+        assert f"{n:>2}. " in help_text or f"#   {n}. " in help_text, n
+    assert "set -euo" not in help_text
+
+
+# --- review skills -----------------------------------------------------------------------
+
+REVIEW_SKILLS = [".claude/skills/po-review/SKILL.md", ".claude/skills/review-findings/SKILL.md"]
+
+
+@pytest.mark.parametrize("path", REVIEW_SKILLS)
+def test_review_skills_sign_replies_and_avoid_graphql_pr_commands(path):
+    # Replies go out under the person's account; `gh pr edit`/`gh pr view` can fail in orgs
+    # hit by the Projects (classic) GraphQL deprecation.
+    skill = (REPO / path).read_text()
+    assert "(posted from Claude Code)" in skill
+    commands = re.findall(r"^\s*(gh pr \w+|git add -A|git add \.)", skill, re.MULTILINE)
+    commands += re.findall(r"`(gh pr (?:edit|view|checkout) [^`]*)`", skill)
+    assert commands == []
+
+
+def test_review_findings_resolves_threads_and_checks_for_bot_commits():
+    skill = (REPO / ".claude/skills/review-findings/SKILL.md").read_text()
+    assert "resolveReviewThread" in skill
+    assert "If GraphQL fails" in skill
+    assert "HEAD..origin/<branch>" in skill
+
+
+def test_pr_title_accepts_bug_artifact_prs():
+    workflow = (REPO / ".github/workflows/pr-title.yml").read_text()
+    assert "|intent|bug|spec|plan'" in workflow
+
+
+# --- spec-pr: one spec PR per change --------------------------------------------------------
+
+FAKE_GH = r"""#!/usr/bin/env bash
+# Records each call; answers from $FAKE_GH_DIR/<name> files keyed by what the call asks for.
+echo "$*" >> "$FAKE_GH_DIR/calls"
+case "$*" in
+  *"head=$OWNER:spec/"*)
+    all="$*"; branch="${all#*head=$OWNER:}"; branch="${branch%% *}"
+    f="$FAKE_GH_DIR/open-${branch//\//_}"; [[ -f "$f" ]] && cat "$f"
+    [[ -f "$FAKE_GH_DIR/fail" ]] && exit 1 ;;
+  *"pulls?state=open&per_page"*) cat "$FAKE_GH_DIR/legacy" 2>/dev/null || true ;;
+  *"/files"*) cat "$FAKE_GH_DIR/legacy-files" 2>/dev/null || true ;;
+  *"repos/o/r/pulls -f title"*) echo 42 ;;
+esac
+exit 0
+"""
+
+
+@pytest.fixture
+def spec_repo(tmp_path):
+    remote = tmp_path / "remote.git"
+    git(tmp_path, "init", "-q", "--bare", str(remote))
+    repo = init_repo(tmp_path / "work")
+    commit(
+        repo,
+        "chore: changes",
+        {
+            "changes/0001-a/intent.md": "# a\n",
+            "changes/0002-b/bug.md": "# b\n",
+            "changes/0003-c/intent.md": "# c\n",
+            "changes/0003-c/spec.md": "# c spec\n",
+        },
+    )
+    git(repo, "remote", "add", "origin", str(remote))
+    fake = tmp_path / "fakebin"
+    fake.mkdir()
+    (fake / "gh").write_text(FAKE_GH)
+    (fake / "gh").chmod(0o755)
+    state = tmp_path / "gh"
+    state.mkdir()
+    env = {
+        "PATH": f"{fake}:{os.environ['PATH']}",
+        "FAKE_GH_DIR": str(state),
+        "OWNER": "o",
+        "GITHUB_REPOSITORY": "o/r",
+    }
+    return repo, remote, state, env
+
+
+def spec_pr(repo, env, *args):
+    return run(["bash", str(REPO / "scripts/spec-pr.sh"), *args], cwd=repo, env=env)
+
+
+def test_spec_pr_pending_skips_changes_with_an_open_spec_pr(spec_repo):
+    repo, _, state, env = spec_repo
+    (state / "open-spec_0001-a").write_text("18\n")
+    result = spec_pr(repo, env, "pending")
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.split() == ["changes/0002-b"]
+    assert "spec PR #18 is already open" in result.stderr
+
+
+def test_spec_pr_pending_fails_when_github_errors(spec_repo):
+    # Treating an API error as "no open PR" would open a duplicate.
+    repo, _, state, env = spec_repo
+    (state / "fail").write_text("")
+    assert spec_pr(repo, env, "pending").returncode != 0
+
+
+def test_spec_pr_open_pushes_one_branch_per_change_named_after_it(spec_repo):
+    repo, remote, state, env = spec_repo
+    (repo / "changes/0001-a/spec.md").write_text("# a spec\n")
+    (repo / "changes/0002-b/spec.md").write_text("# b spec\n")
+    (repo / "stray.txt").write_text("agent leftovers\n")
+    result = spec_pr(repo, env, "open", "changes/0001-a", "changes/0002-b")
+    assert result.returncode == 0, result.stderr
+    for slug, kind in [("0001-a", "intent"), ("0002-b", "bug")]:
+        files = git(remote, "show", "--name-only", "--format=%s", f"spec/{slug}").splitlines()
+        assert files[0] == f"spec({slug}): generate from accepted {kind}"
+        assert [f for f in files[1:] if f] == [f"changes/{slug}/spec.md"]
+    calls = (state / "calls").read_text()
+    assert "title=spec(0001-a): generate from accepted intent" in calls
+    assert "title=spec(0002-b): generate from accepted bug" in calls
+
+
+def test_spec_pr_open_closes_an_older_run_numbered_pr_it_supersedes(spec_repo):
+    repo, _, state, env = spec_repo
+    (repo / "changes/0001-a/spec.md").write_text("# a spec\n")
+    (state / "legacy").write_text("19\n")
+    (state / "legacy-files").write_text("changes/0001-a/spec.md\n")
+    result = spec_pr(repo, env, "open", "changes/0001-a")
+    assert result.returncode == 0, result.stderr
+    calls = (state / "calls").read_text()
+    assert "repos/o/r/issues/19/comments" in calls
+    assert "-X PATCH repos/o/r/pulls/19 --silent -f state=closed" in calls
+    assert "closed #19 (superseded by #42)" in result.stdout
+
+
+def test_spec_from_intent_queues_runs_and_uses_spec_pr():
+    workflow = (REPO / ".github/workflows/spec-from-intent.yml").read_text()
+    assert "group: spec-from-intent" in workflow
+    assert "cancel-in-progress: false" in workflow
+    assert "scripts/spec-pr.sh pending" in workflow
+    assert "GITHUB_RUN_ID" not in workflow
+
+
+# --- agent identity -------------------------------------------------------------------------
+
+
+def test_one_identity_and_no_personas():
+    # One App serves every session; Claude never acts as the person. Personas were taken out
+    # (claude-sdlc #61) and adding Apps back goes through the identity name.
+    assert not (REPO / ".claude/personas.conf").exists()
+    skill = (REPO / ".claude/skills/agent-identity/SKILL.md").read_text()
+    assert "persona" not in skill.lower()
+    assert "`— Claude`" in skill and "Requested-by:" in skill
+    for script in ["agent-identity.sh", "agent-session.sh"]:
+        assert "--persona" not in (REPO / "scripts" / script).read_text(), script
+
+
+@pytest.fixture
+def agent_env(tmp_path):
+    key = tmp_path / "app.pem"
+    run(["openssl", "genrsa", "-out", str(key), "2048"], check=True)
+    run(
+        ["openssl", "rsa", "-in", str(key), "-pubout", "-out", str(tmp_path / "pub.pem")],
+        check=True,
+    )
+    cfg = tmp_path / "config"
+    (cfg / "sdlc" / "o_r").mkdir(parents=True)
+    (cfg / "sdlc" / "o_r" / "agent.env").write_text(
+        "SDLC_AGENT_APP_ID=123\nSDLC_AGENT_APP_SLUG=stickle-claude\nSDLC_AGENT_BOT_ID=999\n"
+    )
+    fake = tmp_path / "bin"
+    fake.mkdir()
+    # curl stub that answers like GitHub; see the fixture for how tests steer it.
+    shutil.copy(REPO / "tests/fixtures/fake-github-curl.sh", fake / "curl")
+    (fake / "curl").chmod(0o755)
+    env = {
+        "PATH": f"{fake}:{os.environ['PATH']}",
+        "XDG_CONFIG_HOME": str(cfg),
+        "XDG_RUNTIME_DIR": str(tmp_path / "run"),
+        "SDLC_AGENT_KEY_FILE": str(key),
+        "SDLC_AGENT_REPO": "o/r",
+        "LOG": str(tmp_path),
+        "SDLC_RETRY_DELAY": "0",
+    }
+    return tmp_path, env
+
+
+def identity(env, *args, stdin=None):
+    return run(["bash", str(REPO / "scripts/agent-identity.sh"), *args], env=env, input=stdin)
+
+
+def test_token_is_minted_with_a_valid_jwt_and_cached(agent_env):
+    tmp, env = agent_env
+    first = identity(env, "token")
+    assert first.returncode == 0, first.stderr
+    assert first.stdout.strip() == "ghs_test"
+    header, payload, sig = (tmp / "jwt").read_text().strip().split(".")
+    pad = lambda s: s + "=" * (-len(s) % 4)  # noqa: E731
+    import base64
+
+    claims = json.loads(base64.urlsafe_b64decode(pad(payload)))
+    assert claims["iss"] == "123" and claims["exp"] - claims["iat"] <= 600
+    (tmp / "sig").write_bytes(base64.urlsafe_b64decode(pad(sig)))
+    (tmp / "msg").write_text(f"{header}.{payload}")
+    verify = run(
+        [
+            "openssl",
+            "dgst",
+            "-sha256",
+            "-verify",
+            str(tmp / "pub.pem"),
+            "-signature",
+            str(tmp / "sig"),
+            str(tmp / "msg"),
+        ]
+    )
+    assert verify.returncode == 0, verify.stdout + verify.stderr
+    calls = (tmp / "curl").read_text().count("\n")
+    assert identity(env, "token").stdout.strip() == "ghs_test"
+    assert (tmp / "curl").read_text().count("\n") == calls, "second call uses the cache"
+
+
+def test_token_fails_rather_than_printing_null(agent_env):
+    tmp, env = agent_env
+    (tmp / "body-token").write_text('{"expires_at": "2099-01-01T00:00:00Z"}')
+    out = identity(env, "token")
+    assert out.returncode != 0 and "null" not in out.stdout
+
+
+def test_git_credential_answers_only_for_github(agent_env):
+    _, env = agent_env
+    gh = identity(env, "git-credential", "get", stdin="protocol=https\nhost=github.com\n\n")
+    assert gh.stdout == "username=x-access-token\npassword=ghs_test\n"
+    other = identity(env, "git-credential", "get", stdin="protocol=https\nhost=gitlab.com\n\n")
+    assert other.stdout == ""
+
+
+def test_env_makes_git_act_as_the_bot(agent_env):
+    _, env = agent_env
+    out = identity(env, "env")
+    assert out.returncode == 0, out.stderr
+    assert "GIT_AUTHOR_NAME='stickle-claude[bot]'" in out.stdout
+    assert "999+stickle-claude[bot]@users.noreply.github.com" in out.stdout
+    assert "SDLC_AGENT_PERSONA" not in out.stdout
+    assert "insteadOf" in out.stdout
+
+
+def test_env_rejects_options(agent_env):
+    _, env = agent_env
+    assert identity(env, "env", "--persona", "build").returncode == 1
+
+
+def test_env_without_setup_falls_back_to_the_person(agent_env, tmp_path):
+    _, env = agent_env
+    out = identity({**env, "XDG_CONFIG_HOME": str(tmp_path / "empty")}, "env")
+    assert out.returncode == 0 and out.stdout == ""
+    assert "acts as you" in out.stderr
+
+
+def test_agent_session_starts_claude_with_the_identity(agent_env):
+    _, env = agent_env
+    out = run(
+        ["bash", str(REPO / "scripts/agent-session.sh")],
+        env={**env, "SDLC_CLAUDE": "env"},
+    )
+    assert out.returncode == 0, out.stderr
+    assert "GIT_COMMITTER_NAME=stickle-claude[bot]" in out.stdout
+
+
+def test_each_repo_has_its_own_apps(agent_env):
+    # An App made for o/r doesn't leak into another repo on the same machine.
+    _, env = agent_env
+    assert identity(env, "show").stdout.strip() == "123 stickle-claude"
+    other = identity({**env, "SDLC_AGENT_REPO": "o/jobhunt-app"}, "show")
+    assert other.returncode == 1
+    assert identity({**env, "SDLC_AGENT_REPO": "o/jobhunt-app"}, "env").stdout == ""
+
+
+def test_workflows_guard_against_agent_loops():
+    mention = (REPO / ".github/workflows/claude-mention.yml").read_text()
+    assert "github.event.comment.user.type == 'User'" in mention
+    review = (REPO / ".github/workflows/claude-review.yml").read_text()
+    assert "allowed_bots: ${{ vars.SDLC_AGENT_APP_SLUG }}" in review
+    spec = (REPO / ".github/workflows/spec-from-intent.yml").read_text()
+    assert "actions/create-github-app-token" in spec
+
+
+# --- tests-locked: bug fixes lock their tests automatically -------------------------------------
+
+
+@pytest.fixture
+def bug_branch(tmp_path):
+    repo = init_repo(tmp_path / "r")
+    commit(
+        repo,
+        "bug: 0003-overlap",
+        {"changes/0003-overlap/bug.md": "# bug\n", "changes/0004-feat/intent.md": "# i\n"},
+    )
+    git(repo, "switch", "-q", "-c", "build/0003-overlap")
+    return repo
+
+
+def locked(repo, path="", env=None):
+    args = ["bash", str(REPO / "scripts/tests-locked.sh")] + ([path] if path else [])
+    clean = {"SDLC_LOCK_TESTS": "", "SDLC_CHANGE": "", **(env or {})}
+    return run(args, cwd=repo, env=clean).returncode == 0
+
+
+def test_bug_tests_stay_editable_until_the_failing_test_is_committed(bug_branch):
+    assert not locked(bug_branch, "tests/test_overlap.py")
+    commit(
+        bug_branch,
+        "test(0003-overlap): failing test for overlap",
+        {"tests/test_overlap.py": "x\n", "app/src/__tests__/overlap.test.tsx": "x\n"},
+    )
+    assert locked(bug_branch, "tests/test_overlap.py")
+    assert locked(bug_branch, "app/src/__tests__/overlap.test.tsx")
+    assert not locked(bug_branch, "src/overlap.py"), "code stays editable"
+
+
+def test_only_the_failing_test_files_are_locked(bug_branch):
+    # /build writes more tests after the failing one (coverage, regression guards); those
+    # stay editable, only what the test(<slug>) commit touched is locked.
+    commit(bug_branch, "test(0003-overlap): failing test", {"tests/test_overlap.py": "x\n"})
+    assert locked(bug_branch, "tests/test_overlap.py")
+    assert not locked(bug_branch, "tests/test_coverage_extra.py")
+    assert not locked(bug_branch, "app/e2e/screens.spec.ts")
+    assert locked(bug_branch, "app/e2e/screens.spec.ts", {"SDLC_LOCK_TESTS": "1"})
+
+
+def test_features_are_not_locked_by_a_test_commit(bug_branch):
+    git(bug_branch, "switch", "-q", "-c", "build/0004-feat")
+    commit(bug_branch, "test(0004-feat): add tests", {"tests/t.py": "x\n"})
+    assert not locked(bug_branch, "tests/t.py")
+
+
+def test_explicit_setting_wins(bug_branch):
+    assert locked(bug_branch, "tests/t.py", {"SDLC_LOCK_TESTS": "1"})
+    commit(bug_branch, "test(0003-overlap): failing test", {"tests/t.py": "x\n"})
+    assert not locked(bug_branch, "tests/t.py", {"SDLC_LOCK_TESTS": "0"})
+
+
+def test_change_can_be_named_explicitly(bug_branch):
+    git(bug_branch, "switch", "-q", "-c", "wip")
+    commit(bug_branch, "test(0003-overlap): failing test", {"tests/t.py": "x\n"})
+    assert not locked(bug_branch, "tests/t.py")
+    assert locked(bug_branch, "tests/t.py", {"SDLC_CHANGE": "0003-overlap"})
+
+
+def test_a_later_commit_by_another_type_does_not_lock(bug_branch):
+    commit(bug_branch, "feat(0003-overlap): fix it", {"tests/t.py": "x\n"})
+    assert not locked(bug_branch, "tests/t.py")
+
+
+def test_agent_session_locks_tests_for_a_bug_fix(bug_branch):
+    commit(bug_branch, "test(0003-overlap): failing test", {"tests/t.py": "x\n"})
+    out = run(
+        ["bash", str(REPO / "scripts/agent-session.sh")],
+        cwd=bug_branch,
+        env={"SDLC_CLAUDE": "env", "SDLC_LOCK_TESTS": "", "XDG_CONFIG_HOME": str(bug_branch)},
+    )
+    assert out.returncode == 0, out.stderr
+    assert "SDLC_LOCK_TESTS=1" not in out.stdout, "the hook locks just the failing test's files"
+    assert "tests locked" in out.stderr and "tests/t.py" in out.stderr
+
+
+def test_every_session_loads_the_agent_identity():
+    settings = json.loads((REPO / ".claude/settings.json").read_text())
+    commands = [h["command"] for e in settings["hooks"]["SessionStart"] for h in e["hooks"]]
+    assert '"$CLAUDE_PROJECT_DIR"/scripts/agent-session.sh --hook' in commands
+
+
+def test_session_hook_is_a_no_op_without_setup(tmp_path):
+    env_file = tmp_path / "env"
+    out = run(
+        ["bash", str(REPO / "scripts/agent-session.sh"), "--hook"],
+        env={"CLAUDE_ENV_FILE": str(env_file), "XDG_CONFIG_HOME": str(tmp_path)},
+    )
+    assert out.returncode == 0
+    assert not env_file.exists() or env_file.read_text() == ""
+
+
+def test_repos_share_one_app_and_one_key_with_use(agent_env):
+    tmp, env = agent_env
+    shared = tmp / "shared" / "claude.env"
+    shared.parent.mkdir()
+    key = env["SDLC_AGENT_KEY_FILE"]
+    shared.write_text(
+        f"SDLC_AGENT_APP_ID=55\nSDLC_AGENT_APP_SLUG=one-claude\nSDLC_AGENT_KEY=file:{key}\n"
+    )
+    no_key_env = {k: v for k, v in env.items() if k != "SDLC_AGENT_KEY_FILE"} | {
+        "SDLC_AGENT_KEY_FILE": ""
+    }
+    for repo in ["o/jobhunt-app", "o/sandbox"]:
+        e = {**no_key_env, "SDLC_AGENT_REPO": repo}
+        linked = identity(e, "use", str(shared))
+        assert linked.returncode == 0, linked.stderr
+        assert identity(e, "show").stdout.strip() == "55 one-claude"
+        assert identity(e, "token").stdout.strip() == "ghs_test", "key read from the shared file"
+    assert shared.read_text().count("SDLC_AGENT_APP_ID=55") == 1, "the shared config is untouched"
+
+
+def test_use_and_setup_refuse_to_replace_an_existing_config(agent_env):
+    tmp, env = agent_env
+    other = tmp / "other.env"
+    other.write_text("SDLC_AGENT_APP_ID=9\nSDLC_AGENT_APP_SLUG=other\n")
+    refused = identity(env, "use", str(other))
+    assert refused.returncode == 1 and "already exists" in refused.stderr
+    assert "stickle-claude" in (tmp / "config/sdlc/o_r/agent.env").read_text()
+    assert identity(env, "use", str(other), "--force").returncode == 0
+    setup = identity(env, "setup", "--app-id", "1", "--key", env["SDLC_AGENT_KEY_FILE"])
+    assert setup.returncode == 1 and "already exists" in setup.stderr
+
+
+# --- what GitHub can answer, and how the identity copes --------------------------------------
+
+
+def _codes(tmp, endpoint, *codes):
+    (tmp / f"codes-{endpoint}").write_text("\n".join(map(str, codes)) + "\n")
+
+
+def test_app_not_installed_says_where_to_install_it(agent_env):
+    tmp, env = agent_env
+    _codes(tmp, "installation", 404)
+    out = identity(env, "token")
+    assert out.returncode == 1
+    assert "isn't installed on o/r" in out.stderr
+    assert "https://github.com/apps/stickle-claude/installations/new" in out.stderr
+
+
+def test_rejected_credentials_point_to_doctor(agent_env):
+    tmp, env = agent_env
+    _codes(tmp, "installation", 401)
+    (tmp / "body-installation").write_text('{"message": "A JSON web token could not be decoded"}')
+    out = identity(env, "token")
+    assert out.returncode == 1
+    assert "rejected stickle-claude's credentials" in out.stderr
+    assert "could not be decoded" in out.stderr and "doctor" in out.stderr
+
+
+def test_clock_skew_is_called_out(agent_env):
+    tmp, env = agent_env
+    _codes(tmp, "installation", 401)
+    (tmp / "body-installation").write_text(
+        "{\"message\": \"'Issued at' claim ('iat') must be an Integer representing the time\"}"
+    )
+    assert "clock looks wrong" in identity(env, "token").stderr
+
+
+def test_suspended_installation_explained(agent_env):
+    tmp, env = agent_env
+    _codes(tmp, "token", 403)
+    (tmp / "body-token").write_text('{"message": "This installation has been suspended"}')
+    out = identity(env, "token")
+    assert out.returncode == 1 and "suspended" in out.stderr
+    assert "settings/installations" in out.stderr
+
+
+def test_outages_and_timeouts_are_retried(agent_env):
+    tmp, env = agent_env
+    _codes(tmp, "installation", 502, "timeout", 200)
+    out = identity(env, "token")
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.strip() == "ghs_test"
+
+
+def test_gives_up_after_three_tries(agent_env):
+    tmp, env = agent_env
+    _codes(tmp, "installation", "timeout")
+    out = identity(env, "token")
+    assert out.returncode == 1 and "didn't answer after 3 tries" in out.stderr
+    assert (tmp / "curl").read_text().count("/installation") == 3
+    _codes(tmp, "installation", 503)
+    assert "had an error (503) after 3 tries" in identity(env, "token").stderr
+
+
+def test_weird_replies_fail_clearly(agent_env):
+    tmp, env = agent_env
+    (tmp / "body-installation").write_text("<html>proxy error</html>")
+    out = identity(env, "token")
+    assert out.returncode == 1 and "has no id" in out.stderr
+    (tmp / "body-installation").write_text('{"id": 77}')
+    (tmp / "body-token").write_text("not json")
+    out = identity(env, "token")
+    assert out.returncode == 1 and "has no token" in out.stderr
+
+
+def test_doctor_walks_every_link(agent_env):
+    _, env = agent_env
+    out = identity(env, "doctor")
+    assert out.returncode == 0, out.stdout + out.stderr
+    for step in [
+        "config",
+        "private key readable",
+        "accepts the key",
+        "installed on o/r",
+        "token issued",
+    ]:
+        assert step in out.stdout
+
+
+def test_doctor_on_rejected_key_explains_rekey(agent_env):
+    tmp, env = agent_env
+    _codes(tmp, "app", 401)
+    out = identity(env, "doctor")
+    assert out.returncode == 1
+    assert "FAIL: GitHub doesn't accept the key" in out.stdout
+    assert "Generate a private key" in out.stdout and "rekey --key" in out.stdout
+    assert "create --force" in out.stdout, "the App may have been deleted"
+
+
+def test_doctor_on_mismatched_key_and_app(agent_env):
+    tmp, env = agent_env
+    (tmp / "body-app").write_text('{"id": 123, "slug": "someone-else"}')
+    out = identity(env, "doctor")
+    assert out.returncode == 1 and "belong to 'someone-else'" in out.stdout
+
+
+def test_doctor_on_missing_install_gives_the_link(agent_env):
+    tmp, env = agent_env
+    _codes(tmp, "installation", 404)
+    out = identity(env, "doctor")
+    assert out.returncode == 1
+    assert "isn't installed on o/r" in out.stdout and "installations/new" in out.stdout
+
+
+def test_doctor_without_config_says_create_or_use(agent_env, tmp_path):
+    _, env = agent_env
+    out = identity({**env, "SDLC_AGENT_REPO": "o/elsewhere"}, "doctor")
+    assert out.returncode == 1 and "create" in out.stdout and "use <its config file>" in out.stdout
+
+
+@pytest.fixture
+def file_keyed(agent_env):
+    """The App's config keeps its key in a file, so rekey can be checked end to end."""
+    tmp, env = agent_env
+    stored = tmp / "stored.pem"
+    shutil.copy(env["SDLC_AGENT_KEY_FILE"], stored)
+    cfg = tmp / "config/sdlc/o_r/agent.env"
+    cfg.write_text(cfg.read_text() + f"SDLC_AGENT_KEY=file:{stored}\n")
+    new = tmp / "new.pem"
+    run(["openssl", "genrsa", "-out", str(new), "2048"], check=True)
+    return tmp, {**env, "SDLC_AGENT_KEY_FILE": ""}, stored, new
+
+
+def test_rekey_without_a_key_explains_how_to_get_one(file_keyed):
+    _, env, stored, _ = file_keyed
+    before = stored.read_text()
+    out = identity(env, "rekey")
+    assert out.returncode == 2 and "Generate a private key" in out.stdout
+    assert stored.read_text() == before
+
+
+def test_rekey_needs_confirmation(file_keyed):
+    _, env, stored, new = file_keyed
+    before = stored.read_text()
+    out = identity(env, "rekey", "--key", str(new))
+    assert out.returncode == 1 and "add --yes" in out.stderr
+    assert stored.read_text() == before, "nothing replaced by accident"
+
+
+def test_rekey_refuses_a_key_github_rejects(file_keyed):
+    tmp, env, stored, new = file_keyed
+    before = stored.read_text()
+    _codes(tmp, "app", 401)
+    out = identity(env, "rekey", "--key", str(new), "--yes")
+    assert out.returncode == 1 and "nothing changed" in out.stderr
+    assert stored.read_text() == before
+
+
+def test_rekey_refuses_another_apps_key(file_keyed):
+    tmp, env, stored, new = file_keyed
+    before = stored.read_text()
+    (tmp / "body-app").write_text('{"id": 999, "slug": "other-app"}')
+    out = identity(env, "rekey", "--key", str(new), "--yes")
+    assert out.returncode == 1 and "is for 'other-app'" in out.stderr
+    assert stored.read_text() == before
+
+
+def test_rekey_replaces_the_key_and_says_what_next(file_keyed):
+    _, env, stored, new = file_keyed
+    out = identity(env, "rekey", "--key", str(new), "--yes")
+    assert out.returncode == 0, out.stderr
+    assert stored.read_text() == new.read_text()
+    assert "--update-agent-key" in out.stdout and "delete the old key" in out.stdout
+    assert identity(env, "token").stdout.strip() == "ghs_test"

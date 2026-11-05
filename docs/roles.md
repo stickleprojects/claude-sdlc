@@ -44,20 +44,31 @@ Find your role below. Each section covers when you're involved, what you do (wit
    git push -u origin HEAD && gh pr create --fill
    ```
 
+**Found a bug?** Something that doesn't work as specified, found in testing or use, takes a lighter path. Describe it the same way:
+```
+claude
+> /intent The export button spins forever on an empty list
+```
+Claude recognises it as a bug and asks only what happens, what should happen, how to reproduce it and where you saw it. It creates `changes/NNNN-<name>/bug.md` (by running `make new-change NAME=<name> TYPE=bug`) instead of an intent. Commit it on a `bug/<name>` branch with the message `bug: <name>`, and open a PR as above. Once it merges, a short spec is generated: one requirement and one acceptance test per symptom.
+
 **Stays with you:** Saying what the problem is. If Claude adds something you didn't mean, remove it.
 
 ---
 
 ## Product owner
 
-**When:** An `intent:` or `spec:` PR asks for your review. GitHub notifies you when it's opened. The spec PR is opened automatically when your intent merges.
+**When:** An `intent:`, `bug:` or `spec:` PR asks for your review. GitHub notifies you when it's opened. The spec PR is opened automatically when your intent merges. Each change gets its own spec PR, titled `spec(NNNN-<name>): …`.
+
+> **Spec PRs need one click before their checks run.** They're opened by `github-actions[bot]`, and GitHub holds the checks and the review on PRs from that account until someone approves them. If the PR shows *Approve and run workflows*, click it.
 
 **Where you work:** you can use two tools, which do different jobs.
 
-| | GitHub PR | Claude Code session |
+| | Claude Code session | GitHub PR |
 |---|---|---|
-| Purpose | **The gate.** Approving and merging *is* your acceptance, and it's the audit record | **A helper.** It explains findings, asks for your decisions and edits the artifact for you |
-| Use it for | Reading the review summary, then the final approve and merge | Working through findings and open questions |
+| Purpose | **Where you give feedback.** Claude explains each finding, asks for your decision, edits the artifact and replies on GitHub for you | **The gate.** Approving and merging *is* your acceptance, and it's the audit record |
+| Use it for | Working through findings and open questions | Reading the review summary, then the final approve and merge |
+
+You don't need to comment on GitHub yourself.
 
 **What you do**
 
@@ -65,11 +76,11 @@ Find your role below. Each section covers when you're involved, what you do (wit
 2. **Work through your items** in Claude Code:
    ```
    claude
-   > /po-review 6
+   > /pr 6
    ```
-   For each item, Claude quotes the spec text, explains the problem, suggests a fix and asks what you want. It then edits the artifact, records your decisions, pushes, and replies to each comment on GitHub.
-   If you prefer, you can edit the file directly in the GitHub UI or your editor instead.
-3. **Wait for the fresh review**, which `/po-review` asks for after it pushes. Check that its summary shows no open findings for you. If you edited the file yourself, add the `review` label to the PR to get one.
+   Claude goes through the items one at a time: it quotes the spec text, explains the problem, suggests a fix and asks what you want. Then it edits the artifact, records your decisions, pushes, replies on every thread (signed `(posted from Claude Code)`, since the reply appears under your account) and resolves it. If it can't resolve a thread, it tells you which ones to resolve on GitHub.
+   If you prefer, you can edit the file directly in the GitHub UI or your editor instead. Avoid tagging `@claude` on a thread you've also discussed with Claude Code: that starts a second agent on the same finding.
+3. **Wait for the fresh review**, which `/pr` asks for after it pushes. Check that its summary shows no open findings for you. If you edited the file yourself, add the `review` label to the PR to get one.
 4. **Accept** by merging the PR, once its checks are green. In solo mode the merge *is* the approval. In team mode, a code owner approves first. Claude never merges for you: a hook blocks it.
 
 What you check at each gate:
@@ -77,7 +88,7 @@ What you check at each gate:
 - **Intent PR:** the problem is real and the outcome is worth building. *Open questions* is empty, or says `None.`. Merging starts the *Spec from intent* workflow.
 - **Spec PR:** every requirement and acceptance criterion is what you want. Each *Policy concern* has a decision: settle it with the policy owner, and pass higher-risk items to the tech lead. Merging hands the change to the engineer.
 
-To regenerate a spec by hand, run `claude`, then `/spec changes/NNNN-<name>`.
+To regenerate a spec by hand, run `claude`, then `/next NNNN`: when the spec is missing it offers to write it.
 
 **Not your job:** pipeline failures, permissions and workflow bugs. Report them to the platform team, as a GitHub issue labelled `pipeline`.
 
@@ -98,23 +109,27 @@ To regenerate a spec by hand, run `claude`, then `/spec changes/NNNN-<name>`.
    ```
    Iterate until you'd be happy implementing the plan yourself, then approve it.
 2. Save the plan and commit it first: `> /plan`
-3. Implement in a dedicated worktree. You can run two or three of these in parallel:
+3. Once the plan is merged, build it in a dedicated worktree. You can run two or three of these in parallel:
    ```
    claude --worktree NNNN-<name>
+   > /build
    ```
-   For a bug fix, commit a failing test first, then lock the tests while Claude fixes the code:
-   ```
-   SDLC_LOCK_TESTS=1 claude --worktree NNNN-<name>
-   ```
+   A small plan (a message, a one-line fix) is built in that one session, through to the PR. A larger one first gets `changes/NNNN-<name>/build.md`, a draft that splits the plan into milestones and lists anything you need to decide. Read the file, answer its questions, and approve it; nothing is built before you do. Then run `/build` once per milestone, in a new conversation each time, or `/build all` to run them all in fresh subagents through to the PR.
+   For a bug fix (a change with `bug.md`), Claude commits a failing test first (`test(NNNN-<name>): failing test for …`), one per acceptance criterion. From then on those test files lock automatically while Claude fixes the code (new tests elsewhere can still be added); you don't set anything. To unlock them deliberately, start the session with `SDLC_LOCK_TESTS=0`.
 4. Verify, then open the PR:
    ```
    make check                       # lint + tests + artifact chain; must exit 0
    > Use the verifier subagent on changes/NNNN-<name>
    gh pr create --fill
    ```
-5. Answer the review. On any review comment, tag `@claude` to have it push a fix to the branch. The review runs when the PR opens, not on every push. To review the latest push, add the `review` label; it removes itself so you can add it again.
+5. Answer the review in Claude Code:
+   ```
+   > /pr <N>
+   ```
+   Claude goes through the findings one at a time and asks what you want. Then it fixes the code, pushes, replies on every thread and resolves it. Tagging `@claude` on a GitHub comment is an optional alternative, where the bot pushes the fix. Use one or the other for a finding, never both: before it pushes, Claude Code checks the branch for bot commits.
+   The review runs when the PR opens, not on every push. To review the latest push, add the `review` label; it removes itself so you can add it again.
 
-**Stays with you:** Approving the plan, and deciding the work is done. When Claude makes the same mistake twice, add the correction to `CLAUDE.md`.
+**Stays with you:** Approving the plan and the build plan, and deciding the work is done. When Claude makes the same mistake twice, add the correction to `CLAUDE.md`.
 
 ---
 
@@ -138,10 +153,10 @@ To regenerate a spec by hand, run `claude`, then `/spec changes/NNNN-<name>`.
 
 **What you do**
 
-1. Read the Claude review summary and its inline findings. Every *Important* finding is either fixed or dismissed with a reason. If the PR changed since the review, add the `review` label to review it again.
+1. Read the Claude review summary and its inline findings. Every *Important* finding is either fixed or dismissed with a reason, in a reply on its thread. If the PR changed since the review, add the `review` label to review it again.
    - **A PR that changes `.github/workflows/claude-*.yml` gets no AI review**, though its check is green. A comment on the PR says so. Review those by hand, with extra care: they control what the agent may do.
 2. Check that the diff matches `spec.md` and `plan.md` for its change.
-3. **Solo mode:** merge it. The required checks must be green, and nobody can bypass them. **Team mode:** approve it, then merge. Branch protection requires your approval, and Claude's review never counts as one.
+3. **Solo mode:** merge it. The required checks must be green, and nobody can bypass them. If GitHub says the branch is out of date with `main`, click *Update branch* and wait for the checks again: branch protection requires PRs to be up to date, so you see when one is behind. The branch is deleted when it merges. **Team mode:** approve it, then merge. Branch protection requires your approval, and Claude's review never counts as one.
 
 **Stays with you:** The merge decision. The agent opens and updates PRs but can't approve or merge them: the production-gate hook blocks it.
 
@@ -191,6 +206,8 @@ The production gate hook (`.claude/hooks/production-gate.sh`) blocks Claude from
 | Build-time guardrails | `.claude/settings.json`, `.claude/hooks/` |
 | CI and automation | `.github/workflows/` |
 | Agent evals | `evals/`; run with `make evals` |
+| Claude's GitHub identity | `scripts/agent-identity.sh`, `scripts/agent-session.sh`; setup in [agent-identity.md](agent-identity.md) |
+| `.gitignore` baseline (node, python) | `templates/gitignore`; `bootstrap-github.sh` adds any missing line, and `make validate` fails on tracked `node_modules` or a branch changing more than 300 files (`SDLC_MAX_CHANGED_FILES`) |
 
 - Before merging a change to `CLAUDE.md`, `.claude/**`, prompts or evals, run the *Agent evals* workflow: Actions → Agent evals → Run workflow. It's on demand for now to save subscription usage. Don't merge a change that lowers the pass rate.
 - Turn every production incident into a new task under `evals/tasks/`.

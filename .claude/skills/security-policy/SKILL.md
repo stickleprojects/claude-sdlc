@@ -1,6 +1,7 @@
 ---
 name: security-policy
 description: Organisational security policy (placeholder, owned by the security policy owner). Apply when writing specs, plans or code that handle user data, credentials, network access, authentication or external dependencies.
+user-invocable: false
 ---
 
 # Security policy (starter set: replace with your organisation's)

@@ -31,12 +31,19 @@ main() {
     ".github/workflows:.github/workflows"
     "scripts/agent.sh:scripts/agent.sh"
     "scripts/bootstrap-github.sh:scripts/bootstrap-github.sh"
+    "scripts/spec-pr.sh:scripts/spec-pr.sh"
+    "scripts/agent-identity.sh:scripts/agent-identity.sh"
+    "scripts/agent-session.sh:scripts/agent-session.sh"
+    "scripts/create-agent-apps.py:scripts/create-agent-apps.py"
+    "scripts/tests-locked.sh:scripts/tests-locked.sh"
     "scripts/sync-sdlc.sh:scripts/sync-sdlc.sh"
     "templates:templates"
     "prompts:prompts"
     "evals/run.sh:evals/run.sh"
     "REVIEW.md:REVIEW.md"
     "docs/roles.md:docs/roles.md"
+    "docs/agent-identity.md:docs/agent-identity.md"
+    "docs/setup-agent-apps.md:docs/setup-agent-apps.md"
     "src/sdlc:tools/sdlc/src/sdlc"
   )
   # Framework-only workflows that consumers must not run.
@@ -65,6 +72,15 @@ main() {
   local sha
   sha="$(git -C "$tmp/fw" rev-parse HEAD)"
   echo "syncing from $label@$ref (${sha:0:7})"
+
+  # This script's file list is part of what changes between versions. If the framework's
+  # copy differs from the one running, run that copy instead (once), so files a new
+  # version adds arrive in this sync, not the next one.
+  if [[ -z "${SDLC_SYNC_SELF_UPDATED:-}" ]] && ! cmp -s "$tmp/fw/scripts/sync-sdlc.sh" "$0"; then
+    echo "  the sync script itself changed; running the new one"
+    SDLC_SYNC_SELF_UPDATED=1 bash "$tmp/fw/scripts/sync-sdlc.sh" "$ref"
+    return $?
+  fi
 
   # Copy the new set over the old one in place, then delete only files the previous sync
   # installed (.sdlc-files) that the framework has since dropped. Overwriting in place,
@@ -123,5 +139,6 @@ main() {
   echo "  git push -u origin HEAD && gh pr create --fill"
 }
 
-main "$@"
-exit $?
+# One line: bash reads a whole line before running it, so nothing after main is read from
+# the file, which main may have replaced with a longer or shorter version.
+main "$@"; exit $?

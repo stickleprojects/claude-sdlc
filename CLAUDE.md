@@ -14,6 +14,7 @@ make test        # uv run pytest -q
 uv run pytest tests/test_artifacts.py::test_next_slug_increments   # a single test
 make new-change NAME=<kebab-name>   # start a change
 make status      # stage each change has reached
+make next REF=origin/main   # each change's next step and the skill that owns it
 make evals       # agent evals (calls the model; in CI it uses CLAUDE_CODE_OAUTH_TOKEN)
 scripts/next-version.sh --explain   # the version the next release would get
 ```
@@ -34,12 +35,13 @@ The framework itself. Its changes are tracked as GitHub issues (label `pipeline`
 - **Stack contract:** hooks, CI and evals call only the `make` targets above, never `uv`, `ruff` or `pytest` directly. Language-specific details live only in `Makefile` and `.github/actions/setup-stack/`. Keep it that way.
 - **Agent adapter:** CI and evals call AI only through `scripts/agent.sh`. Don't call `claude -p` from workflows directly. (`claude-code-action` in the review and mention workflows is the one exception.)
 - **Artifact chain:** `changes/NNNN-name/{intent,spec,plan}.md`. The required `##` sections are defined in `src/sdlc/artifacts.py` (`CHAIN`) and must match `templates/`. A test enforces this. Change both together.
-- **Stage skills:** `.claude/skills/{intent,spec,plan}`. Policy skills (e.g. `security-policy`) are advisory; rules that must always hold need a hook or CI check.
+- **Optional build plan:** `changes/NNNN-name/build.md`, written by `/build` for builds of more than one session. It sits outside `CHAIN`; `check_build` validates it when present (sections from `templates/build.md`, no approval with open questions). Small plans are built without one.
+- **Skills:** five entry skills people remember (`intent`, `plan`, `build`, `pr`, `next`) route by a change's state (`src/sdlc/routing.py`, `.claude/skills/routing.md`) to internal ones (`spec`, `po-review`, `review-findings`, `agent-identity`, `security-policy`, all `user-invocable: false`). A new skill is one or the other; `tests/test_routing.py` enforces it. Policy skills (e.g. `security-policy`) are advisory; rules that must always hold need a hook or CI check.
 
 ## Guardrails (hooks in .claude/settings.json)
 
 - You can't edit `.claude/hooks/*`, `.claude/settings.json`, lockfiles or `.env*`. Propose those changes for a human instead.
-- With `SDLC_LOCK_TESTS=1`, files under `tests/` are locked. Fix the code, not the test.
+- A bug fix's failing test locks once it's committed (`test(<slug>): …` on a change with `bug.md`): the files that commit touched can't be edited, while new tests elsewhere still can (`scripts/tests-locked.sh`). `SDLC_LOCK_TESTS=1` locks every test file. Fix the code, not the test.
 - `make deploy-prod`, `git push` to main and force pushes are blocked. Push a branch and open a PR.
 - Merging and approving PRs (`gh pr merge`, `gh pr review --approve`, the merge and review APIs) are blocked: a human merges. When a PR is ready, say so and stop.
 - Edited files are auto-formatted after each edit through `make fmt FILES=...`.

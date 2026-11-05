@@ -9,6 +9,7 @@ import shutil
 import pytest
 
 from conftest import REPO, commit, git, hook, init_repo, run
+from sdlc.artifacts import CHAIN
 
 FIXTURE = REPO / "tests" / "fixtures" / "consumer"
 
@@ -40,6 +41,12 @@ def test_sync_installs_framework_owned_files(consumer):
     for rel in [
         ".claude/hooks/production-gate.sh",
         ".claude/skills/intent/SKILL.md",
+        ".claude/skills/review-findings/SKILL.md",
+        ".claude/skills/build/SKILL.md",
+        ".claude/skills/pr/SKILL.md",
+        ".claude/skills/next/SKILL.md",
+        ".claude/skills/routing.md",
+        "templates/build.md",
         ".claude/settings.json",
         ".github/workflows/claude-review.yml",
         ".github/workflows/pr-title.yml",
@@ -47,6 +54,9 @@ def test_sync_installs_framework_owned_files(consumer):
         "REVIEW.md",
         "tools/sdlc/src/sdlc/cli.py",
         "scripts/sync-sdlc.sh",
+        "scripts/spec-pr.sh",
+        "scripts/agent-identity.sh",
+        "scripts/tests-locked.sh",
     ]:
         assert (consumer / rel).exists(), rel
     assert not (consumer / ".github/workflows/release.yml").exists(), "framework-only workflow"
@@ -107,6 +117,41 @@ def test_change_lifecycle_in_consumer(consumer):
     assert "Constraints" in broken.stderr
 
 
+def test_bug_change_in_consumer(consumer):
+    # The consumer's Makefile passes only NAME; TYPE reaches the CLI through make's environment.
+    assert make(consumer, "new-change", "NAME=export-hangs", "TYPE=bug").returncode == 0
+    folder = consumer / "changes" / "0001-export-hangs"
+    assert (folder / "bug.md").exists()
+    assert not (folder / "intent.md").exists()
+    assert make(consumer, "validate").returncode == 0
+    assert make(consumer, "status").stdout.strip() == "0001-export-hangs\tbug"
+    assert (consumer / "templates" / "bug-spec.md").exists()
+
+
+def test_build_plan_in_consumer(consumer):
+    """A large build's draft build.md validates, an approval with open questions doesn't,
+    and make status shows milestone progress."""
+    assert make(consumer, "new-change", "NAME=role-list").returncode == 0
+    change = consumer / "changes" / "0001-role-list"
+    for name, sections in CHAIN.items():
+        (change / name).write_text("# T\n\n" + "".join(f"## {s}\n\nx\n\n" for s in sections))
+    draft = (consumer / "templates" / "build.md").read_text()
+    (change / "build.md").write_text(draft)
+    assert make(consumer, "validate").returncode == 0
+    assert make(consumer, "status").stdout.strip() == (
+        "0001-role-list\tbuild\tdraft, awaiting approval, 0/2 milestones done"
+    )
+    assert make(consumer, "next", "CHANGE=0001").stdout.strip() == (
+        "0001-role-list\tbuild\tbuild\tapprove the build plan (build.md)"
+    )
+
+    approved = draft.replace("draft, awaiting approval", "in progress", 1)
+    (change / "build.md").write_text(approved.replace("None.\n", "1. Split it?\n", 1))
+    refused = make(consumer, "validate")
+    assert refused.returncode != 0
+    assert "Questions before approval" in refused.stderr
+
+
 def test_hooks_guard_the_consumer(consumer):
     blocked = hook(
         "production-gate.sh", {"tool_input": {"command": "git push origin main"}}, cwd=consumer
@@ -158,3 +203,18 @@ def test_sync_overwrites_files_in_place(consumer, framework_snapshot):
     commit(framework_snapshot, "fix: change", {"REVIEW.md": "changed\n"})
     assert sync(consumer, framework_snapshot, "main").returncode == 0
     assert script.stat().st_ino == before
+
+
+def test_a_new_framework_file_arrives_in_the_same_sync(consumer, framework_snapshot):
+    # The file list lives in the sync script, so a version that adds a path must be run by
+    # its own (new) script, or the new file only arrives on the next sync.
+    script = framework_snapshot / "scripts" / "sync-sdlc.sh"
+    text = script.read_text().replace(
+        '    "REVIEW.md:REVIEW.md"\n', '    "REVIEW.md:REVIEW.md"\n    "NEW.md:NEW.md"\n'
+    )
+    commit(framework_snapshot, "feat: new file", {"NEW.md": "new\n", "scripts/sync-sdlc.sh": text})
+    result = sync(consumer, framework_snapshot, "main")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "running the new one" in result.stdout
+    assert (consumer / "NEW.md").read_text() == "new\n"
+    assert "command not found" not in result.stderr

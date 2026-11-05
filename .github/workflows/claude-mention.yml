@@ -17,7 +17,10 @@ permissions:
 jobs:
   respond:
     # Public repo: only the owner and collaborators can trigger Claude (and spend the token).
+    # Only people: a comment by a bot, including the agent's own App identity, never starts
+    # the mention bot, so agents can't trigger each other in a loop.
     if: >-
+      github.event.comment.user.type == 'User' &&
       contains(github.event.comment.body, '@claude') &&
       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
     runs-on: ubuntu-latest

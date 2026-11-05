@@ -1,27 +1,47 @@
-# Stage 2 (Design), automated: when an accepted intent.md merges to main, generate
+# Stage 2 (Design), automated: when an accepted intent.md (or bug.md) merges to main, generate
 # spec.md and open it as a PR for the product owner. The agent never commits to main.
+# One PR per change, from branch spec/<slug>: a change whose spec PR is still open is skipped,
+# so intents merged close together never regenerate (and leave stale) each other's spec.
 name: Spec from intent
 
 on:
   push:
     branches: [main]
-    paths: ["changes/*/intent.md"]
+    paths: ["changes/*/intent.md", "changes/*/bug.md"]
   workflow_dispatch:
 
 permissions:
   contents: write
   pull-requests: write
 
+# Runs queue rather than overlap, so the second run sees the first run's PRs.
+concurrency:
+  group: spec-from-intent
+  cancel-in-progress: false
+
 jobs:
   spec:
     runs-on: ubuntu-latest
     steps:
+      # Open spec PRs as the agent's App identity when it's set up (docs/agent-identity.md):
+      # PRs opened with the default GITHUB_TOKEN don't run CI until someone approves them.
+      - name: Agent identity token
+        id: agent
+        if: vars.SDLC_AGENT_APP_ID != ''
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.SDLC_AGENT_APP_ID }}
+          private-key: ${{ secrets.SDLC_AGENT_APP_KEY }}
       - uses: actions/checkout@v4
+        with:
+          token: ${{ steps.agent.outputs.token || github.token }}
       - uses: ./.github/actions/setup-stack
-      - name: Find intents without a spec
+      - name: Find intents and bugs without a spec (or an open spec PR)
         id: find
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          pending=$(for d in changes/*/; do [ -f "$d/intent.md" ] && [ ! -f "$d/spec.md" ] && echo "${d%/}"; done || true)
+          pending=$(scripts/spec-pr.sh pending)
           echo "pending<<EOF" >> "$GITHUB_OUTPUT"; echo "$pending" >> "$GITHUB_OUTPUT"; echo "EOF" >> "$GITHUB_OUTPUT"
       - name: Generate specs
         if: steps.find.outputs.pending != ''
@@ -31,19 +51,12 @@ jobs:
         run: |
           npm install -g @anthropic-ai/claude-code
           { cat prompts/spec-from-intent.md; echo "$PENDING"; } | scripts/agent.sh -
-      - name: Open PR
+      - name: Open one PR per change
         if: steps.find.outputs.pending != ''
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.agent.outputs.token || github.token }}
+          SDLC_AGENT_APP_SLUG: ${{ steps.agent.outputs.app-slug }}
           PENDING: ${{ steps.find.outputs.pending }}
         run: |
-          branch="spec/${GITHUB_RUN_ID}"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git switch -c "$branch"
-          git add changes/*/spec.md
-          git diff --cached --quiet && { echo "no specs produced"; exit 0; }
-          git commit -m "spec: generate from accepted intent"
-          git push -u origin "$branch"
-          gh pr create --title "spec: generate from accepted intent" \
-            --body "Generated spec(s) for: ${PENDING}. Product owner: review and resolve flagged policy concerns."
+          # shellcheck disable=SC2086  # one change folder per word
+          scripts/spec-pr.sh open $PENDING

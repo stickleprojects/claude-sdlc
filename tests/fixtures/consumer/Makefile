@@ -1,7 +1,7 @@
 # Minimal consumer repo for the scenario tests: the stack contract with a no-op stack.
 # Proves the framework works in a repo that isn't Python, without installing anything.
 
-.PHONY: setup fmt lint test validate check exec-bits new-change status
+.PHONY: setup fmt lint test validate check exec-bits new-change status next
 
 SDLC = PYTHONPATH=tools/sdlc/src python3 -m sdlc.cli
 
@@ -22,3 +22,8 @@ new-change:
 
 status:
 	@$(SDLC) status
+
+# Each change's next step and the skill that owns it; the entry skills route by it.
+# CHANGE=0002 limits it to one change, REF=origin/main reads what's merged.
+next:
+	@$(SDLC) next $(CHANGE) $(if $(REF),--ref $(REF))

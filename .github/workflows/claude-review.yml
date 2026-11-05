@@ -28,10 +28,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      # Remove the label first, so adding it again asks for another review.
+      # Remove the label first, so adding it again asks for another review. Uses the REST API:
+      # The gh pr subcommand fails in orgs hit by the Projects (classic) GraphQL deprecation.
       - name: Clear the review label
         if: github.event.action == 'labeled'
-        run: gh pr edit "$PR" -R "$GITHUB_REPOSITORY" --remove-label review
+        run: gh api -X DELETE "repos/$GITHUB_REPOSITORY/issues/$PR/labels/review" --silent
       # claude-code-action skips itself when the PR changes its own workflow (the file must
       # match main), yet the check still goes green. Say so on the PR (#14).
       - name: Note when the AI review can't run
@@ -44,6 +45,9 @@ jobs:
       - uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # PRs and pushes from the agent's own App identity (docs/agent-identity.md) are reviewed
+          # like a person's. The review only comments, so it can't start a loop.
+          allowed_bots: ${{ vars.SDLC_AGENT_APP_SLUG }}
           prompt: |
             Review PR #${{ github.event.pull_request.number }} in ${{ github.repository }}.
             Follow REVIEW.md exactly. Check the diff against the spec.md and plan.md
