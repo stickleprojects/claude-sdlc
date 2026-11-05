@@ -7,7 +7,7 @@ description: Guide the product owner through an intent or spec PR. Explain each 
 
 The product owner decides; you explain and do the typing. This is the main way findings get handled: the product owner talks to you in the terminal and doesn't need to comment on GitHub. You walk them through the findings, edit the artifact, push, and reply on every thread. The acceptance is recorded on GitHub, where approving and merging the PR **is** the acceptance. Never approve or merge the PR yourself.
 
-Replies, resolving threads and checking for bot commits follow the shared rules in `.claude/skills/review-findings/SKILL.md` (sections *One actor per finding*, *Before you push* and *Reply and resolve*). Read them before step 4, along with the `agent-identity` skill (signatures, commit trailers, no @-mentions). Your persona is `po-review`.
+Replies, resolving threads and checking for bot commits follow the shared rules in `.claude/skills/review-findings/SKILL.md` (sections *One actor per finding*, *Before you push* and *Reply and resolve*). Read them before step 4, along with the `agent-identity` skill (signatures, commit trailers, no @-mentions).
 
 ## 1. Load the PR
 
@@ -47,7 +47,7 @@ Findings that belong to the engineer (plan or code) get noted and handed on, not
 2. Run `make validate`.
 3. Check the branch for commits pushed by anyone else (*One actor per finding*). Then commit the artifact by explicit path (`git add changes/<slug>/<artifact>.md`) with `<stage>: address review (product owner decisions)`, and push.
 4. Pushes don't start a review, so ask for one: `gh api repos/{owner}/{repo}/issues/<N>/labels -f "labels[]=review"`.
-5. Reply on every thread you handled with what was decided ("Product owner decided: …"), signed `— Claude (po-review)` under the agent identity or `(posted from Claude Code)` under the person's, then resolve it (*Reply and resolve*). If resolving fails, tell the product owner which threads to resolve by hand.
+5. Reply on every thread you handled with what was decided ("Product owner decided: …"), signed `— Claude` under the agent identity or `(posted from Claude Code)` under the person's, then resolve it (*Reply and resolve*). If resolving fails, tell the product owner which threads to resolve by hand.
 
 ## 5. Hand back the gate
 

@@ -1,28 +1,22 @@
 #!/usr/bin/env python3
-"""Create Claude's GitHub App identities with GitHub's App manifest flow.
+"""Create Claude's GitHub App identity with GitHub's App manifest flow.
 
-Usage: scripts/agent-identity.sh create [--per-persona | --groups G] [--name PREFIX] [--org ORG]
-                                        [--yes] [--no-browser]
+Usage: scripts/agent-identity.sh create [--name PREFIX] [--org ORG] [--yes] [--no-browser]
 
-Run it in each repo that uses the pipeline: the Apps belong to that repo, and are named after it.
+Run it in each repo that uses the pipeline: the App belongs to that repo, and is named after it
+(<prefix>-claude). It's the identity `agent`, used by every Claude session in the repo and by
+the spec workflow, so Claude never acts as the person.
 
-  (no flags, in a terminal)  asks for the name prefix (default: the repo's name, made safe),
-                             then: one App for everything (<prefix>-claude) or Apps per persona
-                             (<prefix>-plan, ...), and which App each other persona shares; then
-                             shows what it will create and asks to continue before any browser
-  (no flags, no terminal)    one App, `agent`, for every local persona
-  --per-persona              one App per local persona (`agent-build`, `agent-plan`, ...)
-  --groups G                 your own grouping, e.g. "intent+spec+plan+po-review,build+dev"
-  --yes                      don't ask to confirm
+  (in a terminal)  asks whether to reuse an App already on this machine, then for the name
+                   prefix (default: the repo's name, made safe); shows what it will create and
+                   asks to continue before any browser opens
+  --yes            don't ask to confirm
 
-Each App gets only the permissions its personas need. Anything other than one App writes the
-persona-to-App mapping to ~/.config/sdlc/personas.conf.
-
-How it works: a small server on 127.0.0.1 serves a page that posts each App's manifest to
+How it works: a small server on 127.0.0.1 serves a page that posts the App's manifest to
 GitHub. You click "Create GitHub App"; GitHub redirects back here with a one-time code, which is
 exchanged for the App's id and private key (POST /app-manifests/{code}/conversions). The key
 goes into the keyring, the id and slug into ~/.config/sdlc/<identity>.env, and the browser moves
-on to the App's install page. After you install it, GitHub sends you back here for the next App.
+on to the App's install page. After you install it, GitHub sends you back here.
 
 Standard library only, so consumers need nothing installed. Env: SDLC_GITHUB_WEB and
 SDLC_GITHUB_API override github.com (tests); SDLC_AGENT_KEY_STORE_DIR stores keys as files in
@@ -51,16 +45,17 @@ from urllib.parse import parse_qs, quote, urlparse
 GITHUB = os.environ.get("SDLC_GITHUB_WEB", "https://github.com")
 API = os.environ.get("SDLC_GITHUB_API", "https://api.github.com")
 NAME_LIMIT = 34  # GitHub App names are at most 34 characters
-# Room for the longest suffix, "-po-review", within the limit.
-PREFIX_LIMIT = NAME_LIMIT - len("-po-review")
-# owner_repo of the repo the Apps are for. Its config, keys and persona mapping are kept apart
+SUFFIX = "-claude"
+PREFIX_LIMIT = NAME_LIMIT - len(SUFFIX)
+# owner_repo of the repo the App is for. Its config and key are kept apart
 # from other repos': ~/.config/sdlc/<owner>_<repo>/. Set by main(); tests set it directly.
 REPO_KEY = ""
 # Where new Apps' private keys go: None means the keyring. --keys-dir or SDLC_AGENT_KEY_STORE_DIR.
 KEYS_DIR: Path | None = None
 
-# What every Claude identity needs: commit and push, open PRs, comment and label, read CI.
-BASE_PERMISSIONS = {
+# What Claude needs: commit and push (workflows too, since builds may change CI), open PRs,
+# comment and label, read CI.
+PERMISSIONS = {
     "contents": "write",
     "pull_requests": "write",
     "issues": "write",
@@ -68,15 +63,13 @@ BASE_PERMISSIONS = {
     "actions": "read",
     "checks": "read",
     "statuses": "read",
+    "workflows": "write",
 }
-# Only personas that may change .github/workflows/ get the workflows permission.
-WORKFLOW_PERSONAS = {"build", "dev"}
 
 
 @dataclass
 class Identity:
     name: str
-    personas: list[str]
     app_name: str
     slug: str = ""
     app_id: int = 0
@@ -85,10 +78,7 @@ class Identity:
 
     @property
     def permissions(self) -> dict[str, str]:
-        perms = dict(BASE_PERMISSIONS)
-        if WORKFLOW_PERSONAS & set(self.personas):
-            perms["workflows"] = "write"
-        return perms
+        return dict(PERMISSIONS)
 
 
 def config_dir() -> Path:
@@ -98,57 +88,13 @@ def config_dir() -> Path:
 
 def safe_prefix(name: str) -> str:
     """A GitHub-App-safe name prefix: lowercase letters, digits and single dashes, short enough
-    for every persona suffix. "JobHunt_App" -> "jobhunt-app"."""
+    for the "-claude" suffix. "JobHunt_App" -> "jobhunt-app"."""
     cleaned = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
     return cleaned[:PREFIX_LIMIT].rstrip("-")
 
 
 def repo_key(repo: str) -> str:
     return re.sub(r"[^a-z0-9_.-]+", "-", repo.lower().replace("/", "_"))
-
-
-def read_registry(path: Path) -> tuple[dict[str, str], list[tuple[str, str, str]]]:
-    """Identity kinds by name, and (persona, identity, where) rows, from personas.conf."""
-    kinds: dict[str, str] = {}
-    personas: list[tuple[str, str, str]] = []
-    for line in path.read_text().splitlines():
-        parts = line.split()
-        if len(parts) >= 3 and parts[0] == "identity":
-            kinds[parts[1]] = parts[2]
-        elif len(parts) >= 4 and parts[0] == "persona":
-            personas.append((parts[1], parts[2], parts[3]))
-    return kinds, personas
-
-
-def local_personas(registry: Path) -> list[str]:
-    kinds, personas = read_registry(registry)
-    local = [
-        p for p, ident, where in personas if where == "local" and kinds.get(ident) == "github-app"
-    ]
-    if not local:
-        raise SystemExit(f"no local github-app personas in {registry}")
-    return local
-
-
-def build_identities(groups: list[list[str]], local: list[str], prefix: str) -> list[Identity]:
-    """One Identity per group of personas. A single group holding every persona is `agent`;
-    any other group is named after its first persona (agent-build serves build and dev)."""
-    seen = [p for g in groups for p in g]
-    if sorted(seen) != sorted(local) or len(seen) != len(set(seen)):
-        raise SystemExit(f"each of these personas must be in exactly one group: {', '.join(local)}")
-    if len(groups) == 1:
-        return [Identity("agent", list(groups[0]), f"{prefix}-claude"[:NAME_LIMIT])]
-    return [Identity(f"agent-{g[0]}", list(g), f"{prefix}-{g[0]}"[:NAME_LIMIT]) for g in groups]
-
-
-def plan(registry: Path, per_persona: bool, prefix: str) -> list[Identity]:
-    local = local_personas(registry)
-    groups = [[p] for p in local] if per_persona else [local]
-    return build_identities(groups, local, prefix)
-
-
-def parse_groups(text: str) -> list[list[str]]:
-    return [[p.strip() for p in g.split("+") if p.strip()] for g in text.split(",") if g.strip()]
 
 
 def _pick(ask, question: str, options: list[str], default: int = 1) -> int:
@@ -165,66 +111,22 @@ def _pick(ask, question: str, options: list[str], default: int = 1) -> int:
         print(f"  please answer 1-{len(options)}")
 
 
-def _pick_many(ask, question: str, options: list[str]) -> list[int]:
-    """Ask for a comma-separated list of option numbers; Enter takes all of them."""
-    while True:
-        print(question)
-        for n, option in enumerate(options, 1):
-            print(f"  {n}) {option}")
-        answer = ask("Numbers, comma-separated [all]: ").strip()
-        if not answer:
-            return list(range(1, len(options) + 1))
-        parts = [a.strip() for a in answer.split(",") if a.strip()]
-        if parts and all(a.isdigit() and 1 <= int(a) <= len(options) for a in parts):
-            return sorted({int(a) for a in parts})
-        print(f"  please answer with numbers 1-{len(options)}, e.g. 1,3")
+def new_identity(prefix: str) -> Identity:
+    return Identity("agent", f"{prefix}{SUFFIX}"[:NAME_LIMIT])
 
 
-def choose_existing(local: list[str], existing: list[tuple[str, Path]], ask=input):
-    """First question when Apps already exist on this machine: reuse one for everything?
-    Returns an Identity reusing it, or None to set up new or per-persona Apps."""
+def choose_existing(existing: list[tuple[str, Path]], ask=input):
+    """First question when Apps already exist on this machine: reuse one here?
+    Returns an Identity reusing it, or None to create a new App."""
     if not existing:
         return None
-    options = ["No: set up Apps for this repo (new ones, or a mix of new and existing)"]
-    options += [f"Yes: use {slug} for every persona ({path})" for slug, path in existing]
+    options = ["No: create a new App for this repo"]
+    options += [f"Yes: use {slug} ({path})" for slug, path in existing]
     choice = _pick(ask, "Claude already has GitHub Apps on this machine. Reuse one here?", options)
     if choice == 1:
         return None
     slug, path = existing[choice - 2]
-    return Identity("agent", list(local), slug, slug=slug, existing=path)
-
-
-def choose_sources(identities: list[Identity], existing: list[tuple[str, Path]], ask=input) -> None:
-    """For each App to be set up, offer an existing App instead of a new one."""
-    if not existing:
-        return
-    for ident in identities:
-        options = [f"new App ({ident.app_name})"]
-        options += [f"existing {slug} ({path})" for slug, path in existing]
-        choice = _pick(ask, f"\nApp for {', '.join(ident.personas)}?", options)
-        if choice > 1:
-            slug, path = existing[choice - 2]
-            ident.app_name, ident.slug, ident.existing = slug, slug, path
-
-
-def choose_groups(local: list[str], prefix: str, ask=input) -> list[list[str]]:
-    """Ask: one App for everything, or Apps per persona. With Apps per persona, first pick
-    which personas get an App of their own, then which of those each other persona shares."""
-    one = f"One App for everything ({prefix}-claude): every persona signs as itself (recommended)"
-    each = "Apps per persona: choose which personas get their own App; the rest share one of them"
-    if _pick(ask, "How many GitHub Apps should Claude use?", [one, each]) == 1:
-        return [local]
-    owners = [
-        local[n - 1] for n in _pick_many(ask, "\nWhich personas get an App of their own?", local)
-    ]
-    groups = {owner: [owner] for owner in owners}
-    for persona in local:
-        if persona in groups:
-            continue
-        apps = [f"{prefix}-{owner}" for owner in owners]
-        choice = _pick(ask, f"\n{persona}: which App does it share?", apps)
-        groups[owners[choice - 1]].append(persona)
-    return [groups[owner] for owner in owners]
+    return Identity("agent", slug, slug=slug, existing=path)
 
 
 def describe(identities: list[Identity]) -> str:
@@ -232,20 +134,17 @@ def describe(identities: list[Identity]) -> str:
     reused = [i for i in identities if i.existing is not None]
     lines = []
     if new:
-        count = "1 GitHub App" if len(new) == 1 else f"{len(new)} GitHub Apps"
-        lines.append(f"\nAbout to create {count}:")
+        lines.append("\nAbout to create 1 GitHub App, for every Claude session in this repo:")
         for i in new:
-            extra = "  (can change .github/workflows)" if "workflows" in i.permissions else ""
-            lines.append(f"  {i.app_name:<34}  for {', '.join(i.personas)}{extra}")
+            lines.append(f"  {i.app_name:<34}  (can change .github/workflows)")
             lines.append(f"  {'':<34}  config: {target_of(i)}")
     if reused:
         lines.append("\nReusing (nothing created, no key changed):")
         for i in reused:
-            lines.append(f"  {i.app_name:<34}  for {', '.join(i.personas)}  ({i.existing})")
+            lines.append(f"  {i.app_name:<34}  ({i.existing})")
     if new:
         lines.append(
-            "For each new App, your browser opens GitHub: click Create GitHub App, then install"
-            " it on this repo."
+            "Your browser opens GitHub: click Create GitHub App, then install it on this repo."
         )
     if reused:
         lines.append("A reused App must also be installed on this repo; you'll get the link.")
@@ -261,8 +160,7 @@ def manifest(identity: Identity, base_url: str, owner: str, repo: str = "") -> d
     return {
         "name": identity.app_name,
         "url": f"{GITHUB}/{repo or owner}",
-        "description": f"Claude ({', '.join(identity.personas)}) for {repo or owner}, via the"
-        " claude-sdlc pipeline.",
+        "description": f"Claude for {repo or owner}, via the claude-sdlc pipeline.",
         "public": False,
         "hook_attributes": {"url": f"{base_url}/hook", "active": False},
         "redirect_url": f"{base_url}/created",
@@ -388,7 +286,7 @@ def write_config(identity: Identity, bot: int, key_ref: str) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         "# claude-sdlc agent identity (scripts/agent-identity.sh). Not secret: the key is at\n"
-        "# SDLC_AGENT_KEY. Several repos and personas may point at this file to share the App.\n"
+        "# SDLC_AGENT_KEY. Several repos may point at this file to share the App.\n"
         f"SDLC_AGENT_APP_ID={identity.app_id}\n"
         f"SDLC_AGENT_APP_SLUG={identity.slug}\n"
         f"SDLC_AGENT_BOT_ID={bot}\n"
@@ -451,42 +349,6 @@ def clashes(identities: list[Identity]) -> list[Path]:
                     continue
             out.append(t)
     return sorted(set(out))
-
-
-def write_personas_override(registry: Path, identities: list[Identity], per_persona: bool) -> str:
-    """Per-persona: point each persona at its own App in ~/.config/sdlc/personas.conf, which
-    overrides the repo's copy (that one is framework-owned and replaced by make sync-sdlc).
-    One App: remove any earlier override, so everything maps to `agent` again."""
-    override = config_dir() / "personas.conf"
-    if not per_persona:
-        if override.exists():
-            override.rename(override.with_suffix(".conf.bak"))
-            return f"moved the old per-persona mapping to {override.with_suffix('.conf.bak')}"
-        return "the repo's .claude/personas.conf applies (one App: agent)"
-    by_persona = {p: i.name for i in identities for p in i.personas}
-    lines = []
-    for line in registry.read_text().splitlines():
-        parts = line.split()
-        if parts[:1] == ["persona"] and len(parts) >= 4:
-            target = by_persona.get(parts[1]) or (
-                by_persona.get("spec") if parts[1] == "spec-ci" else None
-            )
-            if target:
-                line = line.replace(f" {parts[2]} ", f" {target} ", 1)
-        lines.append(line)
-        if parts[:2] == ["identity", "agent"]:
-            for i in identities:
-                lines.append(
-                    f"identity {i.name}  github-app"
-                    f"  ~/.config/sdlc/{REPO_KEY}/{i.name}.env + keyring"
-                )
-    override.parent.mkdir(parents=True, exist_ok=True)
-    override.write_text(
-        "# Per-persona Apps, written by scripts/agent-identity.sh create --per-persona.\n"
-        + "\n".join(lines)
-        + "\n"
-    )
-    return f"wrote the per-persona mapping to {override}"
 
 
 @dataclass
@@ -570,7 +432,7 @@ def make_handler(flow: Flow):
                 200,
                 page(
                     f"Create {ident.app_name} ({n} of {total})",
-                    f"<p>For: {html.escape(', '.join(ident.personas))}. GitHub will ask you to "
+                    "<p>For every Claude session in this repo. GitHub will ask you to "
                     "confirm the name and create the App, then to install it.</p>"
                     "<p>If GitHub asks you to sign in, do, then come back to this page: the"
                     " form may not survive the sign-in. If GitHub says the name is taken, you"
@@ -647,24 +509,19 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="agent-identity.sh create", description=__doc__.split("\n\n")[0]
     )
-    mode = parser.add_mutually_exclusive_group()
-    mode.add_argument("--per-persona", action="store_true", help="one App per local persona")
-    mode.add_argument("--groups", help='personas sharing an App, e.g. "intent+spec,build+dev"')
-    mode.add_argument("--use", type=Path, metavar="CONFIG", help="reuse this existing App config")
+    parser.add_argument("--use", type=Path, metavar="CONFIG", help="reuse this existing App config")
     where = parser.add_mutually_exclusive_group()
     where.add_argument("--config", type=Path, help="write the new App's config to this file")
-    where.add_argument("--config-dir", type=Path, help="write each new App's config in here")
+    where.add_argument("--config-dir", type=Path, help="write the new App's config in here")
     parser.add_argument("--keys-dir", type=Path, help="keep private keys here, not the keyring")
     parser.add_argument("--force", action="store_true", help="replace existing configs")
     parser.add_argument("--yes", action="store_true", help="don't ask to confirm")
     parser.add_argument("--name", help="App name prefix; default: the repo's name, made safe")
-    parser.add_argument("--org", help="create the Apps under this organization, not your account")
-    parser.add_argument("--registry", type=Path, help="personas.conf (default: the repo's)")
+    parser.add_argument("--org", help="create the App under this organization, not your account")
     parser.add_argument("--port", type=int, default=0, help="local port (default: any free one)")
     parser.add_argument("--no-browser", action="store_true", help="print the URL instead")
     args = parser.parse_args(argv)
 
-    registry = args.registry or Path(__file__).resolve().parents[1] / ".claude" / "personas.conf"
     global REPO_KEY, KEYS_DIR
     repo = repo_from_git()
     if not repo:
@@ -673,7 +530,6 @@ def main(argv: list[str] | None = None) -> int:
     keys = args.keys_dir or os.environ.get("SDLC_AGENT_KEY_STORE_DIR")
     KEYS_DIR = Path(keys).expanduser() if keys else None
     owner = args.org or repo.split("/")[0]
-    local = local_personas(registry)
     interactive = sys.stdin.isatty() and sys.stdout.isatty()
     existing = find_existing_apps()
 
@@ -684,9 +540,9 @@ def main(argv: list[str] | None = None) -> int:
         if not match:
             raise SystemExit(f"{args.use} isn't an App config (needs SDLC_AGENT_APP_ID and _SLUG)")
         slug, path = match[0]
-        identities = [Identity("agent", list(local), slug, slug=slug, existing=path)]
-    elif interactive and not (args.groups or args.per_persona):
-        reuse = choose_existing(local, existing)
+        identities = [Identity("agent", slug, slug=slug, existing=path)]
+    elif interactive:
+        reuse = choose_existing(existing)
         identities = [reuse] if reuse else None
     if identities is None:
         default_prefix = safe_prefix(repo.split("/")[1])
@@ -698,21 +554,9 @@ def main(argv: list[str] | None = None) -> int:
             prefix = default_prefix
         if not prefix:
             raise SystemExit("the name prefix needs letters or digits")
-        if args.groups:
-            groups = parse_groups(args.groups)
-        elif args.per_persona:
-            groups = [[p] for p in local]
-        elif interactive:
-            groups = choose_groups(local, prefix)
-        else:
-            groups = [local]
-        identities = build_identities(groups, local, prefix)
-        if interactive:
-            choose_sources(identities, existing)
+        identities = [new_identity(prefix)]
 
     new = [i for i in identities if i.existing is None]
-    if args.config and len(new) > 1:
-        raise SystemExit("--config takes one App; use --config-dir for several")
     for i in new:
         if args.config:
             i.config_path = args.config.expanduser()
@@ -726,8 +570,8 @@ def main(argv: list[str] | None = None) -> int:
     if replaced and not args.force:
         listing = "\n".join(f"  {p}" for p in replaced)
         question = (
-            f"These configs already exist and would point at the new App(s) instead:\n{listing}\n"
-            "The App(s) they name stay on GitHub, and their keys aren't touched. Replace? [y/N] "
+            f"These configs already exist and would point at the new App instead:\n{listing}\n"
+            "The App they name stays on GitHub, and its key isn't touched. Replace? [y/N] "
         )
         if not (interactive and input(question).strip().lower() in ("y", "yes")):
             print(f"Not replacing:\n{listing}\nUse --force to replace, or --use / --config.")
@@ -736,7 +580,7 @@ def main(argv: list[str] | None = None) -> int:
     for i in identities:
         if i.existing is not None:
             link_existing(i)
-            print(f"  {i.name}: using {i.slug} ({i.existing}) for {', '.join(i.personas)}")
+            print(f"  {i.name}: using {i.slug} ({i.existing})")
             print(f"  install it on {repo}: {GITHUB}/apps/{i.slug}/installations/new")
 
     finished = True
@@ -754,7 +598,6 @@ def main(argv: list[str] | None = None) -> int:
         server.shutdown()
         if not finished:
             print("timed out after 30 minutes; Apps created so far are kept", file=sys.stderr)
-    print(write_personas_override(registry, identities, per_persona=len(identities) > 1))
     for line in flow.log:
         print(f"  {line}")
     for ident in flow.skipped:

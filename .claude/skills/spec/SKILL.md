@@ -35,4 +35,4 @@ A bug gets a short spec.
 
 ## Committing
 
-When you commit, add `changes/<slug>/spec.md` by explicit path, never `git add -A` or `git add .`. Follow the `agent-identity` skill for commit trailers and PR signatures (persona `spec`).
+When you commit, add `changes/<slug>/spec.md` by explicit path, never `git add -A` or `git add .`. Follow the `agent-identity` skill for commit trailers and PR signatures.

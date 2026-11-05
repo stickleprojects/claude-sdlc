@@ -1,4 +1,4 @@
-"""scripts/create-agent-apps.py: creating the agent's GitHub Apps with the manifest flow."""
+"""scripts/create-agent-apps.py: creating the agent's GitHub App with the manifest flow."""
 
 import importlib.util
 import json
@@ -12,9 +12,6 @@ from html.parser import HTMLParser
 import pytest
 
 from conftest import REPO, run
-
-PERSONAS = REPO / ".claude/personas.conf"
-LOCAL = ["intent", "spec", "plan", "build", "dev", "po-review"]
 
 
 @pytest.fixture
@@ -30,26 +27,15 @@ def apps(monkeypatch, tmp_path):
     return module
 
 
-def test_one_app_serves_every_local_persona(apps):
-    [agent] = apps.plan(PERSONAS, per_persona=False, prefix="jobhunt-app")
-    assert agent.name == "agent" and agent.personas == LOCAL
-    assert agent.app_name == "jobhunt-app-claude"
+def test_one_app_is_named_after_the_repo_and_may_change_workflows(apps):
+    agent = apps.new_identity("jobhunt-app")
+    assert agent.name == "agent" and agent.app_name == "jobhunt-app-claude"
     assert agent.permissions["workflows"] == "write"
-
-
-def test_per_persona_apps_get_only_what_they_need(apps):
-    identities = apps.plan(PERSONAS, per_persona=True, prefix="jobhunt-app")
-    assert [i.name for i in identities] == [f"agent-{p}" for p in LOCAL]
-    assert identities[2].app_name == "jobhunt-app-plan"
-    assert all(len(i.app_name) <= 34 for i in identities)
-    perms = {i.personas[0]: i.permissions for i in identities}
-    assert "workflows" in perms["build"] and "workflows" in perms["dev"]
-    assert "workflows" not in perms["plan"] and "workflows" not in perms["po-review"]
-    assert all(p["contents"] == "write" for p in perms.values())
+    assert agent.permissions["contents"] == "write"
 
 
 def test_manifest_has_no_webhook_and_comes_back_here(apps):
-    [agent] = apps.plan(PERSONAS, False, "x-claude")
+    agent = apps.new_identity("x")
     m = apps.manifest(agent, "http://127.0.0.1:5000", "stickleprojects")
     assert m["hook_attributes"]["active"] is False
     assert m["redirect_url"] == "http://127.0.0.1:5000/created"
@@ -80,62 +66,37 @@ def _get(url):
         return err.code, err.read().decode(), err.headers.get("Location")
 
 
-def test_browser_flow_creates_installs_and_moves_to_the_next_app(apps, monkeypatch, tmp_path):
-    identities = apps.plan(PERSONAS, per_persona=True, prefix="s-claude")[:2]
-    made = iter([{"id": 11, "slug": "s-claude-intent", "pem": "KEY-1"},
-                 {"id": 12, "slug": "s-claude-spec", "pem": "KEY-2"}])  # fmt: skip
-    monkeypatch.setattr(apps, "convert", lambda code: next(made))
+def test_browser_flow_creates_and_installs_the_app(apps, monkeypatch, tmp_path):
+    identities = [apps.new_identity("s")]
+    app = {"id": 11, "slug": "s-claude", "pem": "KEY-1"}
+    monkeypatch.setattr(apps, "convert", lambda code: app)
     monkeypatch.setattr(apps, "bot_id", lambda slug: 900)
     flow = apps.Flow(identities, "stickleprojects", None)
     server = apps.ThreadingHTTPServer(("127.0.0.1", 0), apps.make_handler(flow))
     threading.Thread(target=server.serve_forever, daemon=True).start()
     base = f"http://127.0.0.1:{server.server_address[1]}"
     try:
-        for n, slug in enumerate(["s-claude-intent", "s-claude-spec"], 1):
-            status, body, _ = _get(f"{base}/start")
-            form = _Form()
-            form.feed(body)
-            assert status == 200 and form.action.startswith("https://github.com/settings/apps/new")
-            assert form.manifest["name"] == identities[n - 1].app_name
-            assert _get(f"{base}/created?code=c&state=wrong")[0] == 400, "state is checked"
-            state = form.action.split("state=")[1]
-            status, _, location = _get(f"{base}/created?code=c{n}&state={state}")
-            assert status == 302 and location == f"https://github.com/apps/{slug}/installations/new"
-            assert _get(f"{base}/installed?installation_id=5&setup_action=install")[0] == 302
+        status, body, _ = _get(f"{base}/start")
+        form = _Form()
+        form.feed(body)
+        assert status == 200 and form.action.startswith("https://github.com/settings/apps/new")
+        assert form.manifest["name"] == "s-claude"
+        assert _get(f"{base}/created?code=c&state=wrong")[0] == 400, "state is checked"
+        state = form.action.split("state=")[1]
+        status, _, location = _get(f"{base}/created?code=c1&state={state}")
+        assert status == 302 and location == "https://github.com/apps/s-claude/installations/new"
+        assert _get(f"{base}/installed?installation_id=5&setup_action=install")[0] == 302
         status, body, _ = _get(f"{base}/start")
         assert status == 200 and "All done" in body and flow.done.is_set()
     finally:
         server.shutdown()
-    config = (tmp_path / "config/sdlc/o_r/agent-intent.env").read_text()
-    assert "SDLC_AGENT_APP_ID=11" in config and "SDLC_AGENT_APP_SLUG=s-claude-intent" in config
+    config = (tmp_path / "config/sdlc/o_r/agent.env").read_text()
+    assert "SDLC_AGENT_APP_ID=11" in config and "SDLC_AGENT_APP_SLUG=s-claude" in config
     assert "SDLC_AGENT_BOT_ID=900" in config
     # Keys are filed under the App's own name, so they can't replace another App's key.
-    assert (tmp_path / "keys/s-claude-spec.pem").read_text() == "KEY-2"
-    assert oct((tmp_path / "keys/s-claude-spec.pem").stat().st_mode)[-3:] == "600"
-    assert f"SDLC_AGENT_KEY=file:{tmp_path}/keys/s-claude-intent.pem" in config
-
-
-def test_per_persona_override_maps_each_persona_and_the_script_follows_it(apps, tmp_path):
-    identities = apps.plan(PERSONAS, per_persona=True, prefix="s-claude")
-    apps.write_personas_override(PERSONAS, identities, per_persona=True)
-    override = tmp_path / "config/sdlc/o_r/personas.conf"
-    env = {
-        "XDG_CONFIG_HOME": str(tmp_path / "config"),
-        "SDLC_PERSONAS": "",
-        "SDLC_AGENT_REPO": "o/r",
-    }
-
-    def ident(*args):
-        return run(["bash", str(REPO / "scripts/agent-identity.sh"), *args], env=env)
-
-    assert ident("identity-of", "build").stdout.strip() == "agent-build"
-    assert ident("identity-of", "spec-ci").stdout.strip() == "agent-spec"
-    assert ident("identity-of", "reviewer").returncode == 1, "claude[bot] isn't one of ours"
-    assert ident("identities").stdout.split() == sorted(f"agent-{p}" for p in LOCAL)
-    # Going back to one App moves the override aside, so everything maps to `agent` again.
-    apps.write_personas_override(PERSONAS, identities[:1], per_persona=False)
-    assert not override.exists()
-    assert ident("identity-of", "build").stdout.strip() == "agent"
+    assert (tmp_path / "keys/s-claude.pem").read_text() == "KEY-1"
+    assert oct((tmp_path / "keys/s-claude.pem").stat().st_mode)[-3:] == "600"
+    assert f"SDLC_AGENT_KEY=file:{tmp_path}/keys/s-claude.pem" in config
 
 
 def _answers(*replies):
@@ -143,73 +104,19 @@ def _answers(*replies):
     return lambda _prompt: next(it)
 
 
-def test_prompt_one_app_for_everything(apps):
-    assert apps.choose_groups(LOCAL, "s", _answers("1")) == [LOCAL]
-    assert apps.choose_groups(LOCAL, "s-claude", _answers("")) == [LOCAL], "Enter = recommended"
-
-
-def test_prompt_every_persona_its_own_app(apps):
-    groups = apps.choose_groups(LOCAL, "s-claude", _answers("2", ""))
-    assert groups == [[p] for p in LOCAL]
-
-
-def test_prompt_several_personas_share_the_plan_app(apps):
-    # plan, build and dev get their own; intent, spec and po-review share plan's.
-    replies = _answers("2", "3,4,5", "1", "1", "1")
-    groups = apps.choose_groups(LOCAL, "s-claude", replies)
-    assert groups == [["plan", "intent", "spec", "po-review"], ["build"], ["dev"]]
-    identities = apps.build_identities(groups, LOCAL, "s-claude")
-    assert [(i.name, i.app_name) for i in identities] == [
-        ("agent-plan", "s-claude-plan"),
-        ("agent-build", "s-claude-build"),
-        ("agent-dev", "s-claude-dev"),
-    ]
-    assert "workflows" not in identities[0].permissions
-
-
-def test_prompt_asks_again_after_a_bad_answer(apps, capsys):
-    groups = apps.choose_groups(
-        LOCAL, "s-claude", _answers("7", "2", "9,x", "6", "1", "1", "1", "1", "1")
-    )
-    assert groups == [["po-review", "intent", "spec", "plan", "build", "dev"]]
-    assert "please answer" in capsys.readouterr().out
-
-
 def test_nothing_is_created_unless_confirmed(apps, capsys):
-    identities = apps.build_identities([LOCAL], LOCAL, "jobhunt-app")
+    identities = [apps.new_identity("jobhunt-app")]
     assert apps.confirm(identities, _answers("")) is True
     assert apps.confirm(identities, _answers("n")) is False
     out = capsys.readouterr().out
-    assert "About to create 1 GitHub App:" in out and "jobhunt-app-claude" in out
+    assert "About to create 1 GitHub App" in out and "jobhunt-app-claude" in out
 
 
-def test_groups_flag_must_cover_each_persona_once(apps):
-    groups = apps.parse_groups("intent+spec+plan+po-review, build+dev")
-    assert groups == [["intent", "spec", "plan", "po-review"], ["build", "dev"]]
-    assert [i.name for i in apps.build_identities(groups, LOCAL, "s")] == [
-        "agent-intent",
-        "agent-build",
-    ]
+def test_there_are_no_per_persona_options(apps):
     with pytest.raises(SystemExit):
-        apps.build_identities([["intent", "spec"]], LOCAL, "s")
+        apps.main(["--per-persona"])
     with pytest.raises(SystemExit):
-        apps.build_identities([LOCAL, ["dev"]], LOCAL, "s")
-
-
-def test_shared_app_mapping_in_the_override(apps, tmp_path):
-    groups = [["plan", "intent", "spec", "po-review"], ["build"], ["dev"]]
-    identities = apps.build_identities(groups, LOCAL, "s-claude")
-    apps.write_personas_override(PERSONAS, identities, per_persona=True)
-    env = {
-        "XDG_CONFIG_HOME": str(tmp_path / "config"),
-        "SDLC_PERSONAS": "",
-        "SDLC_AGENT_REPO": "o/r",
-    }
-    of = lambda p: run(  # noqa: E731
-        ["bash", str(REPO / "scripts/agent-identity.sh"), "identity-of", p], env=env
-    ).stdout.strip()
-    assert of("intent") == "agent-plan" and of("spec-ci") == "agent-plan"
-    assert of("dev") == "agent-dev"
+        apps.main(["--groups", "build,dev"])
 
 
 @pytest.mark.parametrize(
@@ -219,13 +126,13 @@ def test_shared_app_mapping_in_the_override(apps, tmp_path):
         ("JobHunt_App", "jobhunt-app"),
         ("my.cool  repo!", "my-cool-repo"),
         ("--x--", "x"),
-        ("a" * 40, "a" * 24),
+        ("a" * 40, "a" * 27),
         ("!!!", ""),
     ],
 )
 def test_prefix_is_made_safe_for_github(apps, name, prefix):
     assert apps.safe_prefix(name) == prefix
-    assert len(f"{apps.safe_prefix(name)}-po-review") <= 34
+    assert len(f"{apps.safe_prefix(name)}-claude") <= 34
 
 
 def test_prefix_is_asked_first_and_defaults_to_the_repo(apps, capsys):
@@ -261,15 +168,15 @@ def test_existing_apps_are_found_once_through_pointers(apps, tmp_path):
     shared = _app_config(tmp_path / "anywhere/shared.env")
     apps.write_pointer(tmp_path / "config/sdlc/o_a/agent.env", shared)
     apps.write_pointer(tmp_path / "config/sdlc/o_b/agent.env", shared)
-    _app_config(tmp_path / "config/sdlc/o_c/agent-plan.env", "c-plan", 9)
+    _app_config(tmp_path / "config/sdlc/o_c/agent.env", "c-claude", 9)
     found = apps.find_existing_apps([shared])
-    assert sorted(slug for slug, _ in found) == ["c-plan", "shared-claude"]
+    assert sorted(slug for slug, _ in found) == ["c-claude", "shared-claude"]
 
 
 def test_reusing_an_app_links_this_repo_without_creating_anything(apps, tmp_path):
     shared = _app_config(tmp_path / "anywhere/shared.env")
-    reuse = apps.choose_existing(LOCAL, [("shared-claude", shared)], _answers("2"))
-    assert reuse.existing == shared and reuse.personas == LOCAL
+    reuse = apps.choose_existing([("shared-claude", shared)], _answers("2"))
+    assert reuse.existing == shared and reuse.name == "agent"
     assert apps.clashes([reuse]) == []
     apps.link_existing(reuse)
     pointer = tmp_path / "config/sdlc/o_r/agent.env"
@@ -279,28 +186,18 @@ def test_reusing_an_app_links_this_repo_without_creating_anything(apps, tmp_path
     assert "Reusing (nothing created, no key changed)" in text and "About to create" not in text
 
 
-def test_each_new_app_can_instead_be_an_existing_one(apps, tmp_path):
-    shared = _app_config(tmp_path / "anywhere/shared.env")
-    identities = apps.build_identities(
-        [["plan", "intent", "spec", "po-review"], ["build"], ["dev"]], LOCAL, "jh"
-    )
-    apps.choose_sources(identities, [("shared-claude", shared)], _answers("2", "1", "1"))
-    assert [i.existing for i in identities] == [shared, None, None]
-    assert "About to create 2 GitHub Apps" in apps.describe(identities)
-
-
 def test_existing_configs_are_never_replaced_silently(apps, tmp_path):
-    [agent] = apps.plan(PERSONAS, False, "jh")
+    agent = apps.new_identity("jh")
     assert apps.clashes([agent]) == []
     _app_config(tmp_path / "config/sdlc/o_r/agent.env", "old-app")
     assert apps.clashes([agent]) == [tmp_path / "config/sdlc/o_r/agent.env"]
     other = _app_config(tmp_path / "anywhere/other.env", "other")
-    reuse = apps.Identity("agent", LOCAL, "other", slug="other", existing=other)
+    reuse = apps.Identity("agent", "other", slug="other", existing=other)
     assert apps.clashes([reuse]) == [tmp_path / "config/sdlc/o_r/agent.env"]
 
 
 def test_new_config_can_live_anywhere_with_a_pointer_left_behind(apps, tmp_path):
-    [agent] = apps.plan(PERSONAS, False, "jh")
+    agent = apps.new_identity("jh")
     agent.config_path = tmp_path / "my/place/jh-claude.env"
     agent.slug, agent.app_id = "jh-claude", 5
     apps.write_config(agent, 0, "keyring:github-app-private-key:jh-claude")
@@ -314,7 +211,7 @@ def test_new_config_can_live_anywhere_with_a_pointer_left_behind(apps, tmp_path)
 def test_main_refuses_to_replace_without_force(apps, tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("SDLC_AGENT_REPO", "o/r")
     _app_config(tmp_path / "config/sdlc/o_r/agent.env", "old-app")
-    assert apps.main(["--registry", str(PERSONAS), "--yes", "--no-browser"]) == 1
+    assert apps.main(["--yes", "--no-browser"]) == 1
     assert "Not replacing" in capsys.readouterr().out
 
 
@@ -322,7 +219,7 @@ def test_main_use_shares_an_app_across_repos(apps, tmp_path, monkeypatch, capsys
     shared = _app_config(tmp_path / "anywhere/shared.env")
     for repo in ["o/a", "o/b"]:
         monkeypatch.setenv("SDLC_AGENT_REPO", repo)
-        assert apps.main(["--registry", str(PERSONAS), "--use", str(shared), "--yes"]) == 0
+        assert apps.main(["--use", str(shared), "--yes"]) == 0
     for key in ["o_a", "o_b"]:
         text = (tmp_path / f"config/sdlc/{key}/agent.env").read_text()
         assert f"SDLC_AGENT_USE={shared.resolve()}" in text
@@ -408,7 +305,7 @@ def _state(base):
 
 
 def test_failed_exchange_writes_nothing_and_can_be_retried(apps, monkeypatch, tmp_path, capsys):
-    [agent] = apps.plan(PERSONAS, False, "jh")
+    agent = apps.new_identity("jh")
     answers = iter([apps.ConversionError("the code has expired or was already used"), None])
 
     def convert(code):
@@ -435,23 +332,22 @@ def test_failed_exchange_writes_nothing_and_can_be_retried(apps, monkeypatch, tm
     assert "may already exist on GitHub" in capsys.readouterr().err
 
 
-def test_skipping_an_app_records_it_with_the_ways_to_recover(apps):
-    identities = apps.plan(PERSONAS, True, "jh")[:2]
-    flow = apps.Flow(identities, "o", None, "o/r")
+def test_skipping_the_app_records_it_with_the_ways_to_recover(apps):
+    flow = apps.Flow([apps.new_identity("jh")], "o", None, "o/r")
     server, base = _serve(apps, flow)
     try:
         _get(f"{base}/start")
         assert _get(f"{base}/next")[0] == 302
     finally:
         server.shutdown()
-    assert [i.app_name for i in flow.skipped] == ["jh-intent"]
-    hint = apps.recovery_hint("jh-intent", "agent-intent")
-    assert "settings/apps/jh-intent" in hint and "Generate a private key" in hint
-    assert "setup --identity agent-intent" in hint and "Delete GitHub App" in hint
+    assert [i.app_name for i in flow.skipped] == ["jh-claude"]
+    hint = apps.recovery_hint("jh-claude", "agent")
+    assert "settings/apps/jh-claude" in hint and "Generate a private key" in hint
+    assert "setup --identity agent" in hint and "Delete GitHub App" in hint
 
 
 def test_start_page_explains_sign_in_and_taken_names(apps):
-    flow = apps.Flow(apps.plan(PERSONAS, False, "jh"), "o", None, "o/r")
+    flow = apps.Flow([apps.new_identity("jh")], "o", None, "o/r")
     server, base = _serve(apps, flow)
     try:
         body = _get(f"{base}/start")[1]

@@ -51,7 +51,6 @@ def test_sync_installs_framework_owned_files(consumer):
         "scripts/spec-pr.sh",
         "scripts/agent-identity.sh",
         "scripts/tests-locked.sh",
-        ".claude/personas.conf",
     ]:
         assert (consumer / rel).exists(), rel
     assert not (consumer / ".github/workflows/release.yml").exists(), "framework-only workflow"

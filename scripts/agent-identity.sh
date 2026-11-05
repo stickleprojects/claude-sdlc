@@ -2,17 +2,13 @@
 # Give Claude sessions their own GitHub identity: a GitHub App, so commits, pushes, PRs and
 # replies show as "<app>[bot]" instead of the person running the session.
 #
-# Which persona uses which identity is set in .claude/personas.conf. The default identity is
-# `agent`; `--persona <name>` picks the identity that persona is mapped to.
+# One App, the identity `agent`, serves every Claude session in this repo and the spec
+# workflow. The identity name is a parameter (SDLC_AGENT_IDENTITY_NAME, --identity), so a
+# second App can be added later without changing how the first one works.
 #
-# Usage: scripts/agent-identity.sh create [--per-persona | --groups <g>] [--name <app name>] [--org <org>]
-#          Create the App(s) in your browser with GitHub's manifest flow, and store them as
-#          `setup` would. In a terminal it first asks: one App for everything, or which personas
-#          get their own App and which App each other persona shares.
-#        scripts/agent-identity.sh identities
-#          List the github-app identities the personas use, one per line.
-#        scripts/agent-identity.sh identity-of <persona>
-#          Print the identity a persona (local or CI) acts as.
+# Usage: scripts/agent-identity.sh create [--name <app name>] [--org <org>]
+#          Create the App in your browser with GitHub's manifest flow, and store it as `setup`
+#          would.
 #        scripts/agent-identity.sh use <app config file> [--identity <name>] [--force]
 #          Share an App that already exists (made for another repo, or a shared config kept
 #          wherever you like): point this repo's identity at its config. Creates nothing and
@@ -38,14 +34,12 @@
 #          Print an installation token for this repo (cached; renewed when <10 minutes remain).
 #        scripts/agent-identity.sh git-credential get
 #          Git credential helper: answers with the token for github.com.
-#        scripts/agent-identity.sh env [--persona <name>]
+#        scripts/agent-identity.sh env
 #          Print `export` lines that make git and gh in a session act as the App. Used by
 #          scripts/agent-session.sh and the SessionStart hook in docs/agent-identity.md.
 #          Prints nothing when the App isn't configured, so sessions fall back to the person.
 #
 # Env: SDLC_AGENT_CONFIG  config file (default ~/.config/sdlc/<owner>_<repo>/<identity>.env)
-#      SDLC_PERSONAS  persona registry (default ~/.config/sdlc/<owner>_<repo>/personas.conf if it exists,
-#                     which `create --per-persona` writes, else .claude/personas.conf here)
 #      SDLC_AGENT_KEY_STORE_DIR  create: keep new Apps' keys as <app>.pem files here (= --keys-dir)
 #      SDLC_AGENT_KEY_FILE  read the private key from this file instead of the keyring
 #      SDLC_AGENT_REPO  owner/name (default: from `git remote get-url origin`)
@@ -60,15 +54,6 @@ api="${SDLC_GITHUB_API:-https://api.github.com}"
 runtime="${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/sdlc-agent-$(id -u)"
 
 die() { echo "agent-identity: $*" >&2; exit 1; }
-
-personas_file() {
-  if [[ -n "${SDLC_PERSONAS:-}" ]]; then echo "$SDLC_PERSONAS"; return; fi
-  local user="${XDG_CONFIG_HOME:-$HOME/.config}/sdlc/$(repo_key)/personas.conf"
-  if [[ -f "$user" ]]; then echo "$user"; return; fi
-  local top
-  top="$(git rev-parse --show-toplevel 2>/dev/null || dirname "$(dirname "$self")")"
-  echo "$top/.claude/personas.conf"
-}
 
 # Apps belong to one repo, so everything about them is kept per repo: owner/name becomes
 # owner_name (same rule as create-agent-apps.py). Outside a GitHub checkout: _norepo.
@@ -87,24 +72,9 @@ use_identity() {
   config="${SDLC_AGENT_CONFIG:-$default_config}"
 }
 
-# The identity a persona acts as, from the registry. Only github-app identities qualify, and
-# only local personas unless $2 is "any" (bootstrap asks for the CI persona spec-ci).
-identity_for() {
-  local file line
-  file="$(personas_file)"
-  [[ -f "$file" ]] || die "no persona registry at $file"
-  line="$(awk -v p="$1" '$1 == "persona" && $2 == p {print $3, $4}' "$file")"
-  [[ -n "$line" ]] || die "unknown persona '$1'; the personas are listed in $file"
-  read -r id where <<<"$line"
-  [[ "$where" == local || "${2:-}" == any ]] || die "persona '$1' runs in $where, not in a local session"
-  awk -v i="$id" '$1 == "identity" && $2 == i {print $3}' "$file" | grep -qx github-app \
-    || die "persona '$1' maps to identity '$id', which isn't a github-app identity in $file"
-  echo "$id"
-}
-
 
 # Load the identity's config. A config may be a pointer (SDLC_AGENT_USE=<file>) to one kept
-# anywhere, which is how several repos and personas share one App: they all point at one
+# anywhere, which is how several repos share one App: they all point at one
 # file, which names one key. Sets $config to the file actually used.
 load_config() {
   local hops=0
@@ -271,14 +241,7 @@ git_credential() {
 }
 
 print_env() {
-  local persona=""
-  while [[ $# -gt 0 ]]; do
-    case "$1" in
-      --persona) persona="$2"; shift 2 ;;
-      *) die "unknown env option: $1" ;;
-    esac
-  done
-  if [[ -n "$persona" ]]; then use_identity "$(identity_for "$persona")"; fi
+  [[ $# -eq 0 ]] || die "unknown env option: $1"
   if ! load_config; then
     echo "agent-identity: identity '$identity' not configured; this session acts as you (see docs/agent-identity.md)" >&2
     return 0
@@ -300,7 +263,6 @@ EOF
   requester="$(git config user.name 2>/dev/null || true)"
   cat <<EOF
 export SDLC_AGENT_IDENTITY='$name' SDLC_AGENT_IDENTITY_NAME='$identity'
-export SDLC_AGENT_PERSONA='${persona}'
 export SDLC_AGENT_REQUESTED_BY='${requester//\'/}'
 export PATH='$bin':"\$PATH"
 export GIT_AUTHOR_NAME='$name' GIT_AUTHOR_EMAIL='$email'
@@ -350,7 +312,7 @@ setup() {
   mkdir -p "$(dirname "$target")"
   {
     echo "# claude-sdlc agent identity (scripts/agent-identity.sh). Not secret: the key is at"
-    echo "# SDLC_AGENT_KEY. Several repos and personas may point at this file to share the App."
+    echo "# SDLC_AGENT_KEY. Several repos may point at this file to share the App."
     echo "SDLC_AGENT_APP_ID=$app_id"
     echo "SDLC_AGENT_APP_SLUG=$slug"
     echo "SDLC_AGENT_BOT_ID=$bot_id"
@@ -483,15 +445,7 @@ case "${1:-}" in
   use) shift; use_app "$@" ;;
   doctor) doctor ;;
   rekey) shift; rekey "$@" ;;
-  create)  # always from the repo's registry, so re-running doesn't stack on an old override
-    shift
-    top="$(git rev-parse --show-toplevel 2>/dev/null || dirname "$(dirname "$self")")"
-    exec python3 "$(dirname "$self")/create-agent-apps.py" --registry "$top/.claude/personas.conf" "$@" ;;
-  identity-of) identity_for "${2:?persona}" any ;;
-  identities)
-    file="$(personas_file)"
-    awk '$1 == "identity" && $3 == "github-app" {k[$2] = 1} $1 == "persona" {u[$3] = 1}
-         END {for (i in u) if (i in k) print i}' "$file" | sort ;;
+  create) shift; exec python3 "$(dirname "$self")/create-agent-apps.py" "$@" ;;
   check) check ;;
   show) load_config || exit 1; echo "$SDLC_AGENT_APP_ID $SDLC_AGENT_APP_SLUG" ;;
   key) load_config || exit 1; private_key ;;

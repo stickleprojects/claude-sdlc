@@ -68,11 +68,11 @@ Run the check above. Add files by explicit path (`git add <file>…`), never `gi
 
 A thread is closed with a reply that says what was decided or changed. Never resolve one silently.
 
-1. **Reply** on the thread, signed as the `agent-identity` skill says. Under the agent's own identity (`SDLC_AGENT_IDENTITY` set), end with `— Claude (<persona>)`. Otherwise the reply appears under the person's GitHub account, so end it with `(posted from Claude Code)`:
+1. **Reply** on the thread, signed as the `agent-identity` skill says. Under the agent's own identity (`SDLC_AGENT_IDENTITY` set), end with `— Claude`. Otherwise the reply appears under the person's GitHub account, so end it with `(posted from Claude Code)`:
 
    ```
    gh api repos/{owner}/{repo}/pulls/<N>/comments/<comment-id>/replies \
-     -f body="Fixed in <sha>: <what changed>. — Claude (dev)"
+     -f body="Fixed in <sha>: <what changed>. — Claude"
    ```
 
    For a dismissed finding, say why it was kept as it is.

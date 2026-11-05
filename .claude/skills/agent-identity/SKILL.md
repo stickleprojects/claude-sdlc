@@ -9,32 +9,20 @@ Claude sessions can run under their own GitHub identity, a GitHub App that shows
 
 Check which applies: `echo "${SDLC_AGENT_IDENTITY:-person}"`.
 
-## Personas
+## Who acts as whom
 
-One identity serves every local persona. Name yours in what you write. Use `$SDLC_AGENT_PERSONA` if it's set; otherwise use the stage you're doing:
-
-| Persona | When |
-|---|---|
-| `intent` | drafting an intent or bug report |
-| `spec` | writing a spec |
-| `plan` | saving a plan |
-| `build` | `/build` milestones |
-| `dev` | other code changes, and handling review findings on a code PR |
-| `po-review` | `/po-review`, recording product owner decisions |
-
-The CI reviewer and the `@claude` bot are a different identity (`claude[bot]`, from the review and mention workflows). They aren't yours to act as.
+One App, the identity `agent`, serves every local Claude session and the spec workflow. It is never the person. The CI reviewer and the `@claude` bot are a different identity (`claude[bot]`, from the review and mention workflows); they aren't yours to act as.
 
 ## Signing what you post
 
-- **As the agent** (`SDLC_AGENT_IDENTITY` set): end each comment, reply and PR body with `— Claude (<persona>)`. When you record someone's decision, say whose it is, in plain text: "Product owner decided: …".
+- **As the agent** (`SDLC_AGENT_IDENTITY` set): end each comment, reply and PR body with `— Claude`. When you record someone's decision, say whose it is, in plain text: "Product owner decided: …".
 - **As the person** (not set): the post appears under their account, so end it with `(posted from Claude Code)`.
 
 ## Commits
 
-As the agent, `git` already sets the author to the App. Add these trailers to the commit message, after the body and before any attribution lines:
+As the agent, `git` already sets the author to the App. Add this trailer to the commit message, after the body and before any attribution lines:
 
 ```
-Agent-Persona: <persona>
 Requested-by: <$SDLC_AGENT_REQUESTED_BY>
 ```
 

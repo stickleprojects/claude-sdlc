@@ -203,29 +203,18 @@ else
   ((dry)) || ok "turned on"
 fi
 
-step "8. Claude agent identity (GitHub Apps)"
-export SDLC_AGENT_REPO="$repo"  # the Apps and their config belong to this repo
-configured=0
-for identity in $(scripts/agent-identity.sh identities 2>/dev/null); do
-  if ! agent="$(SDLC_AGENT_IDENTITY_NAME="$identity" scripts/agent-identity.sh show 2>/dev/null)"; then
-    todo "identity $identity isn't set up for $repo on this machine; run: scripts/agent-identity.sh create"
-    continue
-  fi
-  configured=1
-  read -r _ app_slug <<<"$agent"
-  if SDLC_AGENT_IDENTITY_NAME="$identity" SDLC_AGENT_REPO="$repo" scripts/agent-identity.sh token >/dev/null 2>/tmp/bootstrap-err; then
-    ok "$identity: $app_slug[bot] can act on $repo"
-  else
-    todo "$identity: install $app_slug on $repo: https://github.com/apps/$app_slug/installations/new"
-  fi
-done
-# The workflows act as the identity the spec-ci persona maps to.
-ci="$(scripts/agent-identity.sh identity-of spec-ci 2>/dev/null || true)"
-if ((configured == 0)); then
-  todo "no App set up: Claude sessions act as you. Create one with: scripts/agent-identity.sh create [--per-persona]"
-elif ! agent="$(SDLC_AGENT_IDENTITY_NAME="$ci" scripts/agent-identity.sh show 2>/dev/null)"; then
-  todo "the CI identity ($ci, used by spec-ci) isn't set up; the spec workflow will use GITHUB_TOKEN"
+step "8. Claude agent identity (GitHub App)"
+export SDLC_AGENT_REPO="$repo"  # the App and its config belong to this repo
+ci=agent  # the spec workflow acts as the same App as local sessions
+if ! agent="$(scripts/agent-identity.sh show 2>/dev/null)"; then
+  todo "no App set up: Claude sessions act as you. Create one with: scripts/agent-identity.sh create"
 else
+  read -r _ app_slug <<<"$agent"
+  if scripts/agent-identity.sh token >/dev/null 2>/tmp/bootstrap-err; then
+    ok "$app_slug[bot] can act on $repo"
+  else
+    todo "install $app_slug on $repo: https://github.com/apps/$app_slug/installations/new"
+  fi
   read -r app_id app_slug <<<"$agent"
   vars=$(gh variable list -R "$repo" --json name,value -q '.[] | "\(.name)=\(.value)"' 2>/dev/null || true)
   for pair in "SDLC_AGENT_APP_ID=$app_id" "SDLC_AGENT_APP_SLUG=$app_slug"; do
@@ -236,7 +225,7 @@ else
   if ((update_agent_key == 0)) && gh secret list -R "$repo" --json name -q '.[].name' | grep -qx SDLC_AGENT_APP_KEY; then
     ok "secret SDLC_AGENT_APP_KEY (after a rekey, re-run with --update-agent-key)"
   elif ((dry)); then echo "    would store $ci's private key as secret SDLC_AGENT_APP_KEY"
-  else SDLC_AGENT_IDENTITY_NAME="$ci" scripts/agent-identity.sh key | gh secret set SDLC_AGENT_APP_KEY -R "$repo"; ok "stored secret SDLC_AGENT_APP_KEY ($ci)"
+  else scripts/agent-identity.sh key | gh secret set SDLC_AGENT_APP_KEY -R "$repo"; ok "stored secret SDLC_AGENT_APP_KEY ($ci)"
   fi
   [[ "$mode" == team ]] || todo "Claude has its own identity: re-run with --mode team so GitHub requires your approval on its PRs"
 fi

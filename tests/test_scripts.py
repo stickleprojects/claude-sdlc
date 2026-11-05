@@ -431,27 +431,16 @@ def test_spec_from_intent_queues_runs_and_uses_spec_pr():
 
 # --- agent identity -------------------------------------------------------------------------
 
-PERSONAS = REPO / ".claude/personas.conf"
 
-
-def _registry():
-    rows = [line.split() for line in PERSONAS.read_text().splitlines() if line[:1].isalpha()]
-    identities = {r[1]: r[2] for r in rows if r[0] == "identity"}
-    personas = {r[1]: (r[2], r[3]) for r in rows if r[0] == "persona"}
-    return identities, personas
-
-
-def test_persona_registry_matches_the_skills_and_workflows():
-    identities, personas = _registry()
-    for name, (identity, where) in personas.items():
-        assert identity in identities, name
-        assert where in {"local", "ci"}, name
+def test_one_identity_and_no_personas():
+    # One App serves every session; Claude never acts as the person. Personas were taken out
+    # (claude-sdlc #61) and adding Apps back goes through the identity name.
+    assert not (REPO / ".claude/personas.conf").exists()
     skill = (REPO / ".claude/skills/agent-identity/SKILL.md").read_text()
-    for name in re.findall(r"^\| `([a-z-]+)` \|", skill, re.MULTILINE):
-        assert personas.get(name, ("", ""))[1] == "local", f"skill persona {name} not in registry"
-    text = PERSONAS.read_text()
-    for wf in ["spec-from-intent.yml", "claude-review.yml", "claude-mention.yml"]:
-        assert (REPO / ".github/workflows" / wf).exists() and wf in text
+    assert "persona" not in skill.lower()
+    assert "`— Claude`" in skill and "Requested-by:" in skill
+    for script in ["agent-identity.sh", "agent-session.sh"]:
+        assert "--persona" not in (REPO / "scripts" / script).read_text(), script
 
 
 @pytest.fixture
@@ -478,7 +467,6 @@ def agent_env(tmp_path):
         "XDG_RUNTIME_DIR": str(tmp_path / "run"),
         "SDLC_AGENT_KEY_FILE": str(key),
         "SDLC_AGENT_REPO": "o/r",
-        "SDLC_PERSONAS": str(PERSONAS),
         "LOG": str(tmp_path),
         "SDLC_RETRY_DELAY": "0",
     }
@@ -535,21 +523,19 @@ def test_git_credential_answers_only_for_github(agent_env):
     assert other.stdout == ""
 
 
-def test_env_makes_git_act_as_the_bot_for_a_local_persona(agent_env):
+def test_env_makes_git_act_as_the_bot(agent_env):
     _, env = agent_env
-    out = identity(env, "env", "--persona", "build")
+    out = identity(env, "env")
     assert out.returncode == 0, out.stderr
     assert "GIT_AUTHOR_NAME='stickle-claude[bot]'" in out.stdout
     assert "999+stickle-claude[bot]@users.noreply.github.com" in out.stdout
-    assert "SDLC_AGENT_PERSONA='build'" in out.stdout
+    assert "SDLC_AGENT_PERSONA" not in out.stdout
     assert "insteadOf" in out.stdout
 
 
-def test_env_rejects_unknown_and_ci_personas(agent_env):
+def test_env_rejects_options(agent_env):
     _, env = agent_env
-    assert identity(env, "env", "--persona", "wizard").returncode == 1
-    reviewer = identity(env, "env", "--persona", "reviewer")
-    assert reviewer.returncode == 1 and "runs in ci" in reviewer.stderr
+    assert identity(env, "env", "--persona", "build").returncode == 1
 
 
 def test_env_without_setup_falls_back_to_the_person(agent_env, tmp_path):
@@ -562,12 +548,11 @@ def test_env_without_setup_falls_back_to_the_person(agent_env, tmp_path):
 def test_agent_session_starts_claude_with_the_identity(agent_env):
     _, env = agent_env
     out = run(
-        ["bash", str(REPO / "scripts/agent-session.sh"), "--persona", "dev"],
+        ["bash", str(REPO / "scripts/agent-session.sh")],
         env={**env, "SDLC_CLAUDE": "env"},
     )
     assert out.returncode == 0, out.stderr
     assert "GIT_COMMITTER_NAME=stickle-claude[bot]" in out.stdout
-    assert "SDLC_AGENT_PERSONA=dev" in out.stdout
 
 
 def test_each_repo_has_its_own_apps(agent_env):

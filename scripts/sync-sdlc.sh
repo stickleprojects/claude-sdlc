@@ -28,7 +28,6 @@ main() {
     ".claude/hooks:.claude/hooks"
     ".claude/skills:.claude/skills"
     ".claude/settings.json:.claude/settings.json"
-    ".claude/personas.conf:.claude/personas.conf"
     ".github/workflows:.github/workflows"
     "scripts/agent.sh:scripts/agent.sh"
     "scripts/bootstrap-github.sh:scripts/bootstrap-github.sh"
