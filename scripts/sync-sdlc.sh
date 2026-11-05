@@ -73,6 +73,15 @@ main() {
   sha="$(git -C "$tmp/fw" rev-parse HEAD)"
   echo "syncing from $label@$ref (${sha:0:7})"
 
+  # This script's file list is part of what changes between versions. If the framework's
+  # copy differs from the one running, run that copy instead (once), so files a new
+  # version adds arrive in this sync, not the next one.
+  if [[ -z "${SDLC_SYNC_SELF_UPDATED:-}" ]] && ! cmp -s "$tmp/fw/scripts/sync-sdlc.sh" "$0"; then
+    echo "  the sync script itself changed; running the new one"
+    SDLC_SYNC_SELF_UPDATED=1 bash "$tmp/fw/scripts/sync-sdlc.sh" "$ref"
+    return $?
+  fi
+
   # Copy the new set over the old one in place, then delete only files the previous sync
   # installed (.sdlc-files) that the framework has since dropped. Overwriting in place,
   # never delete-then-copy, matters: this script is one of the files, and deleting an
@@ -130,5 +139,6 @@ main() {
   echo "  git push -u origin HEAD && gh pr create --fill"
 }
 
-main "$@"
-exit $?
+# One line: bash reads a whole line before running it, so nothing after main is read from
+# the file, which main may have replaced with a longer or shorter version.
+main "$@"; exit $?

@@ -203,3 +203,18 @@ def test_sync_overwrites_files_in_place(consumer, framework_snapshot):
     commit(framework_snapshot, "fix: change", {"REVIEW.md": "changed\n"})
     assert sync(consumer, framework_snapshot, "main").returncode == 0
     assert script.stat().st_ino == before
+
+
+def test_a_new_framework_file_arrives_in_the_same_sync(consumer, framework_snapshot):
+    # The file list lives in the sync script, so a version that adds a path must be run by
+    # its own (new) script, or the new file only arrives on the next sync.
+    script = framework_snapshot / "scripts" / "sync-sdlc.sh"
+    text = script.read_text().replace(
+        '    "REVIEW.md:REVIEW.md"\n', '    "REVIEW.md:REVIEW.md"\n    "NEW.md:NEW.md"\n'
+    )
+    commit(framework_snapshot, "feat: new file", {"NEW.md": "new\n", "scripts/sync-sdlc.sh": text})
+    result = sync(consumer, framework_snapshot, "main")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "running the new one" in result.stdout
+    assert (consumer / "NEW.md").read_text() == "new\n"
+    assert "command not found" not in result.stderr
