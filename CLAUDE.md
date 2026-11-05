@@ -14,6 +14,7 @@ make test        # uv run pytest -q
 uv run pytest tests/test_artifacts.py::test_next_slug_increments   # a single test
 make new-change NAME=<kebab-name>   # start a change
 make status      # stage each change has reached
+make next REF=origin/main   # each change's next step and the skill that owns it
 make evals       # agent evals (calls the model; in CI it uses CLAUDE_CODE_OAUTH_TOKEN)
 scripts/next-version.sh --explain   # the version the next release would get
 ```
@@ -35,7 +36,7 @@ The framework itself. Its changes are tracked as GitHub issues (label `pipeline`
 - **Agent adapter:** CI and evals call AI only through `scripts/agent.sh`. Don't call `claude -p` from workflows directly. (`claude-code-action` in the review and mention workflows is the one exception.)
 - **Artifact chain:** `changes/NNNN-name/{intent,spec,plan}.md`. The required `##` sections are defined in `src/sdlc/artifacts.py` (`CHAIN`) and must match `templates/`. A test enforces this. Change both together.
 - **Optional build plan:** `changes/NNNN-name/build.md`, written by `/build` for builds of more than one session. It sits outside `CHAIN`; `check_build` validates it when present (sections from `templates/build.md`, no approval with open questions). Small plans are built without one.
-- **Stage skills:** `.claude/skills/{intent,spec,plan,build}`. Policy skills (e.g. `security-policy`) are advisory; rules that must always hold need a hook or CI check.
+- **Skills:** five entry skills people remember (`intent`, `plan`, `build`, `pr`, `next`) route by a change's state (`src/sdlc/routing.py`, `.claude/skills/routing.md`) to internal ones (`spec`, `po-review`, `review-findings`, `agent-identity`, `security-policy`, all `user-invocable: false`). A new skill is one or the other; `tests/test_routing.py` enforces it. Policy skills (e.g. `security-policy`) are advisory; rules that must always hold need a hook or CI check.
 
 ## Guardrails (hooks in .claude/settings.json)
 
