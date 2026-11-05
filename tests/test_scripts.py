@@ -107,6 +107,13 @@ def test_review_does_not_run_on_every_push():
     assert "synchronize" not in workflow
 
 
+def test_review_clears_its_label_through_the_rest_api():
+    # `gh pr edit` fails in orgs hit by the Projects (classic) GraphQL deprecation.
+    workflow = (REPO / ".github/workflows/claude-review.yml").read_text()
+    assert "gh pr edit" not in workflow
+    assert 'gh api -X DELETE "repos/$GITHUB_REPOSITORY/issues/$PR/labels/review"' in workflow
+
+
 # --- next-version ----------------------------------------------------------------------
 
 
