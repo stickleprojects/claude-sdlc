@@ -101,23 +101,10 @@ def test_bootstrap_creates_the_review_label_the_workflow_listens_for():
     assert "github.event.label.name == 'review'" in workflow
 
 
-def test_review_reruns_on_push_only_while_labelled():
-    # Reviews use subscription limits (#11): a push is reviewed only if the PR has the label.
+def test_review_does_not_run_on_every_push():
     workflow = (REPO / ".github/workflows/claude-review.yml").read_text()
-    assert "types: [opened, ready_for_review, labeled, synchronize]" in workflow
-    assert (
-        "github.event.action == 'synchronize' && "
-        "contains(github.event.pull_request.labels.*.name, 'review')"
-    ) in workflow
-    assert "cancel-in-progress: true" in workflow
-
-
-def test_review_label_is_sticky():
-    # Clearing the label after each review meant fix pushes went unreviewed when people forgot
-    # to re-add it.
-    workflow = (REPO / ".github/workflows/claude-review.yml").read_text()
-    assert "remove-label" not in workflow
-    assert "labels/review" not in workflow
+    assert "types: [opened, ready_for_review, labeled]" in workflow
+    assert "synchronize" not in workflow
 
 
 # --- next-version ----------------------------------------------------------------------

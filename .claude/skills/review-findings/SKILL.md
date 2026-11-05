@@ -89,5 +89,5 @@ A thread is closed with a reply that says what was decided or changed. Never res
    ```
 
    **If GraphQL fails**, for example with the Projects (classic) deprecation error some orgs get, leave the thread unresolved. Tell the person which threads to resolve by hand on GitHub; your reply is already on each one.
-3. **Make sure the push gets reviewed.** A push is reviewed only while the PR has the `review` label. If it's missing, add it, and it stays on for later pushes:
+3. **Ask for a fresh review** of the push by adding the `review` label (pushes alone don't start one):
    `gh api repos/{owner}/{repo}/issues/<N>/labels -f "labels[]=review"`.
