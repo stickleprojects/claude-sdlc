@@ -33,10 +33,70 @@ class Next:
         return f"{self.slug}\t{self.stage}\t{self.skill}\t{self.detail}"
 
 
-def next_step(change_dir: Path, merged: bool) -> Next:
+WITHDRAWN_RE = re.compile(r"^Withdrawn:[ \t]*(\S.*)$", re.MULTILINE)
+
+# Each artifact and what it's based on: when the base changes after it, it's out of date.
+BASES = [
+    ("spec.md", ("intent.md", "bug.md")),
+    ("plan.md", ("spec.md",)),
+    (BUILD, ("plan.md", "spec.md")),
+]
+# Who updates an out-of-date artifact.
+OWNER = {"spec.md": "spec", "plan.md": "plan", BUILD: "build"}
+
+
+def _git(root: Path, *args: str) -> str | None:
+    try:
+        result = subprocess.run(
+            ["git", *args], cwd=root, capture_output=True, text=True, check=False
+        )
+    except FileNotFoundError:
+        return None
+    return result.stdout.strip() if result.returncode == 0 else None
+
+
+def out_of_date(root: Path, rev: str, slug: str, present: set[str]) -> tuple[str, str] | None:
+    """(artifact, why) for the earliest artifact whose base changed after it was last
+    committed at `rev`, or None. Outside git, or before anything is committed, nothing is."""
+    folder = f"changes/{slug}"
+
+    def last(name: str) -> str | None:
+        return _git(root, "log", "-1", "--format=%H", rev, "--", f"{folder}/{name}") or None
+
+    for artifact, bases in BASES:
+        if artifact not in present:
+            continue
+        mine = last(artifact)
+        if not mine:
+            continue
+        for base in bases:
+            theirs = last(base) if base in present else None
+            if theirs and _git(root, "merge-base", "--is-ancestor", theirs, mine) is None:
+                return artifact, (
+                    f"out of date: {base} changed in {theirs[:7]} after {artifact}; "
+                    f"update {artifact}, or confirm it still holds"
+                )
+    return None
+
+
+def next_step(change_dir: Path, merged: bool, root: Path | None = None, rev: str = "HEAD") -> Next:
     """The next step for one change. `merged` means the files come from main, so a build
-    plan saying "PR open" there has been merged (it only reaches main with its PR)."""
+    plan saying "PR open" there has been merged (it only reaches main with its PR). With
+    `root`, git history at `rev` also says whether an artifact is out of date."""
     slug, where = change_dir.name, stage(change_dir)
+    for first in ("intent.md", "bug.md"):
+        path = change_dir / first
+        if path.exists() and (m := WITHDRAWN_RE.search(path.read_text(encoding="utf-8"))):
+            return Next(slug, where, "withdrawn", m.group(1).strip())
+    finished = False
+    if (change_dir / BUILD).exists():
+        status = Build.parse((change_dir / BUILD).read_text(encoding="utf-8")).status or ""
+        finished = merged and status.startswith("PR open")
+    if root is not None and not finished:
+        present = {p.name for p in change_dir.iterdir()}
+        if stale := out_of_date(root, rev, slug, present):
+            artifact, why = stale
+            return Next(slug, where, OWNER[artifact], why)
     if where == "empty":
         return Next(slug, where, "intent", "no intent.md or bug.md yet: describe the change")
     if where in ("intent", "bug"):
@@ -90,7 +150,7 @@ def steps(root: Path, ref: str | None = None, slug: str | None = None) -> list[N
         if ref:
             base = _extract(root, ref, Path(tmp)) or Path(tmp)
         found = [
-            next_step(d, merged=ref is not None)
+            next_step(d, merged=ref is not None, root=root, rev=ref or "HEAD")
             for d in change_dirs(base)
             if slug is None or d.name == slug or d.name.startswith(f"{slug}-")
         ]

@@ -30,7 +30,7 @@ Ask whenever something is ambiguous, but **one decision at a time**. Use AskUser
 ## Rules for every session
 
 - **spec.md is never edited on a build branch.**
-- **plan.md isn't edited here either.** If the plan is wrong or can't be built, stop and ask. A small implementation detail can be recorded as a deviation for the engineer. Anything that changes behaviour or a Verification row needs a plan PR first.
+- **plan.md isn't edited here either.** If the plan is wrong or can't be built, stop and ask, offering to send the change back to plan (`/plan`, which amends it through a plan PR; build.md then goes back to draft). A small implementation detail can be recorded as a deviation for the engineer. Anything that changes behaviour or a Verification row needs a plan PR first.
 - **Follow CLAUDE.md**, including any repo-specific rules about data, fixtures and outbound actions.
 - **Follow the `agent-identity` skill** whenever you commit, push, open the PR or post on GitHub: the `Requested-by:` trailer, signing with `— Claude` (or `(posted from Claude Code)` when acting as the person), no @-mentions, and fetch-and-merge before every push.
 - **Commit by explicit path** (`git add <file> …`), never `git add -A` or `git add .`. Check `git status` before each commit.

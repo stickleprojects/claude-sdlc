@@ -7,7 +7,7 @@ description: Stage 1 (Plan), and the place to start anything new. Brainstorm a p
 
 **Is it new?** Run `make next REF=origin/main` (see `.claude/skills/routing.md`). If the person names a change that already exists, or describes one that's already in the list, don't draft a second one: say where that change is, and offer its next step (routing step 4), or a new intent if they really mean something different.
 
-**Is it a bug?** If the person describes something that worked differently from what was specified or expected (found in testing or use), it's a bug: use the lighter path in [For a bug](#for-a-bug). If it's new behaviour, or you're not sure, ask.
+**Is it a bug?** If the person describes something that worked differently from what was specified or expected (found in testing or use), it's a bug: use the lighter path in [For a bug](#for-a-bug). That includes pushback on a change that has already merged or shipped: it becomes a new bug change with `Came from:` naming that change, never a reopened one. If it's new behaviour, or you're not sure, ask.
 
 1. Act as a business analyst. Ask short questions until you understand: the problem and who has it, the outcome that would count as success, the users and systems affected, constraints, and what is still unknown. Ask one round at a time; don't invent answers.
 2. Pick a short kebab-case name and run `make new-change NAME=<name>`. It prints the new `intent.md` path.
@@ -19,7 +19,7 @@ Do not write a spec, a plan or any code at this stage.
 
 ## For a bug
 
-1. Ask only what `bug.md` needs: what happens, what should happen, the steps to reproduce (and whether it happens every time), and where it was seen. Use made-up or described data, never real personal data.
+1. Ask only what `bug.md` needs: what happens, what should happen, the steps to reproduce (and whether it happens every time), where it was seen, and the change it came from, if any (`make next` lists them). Use made-up or described data, never real personal data.
 2. Run `make new-change NAME=<name> TYPE=bug`. It prints the new `bug.md` path; there is no `intent.md`.
 3. Fill in every section, then run `make validate`.
 4. Show the person the file and ask for corrections. Merging the PR triggers a short spec: requirements and one acceptance test per symptom.
