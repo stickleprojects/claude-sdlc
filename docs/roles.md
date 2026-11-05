@@ -76,11 +76,11 @@ You don't need to comment on GitHub yourself.
 2. **Work through your items** in Claude Code:
    ```
    claude
-   > /po-review 6
+   > /pr 6
    ```
    Claude goes through the items one at a time: it quotes the spec text, explains the problem, suggests a fix and asks what you want. Then it edits the artifact, records your decisions, pushes, replies on every thread (signed `(posted from Claude Code)`, since the reply appears under your account) and resolves it. If it can't resolve a thread, it tells you which ones to resolve on GitHub.
    If you prefer, you can edit the file directly in the GitHub UI or your editor instead. Avoid tagging `@claude` on a thread you've also discussed with Claude Code: that starts a second agent on the same finding.
-3. **Wait for the fresh review**, which `/po-review` asks for after it pushes. Check that its summary shows no open findings for you. If you edited the file yourself, add the `review` label to the PR to get one.
+3. **Wait for the fresh review**, which `/pr` asks for after it pushes. Check that its summary shows no open findings for you. If you edited the file yourself, add the `review` label to the PR to get one.
 4. **Accept** by merging the PR, once its checks are green. In solo mode the merge *is* the approval. In team mode, a code owner approves first. Claude never merges for you: a hook blocks it.
 
 What you check at each gate:
@@ -88,7 +88,7 @@ What you check at each gate:
 - **Intent PR:** the problem is real and the outcome is worth building. *Open questions* is empty, or says `None.`. Merging starts the *Spec from intent* workflow.
 - **Spec PR:** every requirement and acceptance criterion is what you want. Each *Policy concern* has a decision: settle it with the policy owner, and pass higher-risk items to the tech lead. Merging hands the change to the engineer.
 
-To regenerate a spec by hand, run `claude`, then `/spec changes/NNNN-<name>`.
+To regenerate a spec by hand, run `claude`, then `/next NNNN`: when the spec is missing it offers to write it.
 
 **Not your job:** pipeline failures, permissions and workflow bugs. Report them to the platform team, as a GitHub issue labelled `pipeline`.
 
@@ -124,7 +124,7 @@ To regenerate a spec by hand, run `claude`, then `/spec changes/NNNN-<name>`.
    ```
 5. Answer the review in Claude Code:
    ```
-   > Handle the review findings on PR <N>
+   > /pr <N>
    ```
    Claude goes through the findings one at a time and asks what you want. Then it fixes the code, pushes, replies on every thread and resolves it. Tagging `@claude` on a GitHub comment is an optional alternative, where the bot pushes the fix. Use one or the other for a finding, never both: before it pushes, Claude Code checks the branch for bot commits.
    The review runs when the PR opens, not on every push. To review the latest push, add the `review` label; it removes itself so you can add it again.

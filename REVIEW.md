@@ -42,13 +42,12 @@ Keep exactly **one** summary comment per PR, and replace it on each new review r
 2. One line per open finding: a short quote of the text it's about, plus the owner who decides.
 3. One line on whether the change matches its spec.
 4. How to handle the findings, as a one-line reminder:
-   - `intent:` and `spec:` PRs: the product owner runs `/po-review <PR#>` in Claude Code.
-   - Other PRs: the engineer asks Claude Code to handle the findings on PR #<N> (the `review-findings` skill).
+   - Whoever decides runs `/pr <N>` in Claude Code: the product owner for `intent:`, `bug:` and `spec:` PRs, the engineer for the rest.
    - Tagging `@claude` on a thread is optional. It hands that finding to the GitHub bot instead, so don't do both for one finding.
 
 ## Handling findings
 
-Findings are worked through in a Claude Code session in the terminal: `/po-review <PR#>` for intents and specs, `review-findings` for code. Claude goes through them one at a time, then edits, pushes, replies on every thread and resolves it. The GitHub bot (`@claude` in a comment) is optional.
+Findings are worked through in a Claude Code session in the terminal with `/pr <N>`, which picks the product owner's or the engineer's walkthrough by the PR's type. Claude goes through them one at a time, then edits, pushes, replies on every thread and resolves it. The GitHub bot (`@claude` in a comment) is optional.
 
 - **One actor per finding.** A finding is handled either by the terminal session or by the bot, never both. Before pushing, the terminal session checks the branch for bot commits and merges them in.
 - **Every thread gets a reply** saying what was decided or changed, then it's resolved. Nothing is resolved silently. Replies posted from Claude Code go out under the person's account and end with `(posted from Claude Code)`.

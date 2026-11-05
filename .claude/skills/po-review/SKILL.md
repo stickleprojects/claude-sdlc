@@ -1,6 +1,7 @@
 ---
 name: po-review
-description: Guide the product owner through an intent or spec PR. Explain each review finding in plain language, with the quoted text, collect their decisions, apply them to the artifact and reply on GitHub. Use when the product owner says "/po-review <PR#>", "walk me through PR N" or "review the spec PR".
+description: Internal; reached through /pr for intent, bug and spec PRs. Guide the product owner through the PR's review: explain each finding in plain language, with the quoted text, collect their decisions, apply them to the artifact and reply on GitHub.
+user-invocable: false
 ---
 
 # Product owner review of a PR

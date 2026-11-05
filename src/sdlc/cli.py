@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 
 from sdlc.artifacts import build_progress, change_dirs, check_change, next_slug, stage
+from sdlc.routing import steps
 
 # `make new-change NAME=x TYPE=bug`: make exports command-line variables to recipes, so the
 # type arrives as $TYPE even when a consumer's Makefile doesn't pass it on.
@@ -97,6 +98,16 @@ def cmd_status(root: Path) -> int:
     return 0
 
 
+def cmd_next(root: Path, ref: str | None, slug: str | None) -> int:
+    found = steps(root, ref, slug)
+    for step in found:
+        print(step)
+    if slug and not found:
+        print(f"no change matching {slug!r}", file=sys.stderr)
+        return 1
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="sdlc")
     parser.add_argument("--root", type=Path, default=Path.cwd(), help="repository root")
@@ -111,12 +122,17 @@ def main(argv: list[str] | None = None) -> int:
     )
     sub.add_parser("check", help="validate every change folder")
     sub.add_parser("status", help="show the stage each change has reached")
+    nxt = sub.add_parser("next", help="show each change's next step and the skill that owns it")
+    nxt.add_argument("slug", nargs="?", help="one change: 0002 or 0002-name")
+    nxt.add_argument("--ref", help="read the changes from this git ref, e.g. origin/main")
 
     args = parser.parse_args(argv)
     if args.command == "new":
         return cmd_new(args.root, args.name, args.kind)
     if args.command == "check":
         return cmd_check(args.root)
+    if args.command == "next":
+        return cmd_next(args.root, args.ref, args.slug)
     return cmd_status(args.root)
 
 

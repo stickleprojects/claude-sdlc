@@ -1,13 +1,14 @@
 ---
 name: review-findings
-description: Work through the Claude review's findings on a code PR with the engineer, one at a time, then edit, push, reply on every thread and resolve it. Also holds the shared rules for replying to and resolving review threads, which po-review follows. Use when someone says "handle the review findings on PR N", "go through the review on #N" or "address the review".
+description: Internal; reached through /pr for plan and code PRs. Work through the Claude review's findings with the engineer, one at a time, then edit, push, reply on every thread and resolve it. Also holds the shared rules for replying to and resolving review threads, which po-review follows.
+user-invocable: false
 ---
 
 # Work through the review findings on a PR
 
 The person talks to you in the terminal; they don't need to use GitHub for feedback. You walk them through the findings, make the changes, push, and answer every thread on GitHub. Never approve or merge the PR: a person merges.
 
-For an `intent:` or `spec:` PR, use the `po-review` skill instead. It follows the shared rules below.
+For an `intent:`, `bug:` or `spec:` PR, use the `po-review` skill instead (`/pr` picks it). It follows the shared rules below.
 
 ## 1. Load the PR
 

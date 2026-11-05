@@ -80,7 +80,7 @@ open_prs() {
     git push -q -f -u origin "$branch"
     n="$(gh api "repos/$repo/pulls" -f title="spec($slug): generate from accepted $kind" \
       -f head="$branch" -f base=main \
-      -f body="Generated spec for \`$d\` from its accepted \`$kind.md\`. Product owner: review it (\`/po-review <this PR>\` in Claude Code) and resolve any flagged policy concerns. — Claude (spec)" \
+      -f body="Generated spec for \`$d\` from its accepted \`$kind.md\`. Product owner: review it (\`/pr <this PR>\` in Claude Code) and resolve any flagged policy concerns. — Claude (spec)" \
       --jq .number)"
     echo "opened #$n for $d"
     close_superseded "$d" "$n"

@@ -1,9 +1,11 @@
 ---
 name: intent
-description: Stage 1 (Plan). Brainstorm a problem with the originator and draft changes/<slug>/intent.md, or changes/<slug>/bug.md for a bug found in testing or use. Use when someone describes a new problem, feature idea, request or bug that has no change folder yet.
+description: Stage 1 (Plan), and the place to start anything new. Brainstorm a problem with the originator and draft changes/<slug>/intent.md, or changes/<slug>/bug.md for a bug found in testing or use. Use when someone describes a new problem, feature idea, request or bug that has no change folder yet.
 ---
 
 # Draft an intent (or a bug report)
+
+**Is it new?** Run `make next REF=origin/main` (see `.claude/skills/routing.md`). If the person names a change that already exists, or describes one that's already in the list, don't draft a second one: say where that change is, and offer its next step (routing step 4), or a new intent if they really mean something different.
 
 **Is it a bug?** If the person describes something that worked differently from what was specified or expected (found in testing or use), it's a bug: use the lighter path in [For a bug](#for-a-bug). If it's new behaviour, or you're not sure, ask.
 

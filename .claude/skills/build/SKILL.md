@@ -62,13 +62,15 @@ Ask whenever something is ambiguous, but **one decision at a time**. Use AskUser
 ## 1. Work out which change to build
 
 1. `git fetch --prune origin`.
-2. **If the person named a change** (`0001` or `0001-role-browser`), use it.
+2. **If the person named a change** (`0001` or `0001-role-browser`), use it, unless it isn't ready to build: not planned yet (offer `/plan`), or already built and merged (say so).
 3. **Otherwise, list the candidates.** A candidate is a folder `changes/<slug>/` where all of these hold:
    - `plan.md` exists on `origin/main`;
    - no merged PR has come from `build/<slug>`. Check with `gh api 'repos/{owner}/{repo}/pulls?state=closed&head={owner}:build/<slug>'` and look at `merged_at`.
    - **One candidate:** use it, and say which.
    - **Several:** ask which. Put any already in progress (an `origin/build/<slug>` branch exists) first.
-   - **None:** say there is no approved plan waiting to be built, and stop.
+   - **None:** don't just stop. Follow routing step 4 in `.claude/skills/routing.md`: if a change is ready to plan (its spec merged), say so and offer to run `/plan` for it; otherwise say what each change is waiting on.
+
+   `make next REF=origin/main` (see the routing file) lists every change's next step, which gives you the candidates directly.
 4. **Check the plan is approved.** It must be merged on `origin/main`. If an open PR changes this change's `spec.md` or `plan.md`, ask whether to wait for it or build against what's on `main`.
 
 ## 2. Get onto the branch and check what the last session left

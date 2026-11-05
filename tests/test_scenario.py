@@ -43,6 +43,9 @@ def test_sync_installs_framework_owned_files(consumer):
         ".claude/skills/intent/SKILL.md",
         ".claude/skills/review-findings/SKILL.md",
         ".claude/skills/build/SKILL.md",
+        ".claude/skills/pr/SKILL.md",
+        ".claude/skills/next/SKILL.md",
+        ".claude/skills/routing.md",
         "templates/build.md",
         ".claude/settings.json",
         ".github/workflows/claude-review.yml",
@@ -137,6 +140,9 @@ def test_build_plan_in_consumer(consumer):
     assert make(consumer, "validate").returncode == 0
     assert make(consumer, "status").stdout.strip() == (
         "0001-role-list\tbuild\tdraft, awaiting approval, 0/2 milestones done"
+    )
+    assert make(consumer, "next", "CHANGE=0001").stdout.strip() == (
+        "0001-role-list\tbuild\tbuild\tapprove the build plan (build.md)"
     )
 
     approved = draft.replace("draft, awaiting approval", "in progress", 1)

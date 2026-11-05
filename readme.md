@@ -101,7 +101,7 @@ make status                     # stage each change has reached
 make check                      # lint + tests + artifact chain
 ```
 
-In Claude Code, the stages are skills: `/intent`, `/spec`, `/plan`, `/build`, plus `/po-review <PR#>` for product owners. The `verifier` subagent checks finished work. Who does what: [docs/roles.md](docs/roles.md).
+In Claude Code you need five skills: `/intent` (something new), `/plan`, `/build`, `/pr [N]` (work through a PR's review) and `/next` (where everything is). Each one works out where a change is and offers the right next step, so the specialised skills (`spec`, `po-review`, `review-findings`, …) never need remembering ([routing](.claude/skills/routing.md)). The `verifier` subagent checks finished work. Who does what: [docs/roles.md](docs/roles.md).
 
 ## How it is put together
 
