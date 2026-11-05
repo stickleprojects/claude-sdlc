@@ -127,7 +127,7 @@ CI usage counts against your Claude plan's limits. That's why agent evals run on
 
 ## Updating the framework in a project
 
-Run `make sync-sdlc` (latest release) or `make sync-sdlc REF=main`, then review the staged changes in a PR. Files the project added, even inside `.github/workflows/` or `.claude/skills/`, are never touched. To try framework changes before pushing them, run `SDLC_SOURCE=../claude-sdlc make sync-sdlc REF=<branch>`.
+Run `make sync-sdlc` (latest release) or `make sync-sdlc REF=main`, then review the staged changes in a PR. Files the project added, even inside `.github/workflows/` or `.claude/skills/`, are never touched. Local edits to framework files are never lost either. The sync merges them three ways with the new version, the way `git merge` does, and lists the files it merged. If a merge conflicts, the file is left unstaged with conflict markers and the sync exits non-zero. A file the framework dropped is kept if the project changed it. The sync also lists the `make` targets the pipeline uses that the project's Makefile doesn't define. To try framework changes before pushing them, run `SDLC_SOURCE=../claude-sdlc make sync-sdlc REF=<branch>`.
 
 ## Testing the framework
 
