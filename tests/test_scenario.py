@@ -89,11 +89,70 @@ def test_sync_ref_main_pulls_unreleased(consumer, framework_snapshot):
     assert (consumer / "REVIEW.md").read_text() == "unreleased\n"
 
 
-def test_sync_overwrites_local_edits_to_framework_files(consumer, framework_snapshot):
+LINES = "".join(f"line {i}\n" for i in range(1, 11))
+
+
+def synced_with(consumer, framework_snapshot, files):
+    """Framework commits `files`, the consumer syncs to it and commits: the merge base."""
+    commit(framework_snapshot, "fix: base", files)
+    result = sync(consumer, framework_snapshot, "main")
+    assert result.returncode == 0, result.stdout + result.stderr
+    commit(consumer, "chore: sync")
+
+
+def test_sync_takes_new_version_of_files_unchanged_locally(consumer, framework_snapshot):
+    synced_with(consumer, framework_snapshot, {"REVIEW.md": LINES})
+    commit(framework_snapshot, "fix: change", {"REVIEW.md": LINES.replace("line 9", "new 9")})
+    result = sync(consumer, framework_snapshot, "main")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "new 9" in (consumer / "REVIEW.md").read_text()
+    assert "kept your local changes" not in result.stdout
+
+
+def test_sync_keeps_local_edits_and_merges_framework_changes(consumer, framework_snapshot):
+    synced_with(consumer, framework_snapshot, {"REVIEW.md": LINES})
+    commit(consumer, "chore: local tweak", {"REVIEW.md": LINES.replace("line 2", "mine 2")})
+    commit(framework_snapshot, "fix: change", {"REVIEW.md": LINES.replace("line 9", "new 9")})
+    result = sync(consumer, framework_snapshot, "main")
+    assert result.returncode == 0, result.stdout + result.stderr
+    text = (consumer / "REVIEW.md").read_text()
+    assert "mine 2" in text and "new 9" in text
+    assert "kept your local changes" in result.stdout and "REVIEW.md" in result.stdout
+
+
+def test_sync_keeps_local_edits_the_framework_did_not_change(consumer, framework_snapshot):
     commit(consumer, "chore: local tweak", {"REVIEW.md": "local edit\n", "notes.md": "mine\n"})
-    assert sync(consumer, framework_snapshot).returncode == 0
-    assert (consumer / "REVIEW.md").read_text() == (REPO / "REVIEW.md").read_text()
+    commit(framework_snapshot, "fix: other file", {"NOTES.md": "x\n"})
+    assert sync(consumer, framework_snapshot, "main").returncode == 0
+    assert (consumer / "REVIEW.md").read_text() == "local edit\n"
     assert (consumer / "notes.md").read_text() == "mine\n"
+
+
+def test_sync_conflict_keeps_both_sides_and_fails(consumer, framework_snapshot):
+    synced_with(consumer, framework_snapshot, {"REVIEW.md": LINES})
+    commit(consumer, "chore: local tweak", {"REVIEW.md": LINES.replace("line 5", "mine 5")})
+    commit(framework_snapshot, "fix: change", {"REVIEW.md": LINES.replace("line 5", "new 5")})
+    result = sync(consumer, framework_snapshot, "main")
+    assert result.returncode == 1
+    assert "CONFLICT" in result.stderr and "REVIEW.md" in result.stderr
+    text = (consumer / "REVIEW.md").read_text()
+    assert "<<<<<<< yours" in text and "mine 5" in text and "new 5" in text
+    staged = git(consumer, "diff", "--cached", "--name-only").split()
+    assert "REVIEW.md" not in staged, "a conflicted file stays unstaged"
+    assert ".sdlc-version" in staged, "the rest of the sync is staged"
+
+
+def test_first_sync_never_overwrites_a_file_the_consumer_has(tmp_path, framework_snapshot):
+    repo = init_repo(tmp_path / "existing")
+    shutil.copy(FIXTURE / "Makefile", repo / "Makefile")
+    (repo / "scripts").mkdir()
+    shutil.copy(REPO / "scripts" / "sync-sdlc.sh", repo / "scripts" / "sync-sdlc.sh")
+    commit(repo, "chore: existing repo", {".github/workflows/ci.yml": "name: our own ci\n"})
+    result = sync(repo, framework_snapshot)
+    assert result.returncode == 1
+    assert ".github/workflows/ci.yml" in result.stderr
+    text = (repo / ".github/workflows/ci.yml").read_text()
+    assert "name: our own ci" in text and "<<<<<<< yours" in text
 
 
 def test_sync_refuses_dirty_tree(consumer, framework_snapshot):
@@ -184,6 +243,28 @@ def test_sync_removes_files_the_framework_dropped(consumer, framework_snapshot):
     assert sync(consumer, framework_snapshot, "main").returncode == 0
     assert not (consumer / dropped).exists()
     assert dropped not in (consumer / ".sdlc-files").read_text()
+
+
+def test_sync_keeps_a_dropped_file_the_consumer_changed(consumer, framework_snapshot):
+    dropped = ".claude/skills/po-review/SKILL.md"
+    commit(consumer, "chore: our po-review", {dropped: "our version\n"})
+    (framework_snapshot / dropped).unlink()
+    commit(framework_snapshot, "feat!: drop po-review skill")
+    result = sync(consumer, framework_snapshot, "main")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (consumer / dropped).read_text() == "our version\n"
+    assert dropped not in (consumer / ".sdlc-files").read_text(), "it's the consumer's now"
+    assert "kept (the framework dropped these" in result.stdout
+
+
+def test_sync_reports_make_targets_the_consumer_lacks(consumer, framework_snapshot):
+    makefile = (consumer / "Makefile").read_text().replace("status", "nostatus")
+    commit(consumer, "chore: drop status target", {"Makefile": makefile})
+    commit(framework_snapshot, "fix: change", {"REVIEW.md": "changed\n"})
+    out = sync(consumer, framework_snapshot, "main").stdout
+    assert "make status  (stack contract" in out
+    assert "make evals  (optional" in out
+    assert "make check  (" not in out
 
 
 def test_sdlc_files_lists_what_was_installed(consumer):
