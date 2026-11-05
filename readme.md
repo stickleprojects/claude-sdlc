@@ -100,7 +100,7 @@ make status                     # stage each change has reached
 make check                      # lint + tests + artifact chain
 ```
 
-In Claude Code, the stages are skills: `/intent`, `/spec`, `/plan`, plus `/po-review <PR#>` for product owners. The `verifier` subagent checks finished work. Who does what: [docs/roles.md](docs/roles.md).
+In Claude Code, the stages are skills: `/intent`, `/spec`, `/plan`, `/build`, plus `/po-review <PR#>` for product owners. The `verifier` subagent checks finished work. Who does what: [docs/roles.md](docs/roles.md).
 
 ## How it is put together
 
@@ -108,7 +108,7 @@ In Claude Code, the stages are skills: `/intent`, `/spec`, `/plan`, plus `/po-re
 |---|---|---|
 | Plan | `changes/NNNN-*/intent.md` | `/intent` skill |
 | Design | `spec.md` | `/spec` skill; the *Spec from intent* workflow opens a spec PR when an intent merges |
-| Build | `plan.md` + code | plan mode, `/plan`, worktrees, hooks (format on edit, protected paths) |
+| Build | `plan.md`, optional `build.md`, code | plan mode, `/plan`, `/build` (small plans in one session; larger ones as approved milestones), worktrees, hooks (format on edit, protected paths) |
 | Test | tests, evals | `make check`; *Agent evals* (on demand for now) |
 | Deploy | PR | *Claude review* follows [REVIEW.md](REVIEW.md); `@claude` fixes; production gate hook |
 

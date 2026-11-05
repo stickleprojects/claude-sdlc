@@ -34,7 +34,8 @@ The framework itself. Its changes are tracked as GitHub issues (label `pipeline`
 - **Stack contract:** hooks, CI and evals call only the `make` targets above, never `uv`, `ruff` or `pytest` directly. Language-specific details live only in `Makefile` and `.github/actions/setup-stack/`. Keep it that way.
 - **Agent adapter:** CI and evals call AI only through `scripts/agent.sh`. Don't call `claude -p` from workflows directly. (`claude-code-action` in the review and mention workflows is the one exception.)
 - **Artifact chain:** `changes/NNNN-name/{intent,spec,plan}.md`. The required `##` sections are defined in `src/sdlc/artifacts.py` (`CHAIN`) and must match `templates/`. A test enforces this. Change both together.
-- **Stage skills:** `.claude/skills/{intent,spec,plan}`. Policy skills (e.g. `security-policy`) are advisory; rules that must always hold need a hook or CI check.
+- **Optional build plan:** `changes/NNNN-name/build.md`, written by `/build` for builds of more than one session. It sits outside `CHAIN`; `check_build` validates it when present (sections from `templates/build.md`, no approval with open questions). Small plans are built without one.
+- **Stage skills:** `.claude/skills/{intent,spec,plan,build}`. Policy skills (e.g. `security-policy`) are advisory; rules that must always hold need a hook or CI check.
 
 ## Guardrails (hooks in .claude/settings.json)
 

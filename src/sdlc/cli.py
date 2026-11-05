@@ -8,7 +8,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from sdlc.artifacts import change_dirs, check_change, next_slug, stage
+from sdlc.artifacts import build_progress, change_dirs, check_change, next_slug, stage
 
 NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 
@@ -36,7 +36,8 @@ def cmd_check(root: Path) -> int:
 
 def cmd_status(root: Path) -> int:
     for d in change_dirs(root):
-        print(f"{d.name}\t{stage(d)}")
+        progress = build_progress(d)
+        print(f"{d.name}\t{stage(d)}" + (f"\t{progress}" if progress else ""))
     return 0
 
 

@@ -9,6 +9,7 @@ import shutil
 import pytest
 
 from conftest import REPO, commit, git, hook, init_repo, run
+from sdlc.artifacts import CHAIN
 
 FIXTURE = REPO / "tests" / "fixtures" / "consumer"
 
@@ -40,6 +41,8 @@ def test_sync_installs_framework_owned_files(consumer):
     for rel in [
         ".claude/hooks/production-gate.sh",
         ".claude/skills/intent/SKILL.md",
+        ".claude/skills/build/SKILL.md",
+        "templates/build.md",
         ".claude/settings.json",
         ".github/workflows/claude-review.yml",
         ".github/workflows/pr-title.yml",
@@ -105,6 +108,27 @@ def test_change_lifecycle_in_consumer(consumer):
     broken = make(consumer, "validate")
     assert broken.returncode != 0
     assert "Constraints" in broken.stderr
+
+
+def test_build_plan_in_consumer(consumer):
+    """A large build's draft build.md validates, an approval with open questions doesn't,
+    and make status shows milestone progress."""
+    assert make(consumer, "new-change", "NAME=role-list").returncode == 0
+    change = consumer / "changes" / "0001-role-list"
+    for name, sections in CHAIN.items():
+        (change / name).write_text("# T\n\n" + "".join(f"## {s}\n\nx\n\n" for s in sections))
+    draft = (consumer / "templates" / "build.md").read_text()
+    (change / "build.md").write_text(draft)
+    assert make(consumer, "validate").returncode == 0
+    assert make(consumer, "status").stdout.strip() == (
+        "0001-role-list\tbuild\tdraft, awaiting approval, 0/2 milestones done"
+    )
+
+    approved = draft.replace("draft, awaiting approval", "in progress", 1)
+    (change / "build.md").write_text(approved.replace("None.\n", "1. Split it?\n", 1))
+    refused = make(consumer, "validate")
+    assert refused.returncode != 0
+    assert "Questions before approval" in refused.stderr
 
 
 def test_hooks_guard_the_consumer(consumer):
