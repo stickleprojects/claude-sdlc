@@ -325,7 +325,7 @@ def test_pr_title_accepts_bug_artifact_prs():
 
 # --- spec-pr: one spec PR per change --------------------------------------------------------
 
-FAKE_GH = """#!/usr/bin/env bash
+FAKE_GH = r"""#!/usr/bin/env bash
 # Records each call; answers from $FAKE_GH_DIR/<name> files keyed by what the call asks for.
 echo "$*" >> "$FAKE_GH_DIR/calls"
 case "$*" in
@@ -611,11 +611,24 @@ def locked(repo, path="", env=None):
 
 def test_bug_tests_stay_editable_until_the_failing_test_is_committed(bug_branch):
     assert not locked(bug_branch, "tests/test_overlap.py")
-    commit(bug_branch, "test(0003-overlap): failing test for overlap", {"tests/t.py": "x\n"})
+    commit(
+        bug_branch,
+        "test(0003-overlap): failing test for overlap",
+        {"tests/test_overlap.py": "x\n", "app/src/__tests__/overlap.test.tsx": "x\n"},
+    )
     assert locked(bug_branch, "tests/test_overlap.py")
     assert locked(bug_branch, "app/src/__tests__/overlap.test.tsx")
-    assert locked(bug_branch, "app/e2e/screens.spec.ts")
     assert not locked(bug_branch, "src/overlap.py"), "code stays editable"
+
+
+def test_only_the_failing_test_files_are_locked(bug_branch):
+    # /build writes more tests after the failing one (coverage, regression guards); those
+    # stay editable, only what the test(<slug>) commit touched is locked.
+    commit(bug_branch, "test(0003-overlap): failing test", {"tests/test_overlap.py": "x\n"})
+    assert locked(bug_branch, "tests/test_overlap.py")
+    assert not locked(bug_branch, "tests/test_coverage_extra.py")
+    assert not locked(bug_branch, "app/e2e/screens.spec.ts")
+    assert locked(bug_branch, "app/e2e/screens.spec.ts", {"SDLC_LOCK_TESTS": "1"})
 
 
 def test_features_are_not_locked_by_a_test_commit(bug_branch):
@@ -637,6 +650,11 @@ def test_change_can_be_named_explicitly(bug_branch):
     assert locked(bug_branch, "tests/t.py", {"SDLC_CHANGE": "0003-overlap"})
 
 
+def test_a_later_commit_by_another_type_does_not_lock(bug_branch):
+    commit(bug_branch, "feat(0003-overlap): fix it", {"tests/t.py": "x\n"})
+    assert not locked(bug_branch, "tests/t.py")
+
+
 def test_agent_session_locks_tests_for_a_bug_fix(bug_branch):
     commit(bug_branch, "test(0003-overlap): failing test", {"tests/t.py": "x\n"})
     out = run(
@@ -645,8 +663,8 @@ def test_agent_session_locks_tests_for_a_bug_fix(bug_branch):
         env={"SDLC_CLAUDE": "env", "SDLC_LOCK_TESTS": "", "XDG_CONFIG_HOME": str(bug_branch)},
     )
     assert out.returncode == 0, out.stderr
-    assert "SDLC_LOCK_TESTS=1" in out.stdout
-    assert "tests locked" in out.stderr
+    assert "SDLC_LOCK_TESTS=1" not in out.stdout, "the hook locks just the failing test's files"
+    assert "tests locked" in out.stderr and "tests/t.py" in out.stderr
 
 
 def test_every_session_loads_the_agent_identity():

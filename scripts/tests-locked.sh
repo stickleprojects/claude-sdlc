@@ -7,10 +7,12 @@
 #   Exit 1 otherwise.
 #
 # Tests are locked when:
-#   - SDLC_LOCK_TESTS=1 (set by hand); SDLC_LOCK_TESTS=0 always unlocks; or
+#   - SDLC_LOCK_TESTS=1 (set by hand): every test file; SDLC_LOCK_TESTS=0 always unlocks; or
 #   - the change being worked on is a bug (changes/<slug>/bug.md exists) and this branch
-#     already has its failing-test commit, `test(<slug>): …`, since it left main.
-#     Before that commit the test is still being written, so it stays editable.
+#     already has its failing-test commit, `test(<slug>): …`, since it left main. Then only
+#     the files that commit added or changed are locked: the build still writes new tests
+#     (coverage, regression guards) in other files. Before that commit the test is still
+#     being written, so it stays editable.
 #
 # The change is $SDLC_CHANGE, or the NNNN-name slug in the branch name (build/0003-x,
 # fix/0003-x, …) or in the worktree folder's name, when changes/<slug>/ exists.
@@ -53,7 +55,16 @@ for ref in origin/main main; do
   base="$(git merge-base "$ref" HEAD 2>/dev/null)" && break
 done
 range="${base:+$base..}HEAD"
-if git log --format=%s "$range" 2>/dev/null | grep -qE "^test\\($slug\\)!?:"; then
-  locked "$slug is a bug fix and its failing test is committed (test($slug): …)."
+# The files the failing-test commit(s) touched; those, and only those, are locked.
+files="$(git log --format='%H %s' "$range" 2>/dev/null \
+  | awk -v s="$slug" 'index($2, "test(" s ")") == 1 {print $1}' \
+  | xargs -r -n1 git diff-tree --no-commit-id --name-only -r | sort -u)"
+[[ -n "$files" ]] || exit 1
+why="$slug is a bug fix and its failing test is committed (test($slug): …); locked: ${files//$'\n'/, }."
+if [[ -n "$path" ]]; then
+  grep -qxF -- "$path" <<<"$files" || exit 1
+  echo "$why"
+  exit 0
 fi
-exit 1
+echo "$why"
+exit 0

@@ -26,10 +26,9 @@ if [[ "${1:-}" == --persona ]]; then
   shift 2
 fi
 eval "$("$here/agent-identity.sh" env "${persona[@]}")"
-# A bug fix whose failing test is already committed starts with its tests locked, so nobody
-# has to remember SDLC_LOCK_TESTS=1 (the protect-paths hook reads it).
+# A bug fix whose failing test is already committed has that test locked: the protect-paths
+# hook asks tests-locked.sh on every edit, so nothing needs setting here. Just say so.
 if [[ -z "${SDLC_LOCK_TESTS:-}" ]] && why="$("$here/tests-locked.sh")"; then
-  export SDLC_LOCK_TESTS=1
   echo "tests locked: $why" >&2
 fi
 exec ${SDLC_CLAUDE:-claude} "$@"

@@ -113,7 +113,7 @@ To regenerate a spec by hand, run `claude`, then `/spec changes/NNNN-<name>`.
    ```
    claude --worktree NNNN-<name>
    ```
-   For a bug fix (a change with `bug.md`), Claude commits a failing test first (`test(NNNN-<name>): failing test for …`), one per acceptance criterion. From then on the tests lock automatically while Claude fixes the code; you don't set anything. To unlock them deliberately, start the session with `SDLC_LOCK_TESTS=0`.
+   For a bug fix (a change with `bug.md`), Claude commits a failing test first (`test(NNNN-<name>): failing test for …`), one per acceptance criterion. From then on those test files lock automatically while Claude fixes the code (new tests elsewhere can still be added); you don't set anything. To unlock them deliberately, start the session with `SDLC_LOCK_TESTS=0`.
 4. Verify, then open the PR:
    ```
    make check                       # lint + tests + artifact chain; must exit 0
