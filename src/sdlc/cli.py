@@ -10,7 +10,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from sdlc.artifacts import change_dirs, check_change, next_slug, stage
+from sdlc.artifacts import build_progress, change_dirs, check_change, next_slug, stage
 
 # `make new-change NAME=x TYPE=bug`: make exports command-line variables to recipes, so the
 # type arrives as $TYPE even when a consumer's Makefile doesn't pass it on.
@@ -92,7 +92,8 @@ def cmd_check(root: Path) -> int:
 
 def cmd_status(root: Path) -> int:
     for d in change_dirs(root):
-        print(f"{d.name}\t{stage(d)}")
+        progress = build_progress(d)
+        print(f"{d.name}\t{stage(d)}" + (f"\t{progress}" if progress else ""))
     return 0
 
 

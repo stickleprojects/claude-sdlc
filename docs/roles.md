@@ -109,10 +109,12 @@ To regenerate a spec by hand, run `claude`, then `/spec changes/NNNN-<name>`.
    ```
    Iterate until you'd be happy implementing the plan yourself, then approve it.
 2. Save the plan and commit it first: `> /plan`
-3. Implement in a dedicated worktree. You can run two or three of these in parallel:
+3. Once the plan is merged, build it in a dedicated worktree. You can run two or three of these in parallel:
    ```
    claude --worktree NNNN-<name>
+   > /build
    ```
+   A small plan (a message, a one-line fix) is built in that one session, through to the PR. A larger one first gets `changes/NNNN-<name>/build.md`, a draft that splits the plan into milestones and lists anything you need to decide. Read the file, answer its questions, and approve it; nothing is built before you do. Then run `/build` once per milestone, in a new conversation each time, or `/build all` to run them all in fresh subagents through to the PR.
    For a bug fix (a change with `bug.md`), Claude commits a failing test first (`test(NNNN-<name>): failing test for …`), one per acceptance criterion. From then on those test files lock automatically while Claude fixes the code (new tests elsewhere can still be added); you don't set anything. To unlock them deliberately, start the session with `SDLC_LOCK_TESTS=0`.
 4. Verify, then open the PR:
    ```
@@ -127,7 +129,7 @@ To regenerate a spec by hand, run `claude`, then `/spec changes/NNNN-<name>`.
    Claude goes through the findings one at a time and asks what you want. Then it fixes the code, pushes, replies on every thread and resolves it. Tagging `@claude` on a GitHub comment is an optional alternative, where the bot pushes the fix. Use one or the other for a finding, never both: before it pushes, Claude Code checks the branch for bot commits.
    The review runs when the PR opens, not on every push. To review the latest push, add the `review` label; it removes itself so you can add it again.
 
-**Stays with you:** Approving the plan, and deciding the work is done. When Claude makes the same mistake twice, add the correction to `CLAUDE.md`.
+**Stays with you:** Approving the plan and the build plan, and deciding the work is done. When Claude makes the same mistake twice, add the correction to `CLAUDE.md`.
 
 ---
 
