@@ -126,7 +126,7 @@ def check_build(path: Path) -> list[Problem]:
     if build.status and not build.is_draft and not finished:
         if build.questions not in ("None", "None."):
             problems.append(Problem(path, "approved, but Questions before approval isn't 'None.'"))
-        if not build.approved or build.approved.startswith("not yet"):
+        if not build.approved or build.approved.lower().startswith("not yet"):
             problems.append(Problem(path, "approved, but Approved doesn't say who and when"))
     if build.is_draft:
         # A re-draft (the plan changed mid-build) keeps its done milestones, but no

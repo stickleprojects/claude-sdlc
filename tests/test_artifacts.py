@@ -128,6 +128,12 @@ def test_approval_without_approver_is_reported(change: Path) -> None:
     assert any("Approved" in m for m in messages(change))
 
 
+def test_not_yet_approved_in_any_case_is_reported(change: Path) -> None:
+    text = approved(BUILD_TEMPLATE).replace("Sam, 2026-11-05", "Not yet")
+    planned(change).write_text(text)
+    assert any("Approved" in m for m in messages(change))
+
+
 def test_building_from_a_draft_is_reported(change: Path) -> None:
     text = BUILD_TEMPLATE.replace("- **Status:** todo", "- **Status:** in progress", 1)
     planned(change).write_text(text)
