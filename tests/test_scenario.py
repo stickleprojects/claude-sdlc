@@ -142,6 +142,22 @@ def test_sync_conflict_keeps_both_sides_and_fails(consumer, framework_snapshot):
     assert ".sdlc-version" in staged, "the rest of the sync is staged"
 
 
+def test_sync_unmergeable_file_is_left_alone_with_new_version_beside_it(
+    consumer, framework_snapshot
+):
+    binary = "\x00base\n"
+    synced_with(consumer, framework_snapshot, {"REVIEW.md": binary})
+    commit(consumer, "chore: local tweak", {"REVIEW.md": "\x00mine\n"})
+    commit(framework_snapshot, "fix: change", {"REVIEW.md": "\x00new\n"})
+    result = sync(consumer, framework_snapshot, "main")
+    assert result.returncode == 1
+    assert (consumer / "REVIEW.md").read_text() == "\x00mine\n", "local file untouched"
+    assert (consumer / "REVIEW.md.sdlc-new").read_text() == "\x00new\n"
+    assert "REVIEW.md.sdlc-new" in result.stderr and "by hand" in result.stderr
+    staged = git(consumer, "diff", "--cached", "--name-only").split()
+    assert "REVIEW.md.sdlc-new" not in staged and "REVIEW.md" not in staged
+
+
 def test_first_sync_never_overwrites_a_file_the_consumer_has(tmp_path, framework_snapshot):
     repo = init_repo(tmp_path / "existing")
     shutil.copy(FIXTURE / "Makefile", repo / "Makefile")

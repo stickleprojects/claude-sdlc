@@ -9,8 +9,8 @@
 #   SDLC_SOURCE  local path or URL to clone instead of SDLC_REPO, e.g. ../claude-sdlc
 #                to try unpushed framework changes; the scenario tests use this.
 #
-# Copies the files the framework owns (the paths list in main), overwriting local copies,
-# and records the exact commit in .sdlc-version and the installed files in .sdlc-files.
+# Copies the files the framework owns (the paths list in main), merging in any local edits
+# instead of overwriting them (a clash stops the sync, like a git merge conflict), and records the exact commit in .sdlc-version and the installed files in .sdlc-files.
 # Files the consumer adds, even inside framework folders such as .github/workflows or
 # .claude/skills, are never touched. The result is staged for review in a PR.
 #
@@ -119,7 +119,7 @@ main() {
     git -C "$tmp/fw" cat-file -e "${base_sha}^{commit}" 2>/dev/null || base_sha=""
   fi
 
-  local pair src dst file installed=() merged=() conflicts=() kept=()
+  local pair src dst file installed=() merged=() conflicts=() kept=() sidecars=()
   base_of() {  # <framework path> <out file>: the file as the previous sync installed it
     rm -f "$2"
     [[ -n "$base_sha" ]] && git -C "$tmp/fw" show "$base_sha:$1" > "$2" 2>/dev/null
@@ -146,7 +146,7 @@ main() {
       conflicts+=("$2")
     else  # can't merge (binary?): leave the local file alone, put the new one beside it
       cp "$new" "$2.sdlc-new"
-      conflicts+=("$2")
+      sidecars+=("$2.sdlc-new")
       return
     fi
     cat "$out" > "$2"
@@ -214,6 +214,7 @@ main() {
   git ls-files '*.sh' | xargs -r git update-index --chmod=+x
   # Like `git merge`, conflicted files stay unstaged until someone resolves them.
   ((${#conflicts[@]})) && git reset -q -- "${conflicts[@]}"
+  ((${#sidecars[@]})) && git reset -q -- "${sidecars[@]}"
 
   report_targets
   local f
@@ -225,11 +226,18 @@ main() {
     echo "kept (the framework dropped these, but you changed them; they're yours now):"
     for f in "${kept[@]}"; do echo "  $f"; done
   fi
-  if ((${#conflicts[@]})); then
+  if ((${#conflicts[@]} + ${#sidecars[@]})); then
     echo
-    echo "CONFLICT: your local changes clash with the framework's in:" >&2
-    for f in "${conflicts[@]}"; do echo "  $f" >&2; done
-    echo "Resolve the <<<<<<< markers (yours / ${base_ref:-none} / $ref), git add the files, then run make check." >&2
+    if ((${#conflicts[@]})); then
+      echo "CONFLICT: your local changes clash with the framework's in:" >&2
+      for f in "${conflicts[@]}"; do echo "  $f" >&2; done
+      echo "Resolve the <<<<<<< markers (yours / ${base_ref:-none} / $ref), git add the files, then run make check." >&2
+    fi
+    if ((${#sidecars[@]})); then
+      echo "CONFLICT: these can't be merged automatically (binary?); your file is untouched and the framework's version is beside it:" >&2
+      for f in "${sidecars[@]}"; do echo "  ${f%.sdlc-new} (framework's version: $f)" >&2; done
+      echo "Merge each one by hand, delete the .sdlc-new file, git add the result, then run make check." >&2
+    fi
     echo "The rest of the sync is staged." >&2
     return 1
   fi
