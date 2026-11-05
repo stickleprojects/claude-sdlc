@@ -6,6 +6,8 @@ accepted by the product owner. Merging this file triggers spec generation (a sho
 
 Found by: <name>
 Product owner: <name>
+Came from: <the change it was found in, e.g. 0002-breadcrumbs, or none>
+<!-- To bin this change, add a line: Withdrawn: <who>, <date>: <why> -->
 
 ## What happens
 

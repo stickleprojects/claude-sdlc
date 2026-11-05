@@ -5,6 +5,7 @@ originator, accepted by the product owner. Merging this file triggers spec gener
 
 Originator: <name>
 Product owner: <name>
+<!-- To bin this change, add a line: Withdrawn: <who>, <date>: <why> -->
 
 ## Problem
 
