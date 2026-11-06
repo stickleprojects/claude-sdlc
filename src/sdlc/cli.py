@@ -15,7 +15,9 @@ from sdlc.artifacts import (
     change_dirs,
     check_adrs,
     check_change,
+    check_config,
     next_slug,
+    placeholders,
     stage,
 )
 from sdlc.routing import steps
@@ -89,8 +91,10 @@ def check_commits(root: Path) -> list[str]:
 
 
 def cmd_check(root: Path) -> int:
-    problems: list[object] = [p for d in change_dirs(root) for p in check_change(d)]
-    problems += check_adrs(root)
+    words = placeholders(root)
+    problems: list[object] = [p for d in change_dirs(root) for p in check_change(d, words)]
+    problems += check_adrs(root, words)
+    problems += check_config(root)
     problems += check_commits(root)
     for problem in problems:
         print(problem, file=sys.stderr)

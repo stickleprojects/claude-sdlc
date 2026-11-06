@@ -207,6 +207,7 @@ The production gate hook (`.claude/hooks/production-gate.sh`) blocks Claude from
 | Build-time guardrails | `.claude/settings.json`, `.claude/hooks/` |
 | CI and automation | `.github/workflows/` |
 | Agent evals | `evals/`; run with `make evals` |
+| Words `make validate` reads as "nothing here" (`None.`, `TBD`, …) | defaults in `src/sdlc/placeholders.toml`; a repo overrides them in `.sdlc.toml` (`[placeholders]`), which the sync never touches |
 | Claude's GitHub identity | `scripts/agent-identity.sh`, `scripts/agent-session.sh`; setup in [agent-identity.md](agent-identity.md) |
 | `.gitignore` baseline (node, python) | `templates/gitignore`; `bootstrap-github.sh` adds any missing line, and `make validate` fails on tracked `node_modules` or a branch changing more than 300 files (`SDLC_MAX_CHANGED_FILES`) |
 

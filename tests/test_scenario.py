@@ -249,6 +249,26 @@ def test_adr_in_consumer(consumer, framework_snapshot):
     assert "Revisit when" in refused.stderr
 
 
+def test_placeholder_words_in_consumer(consumer, framework_snapshot):
+    """The framework's words arrive with the CLI; the repo's .sdlc.toml overrides them and the
+    sync leaves it alone."""
+    assert (consumer / "tools/sdlc/src/sdlc/placeholders.toml").exists()
+    adrs = consumer / "docs" / "adr"
+    adrs.mkdir(parents=True)
+    template = (consumer / "templates" / "adr.md").read_text()
+    accepted = template.replace("proposed <!--", "accepted (Sam, 2026-11-06) <!--", 1)
+    (adrs / "0001-client-stack.md").write_text(accepted.replace("- <trigger>", "- pending"))
+    assert make(consumer, "validate").returncode == 0, "'pending' isn't a framework placeholder"
+
+    (consumer / ".sdlc.toml").write_text('[placeholders]\nnothing_written = ["none", "pending"]\n')
+    commit(consumer, "chore: ADR and placeholder words")
+    assert sync(consumer, framework_snapshot, "main").returncode == 0
+    assert "pending" in (consumer / ".sdlc.toml").read_text()
+    refused = make(consumer, "validate")
+    assert refused.returncode != 0
+    assert "names no trigger" in refused.stderr
+
+
 def test_hooks_guard_the_consumer(consumer):
     blocked = hook(
         "production-gate.sh", {"tool_input": {"command": "git push origin main"}}, cwd=consumer

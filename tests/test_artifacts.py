@@ -12,7 +12,9 @@ from sdlc.artifacts import (
     build_progress,
     check_adrs,
     check_change,
+    check_config,
     next_slug,
+    placeholders,
     stage,
 )
 from sdlc.cli import check_commits, main
@@ -345,7 +347,18 @@ def test_accepted_adr_with_a_trigger_is_valid(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize(
     "trigger",
-    ["", "None.", "never", "<!-- later -->", "- <trigger>", "- None", "- N/A", "* TBD.", "1. todo"],
+    [
+        "",
+        "None.",
+        "never",
+        "<!-- later -->",
+        "- <trigger>",
+        "- None",
+        "- N/A",
+        "* TBD.",
+        "1. todo",
+        "-",
+    ],
 )
 def test_accepted_adr_without_a_trigger_is_reported(tmp_path: Path, trigger: str) -> None:
     adr(tmp_path, "0001-client-stack.md", accepted_adr(trigger))
@@ -392,3 +405,49 @@ def test_check_reports_adr_problems(tmp_path: Path, capsys: pytest.CaptureFixtur
     adr(tmp_path, "0001-client-stack.md", accepted_adr(""))
     assert main(["--root", str(tmp_path), "check"]) == 1
     assert "Revisit when" in capsys.readouterr().err
+
+
+def test_placeholder_words_come_from_the_framework_file(tmp_path: Path) -> None:
+    words = placeholders(tmp_path)
+    assert {"none", "tbd"} <= words.nothing_written
+    assert words.explicit_none == {"None", "None."}
+    assert check_config(tmp_path) == []
+
+
+def test_repo_config_replaces_a_list(tmp_path: Path) -> None:
+    (tmp_path / ".sdlc.toml").write_text('[placeholders]\nnothing_written = ["None", "Pending."]\n')
+    adr(tmp_path, "0001-client-stack.md", accepted_adr("- pending"))
+    assert any("names no trigger" in m for m in adr_messages(tmp_path))
+    adr(tmp_path, "0001-client-stack.md", accepted_adr("- tbd"))
+    assert adr_messages(tmp_path) == [], "the repo's list replaced the framework's"
+
+
+def test_repo_config_sets_what_clears_a_build(change: Path) -> None:
+    root = change.parents[1]
+    (root / ".sdlc.toml").write_text('[placeholders]\nexplicit_none = ["Nothing open."]\n')
+    text = approved(BUILD_TEMPLATE).replace(
+        "None.\n\n## Milestones", "Nothing open.\n\n## Milestones"
+    )
+    planned(change).write_text(text)
+    assert check_change(change) == []
+    planned(change).write_text(approved(BUILD_TEMPLATE))
+    assert any("Questions before approval" in m for m in messages(change))
+
+
+@pytest.mark.parametrize(
+    ("config", "expected"),
+    [
+        ("[placeholders\n", "isn't valid TOML"),
+        ("placeholders = 1\n", "must be a table"),
+        ('[placeholders]\nnothing = ["x"]\n', "unknown key placeholders.nothing"),
+        ('[placeholders]\nexplicit_none = "None."\n', "must be a list of strings"),
+    ],
+)
+def test_bad_repo_config_is_reported_and_ignored(
+    tmp_path: Path, config: str, expected: str
+) -> None:
+    (tmp_path / ".sdlc.toml").write_text(config)
+    [problem] = check_config(tmp_path)
+    assert expected in problem.message
+    assert placeholders(tmp_path).explicit_none == {"None", "None."}
+    assert main(["--root", str(tmp_path), "check"]) == 1
