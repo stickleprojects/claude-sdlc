@@ -61,6 +61,13 @@ DEPLOY = "deploy" + "-prod"  # split so this file's own text never trips the gat
         (f"git --config-env=core.pager=X log && X='make {DEPLOY}'", True),
         (f"git config alias.d '!make {DEPLOY}' && git d", True),
         (f"gh alias set d --shell 'make {DEPLOY}'", True),
+        # Review round 3: other git subcommands and tools that run a string.
+        (f"git rebase -x 'make {DEPLOY}' HEAD~1", True),
+        (f"git submodule foreach 'make {DEPLOY}'", True),
+        (f"git bisect run sh -c 'make {DEPLOY}'", True),
+        (f"git grep -O'make {DEPLOY}' foo", True),
+        (f"rg --pre 'make {DEPLOY}' x .", True),
+        (f"sort --compress-program='make {DEPLOY}' f", True),
         # Not a text tool, so its heredoc is checked as code: the cost of failing safe.
         (f"python3 - <<'EOF'\nnote = 'make {DEPLOY} needs a human'\nEOF", True),
         # ...and mentioning it isn't.
@@ -70,6 +77,9 @@ DEPLOY = "deploy" + "-prod"  # split so this file's own text never trips the gat
         (f"gh api repos/o/r/pulls -F body=@- <<EOF\nmissing: deploy-dev, {DEPLOY}\nEOF", False),
         (f"cat > notes.md <<EOF\nrun make {DEPLOY}\nEOF", False),
         (f"echo 'make {DEPLOY}'", False),
+        (f'git -C repo commit -q -m "fix: make {DEPLOY} gate"', False),
+        (f"git --no-pager log --grep 'make {DEPLOY}'", False),
+        (f'gh issue comment 1 --body "run make {DEPLOY} later"', False),
         (f"grep -n '{DEPLOY}' Makefile", False),
         (f"grep -n {DEPLOY} Makefile && sed -n 1,5p Makefile", False),
         (f"awk '/{DEPLOY}/' Makefile", False),

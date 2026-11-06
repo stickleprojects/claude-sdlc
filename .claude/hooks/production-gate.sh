@@ -12,7 +12,11 @@ cmd="$(jq -r '.tool_input.command // empty')"
 # ssh, …) are checked as code. It errs towards blocking: a dry run (`make -n`) is blocked too.
 target='deploy-prod'
 make_target="(^|[^[:alnum:]_.-])(g?make|\\\$\\(MAKE\\)|\\\$\\{MAKE\\})([[:space:]]+[^[:space:]]+)*[[:space:]]+$target([^[:alnum:]_-]|$)"
-text_tools='git|gh|echo|printf|cat|tee|grep|egrep|fgrep|rg|jq|yq|head|tail|wc|sort|uniq|cut|tr|diff|cmp|ls|test|true|mkdir|touch|cd|pwd'
+# Commands that can't run their arguments as code (rg --pre, sort --compress-program and the
+# like can, so they're not here). git and gh count only with the subcommands below.
+text_tools='git|gh|echo|printf|cat|tee|grep|egrep|fgrep|jq|head|tail|wc|uniq|cut|tr|diff|cmp|ls|test|true|mkdir|touch|cd|pwd'
+git_text='commit|tag|notes|log|show|status|diff'
+gh_text='pr|issue|api|release|label'
 
 segments() { sed -E 's/(&&|\|\||;|\|)/\n/g'; }
 
@@ -33,13 +37,13 @@ is_text() {  # every segment of $1 runs a known text tool
   while IFS= read -r segment; do
     word="$(command_word "$segment")"
     [[ "$word" =~ ^($text_tools)$ ]] || return 1
-    # git and gh can run a string as a command through config and aliases
-    # (`git -c alias.x='!…'`, `git -c core.pager=…`, `git config`, `gh alias set`).
-    if [[ "$word" == git ]] \
-      && grep -Eq '(^|[[:space:]])(-c|--config-env)([[:space:]=]|$)|[[:space:]]config([[:space:]]|$)' <<<"$segment"; then
+    # git and gh run strings through aliases, config, hooks and subcommands such as
+    # `rebase -x` or `submodule foreach`: allow only those that take messages or patterns,
+    # with no -c or --config-env before them.
+    if [[ "$word" == git ]] && ! [[ "$segment" =~ (^|[[:space:]])git([[:space:]]+(-C[[:space:]]+[^[:space:]]+|--no-pager))*[[:space:]]+($git_text)([[:space:]]|$) ]]; then
       return 1
     fi
-    if [[ "$word" == gh ]] && grep -Eq '[[:space:]]alias([[:space:]]|$)' <<<"$segment"; then
+    if [[ "$word" == gh ]] && ! [[ "$segment" =~ (^|[[:space:]])gh[[:space:]]+($gh_text)([[:space:]]|$) ]]; then
       return 1
     fi
   done < <(segments <<<"$1")
