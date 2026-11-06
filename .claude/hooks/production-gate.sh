@@ -73,9 +73,12 @@ drop_text_heredocs() {
 
 runs_prod_deploy() {
   local code segment
-  # A backslash-newline continues the command. Quotes around a single word don't make it
-  # text: `make "deploy-prod"` runs the target.
+  # A backslash-newline continues the command. Escapes and quotes around a single word don't
+  # make it text: `make "deploy-prod"`, `make $'deploy-prod'` and `make deploy\-prod` run the
+  # target. Deliberate disguises (brace expansion, the target built from variables) are out of
+  # scope: this guards against accidents, and a human still holds the release.
   code="$(awk '{ while (/\\$/ && (getline nxt) > 0) { sub(/\\$/, ""); $0 = $0 " " nxt } print }' <<<"$1" \
+    | sed -E "s/\\\$(['\"])/\1/g; s/\\\\(.)/\1/g" \
     | sed -E "s/'([^'[:space:]]*)'/\\1/g; s/\"([^\"[:space:]\\\\\$\`]*)\"/\\1/g")"
   code="$(drop_text_heredocs <<<"$code")"
   # `… | xargs make` with the target anywhere in the command.

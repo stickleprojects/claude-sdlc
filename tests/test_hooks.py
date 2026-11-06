@@ -74,6 +74,12 @@ DEPLOY = "deploy" + "-prod"  # split so this file's own text never trips the gat
         (f'echo "make {DEPLOY}" | bash -s', True),
         (f"echo 'make {DEPLOY}' | tee >(sh)", True),
         (f"git log -1 --format='make {DEPLOY}' | sh", True),
+        # Review round 5: ANSI-C quoting and backslash escapes (brace expansion and a target
+        # built from variables are deliberate disguises, out of scope).
+        (f"make $'{DEPLOY}'", True),
+        (f'make $"{DEPLOY}"', True),
+        ("make deploy\\-prod", True),
+        ("make dep\\loy-prod", True),
         # Not a text tool, so its heredoc is checked as code: the cost of failing safe.
         (f"python3 - <<'EOF'\nnote = 'make {DEPLOY} needs a human'\nEOF", True),
         # ...and mentioning it isn't.
