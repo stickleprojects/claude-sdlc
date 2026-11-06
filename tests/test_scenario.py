@@ -4,6 +4,8 @@ The consumer starts with only its own Makefile (a no-op stack) and the sync scri
 pulls the framework from a snapshot of this working tree, as `make sync-sdlc` would.
 """
 
+import os
+import re
 import shutil
 
 import pytest
@@ -360,3 +362,135 @@ def test_a_new_framework_file_arrives_in_the_same_sync(consumer, framework_snaps
     assert "running the new one" in result.stdout
     assert (consumer / "NEW.md").read_text() == "new\n"
     assert "command not found" not in result.stderr
+
+
+# --- secrets and variables the workflows use (#80) ------------------------------------------
+
+FAKE_GH = """#!/usr/bin/env bash
+case "$1 $2" in
+  "auth status") exit "${FAKE_GH_AUTH:-0}" ;;
+  "secret list") [[ "$FAKE_GH_SECRETS" == forbidden ]] && exit 1; printf '%s\\n' $FAKE_GH_SECRETS ;;
+  "variable list") printf '%s\\n' $FAKE_GH_VARS ;;
+  "api --paginate")
+    # Org-level names shared with the repo; unset means a personal account's repo (422).
+    org="${FAKE_GH_ORG_VARS-user}"
+    [[ "$3" == */organization-secrets ]] && org="${FAKE_GH_ORG_SECRETS-user}"
+    case "$org" in
+      user) echo "gh: Validation Failed (HTTP 422)" >&2; exit 1 ;;
+      forbidden) echo "gh: Resource not accessible (HTTP 403)" >&2; exit 1 ;;
+    esac
+    printf '%s\\n' $org ;;
+  *) exit 1 ;;
+esac
+"""
+
+
+def sync_with_gh(consumer, framework_snapshot, tmp_path, secrets="", variables="", **env):
+    fake = tmp_path / "fakebin"
+    fake.mkdir(exist_ok=True)
+    (fake / "gh").write_text(FAKE_GH)
+    (fake / "gh").chmod(0o755)
+    git(consumer, "remote", "add", "origin", "git@github.com:o/r.git")
+    commit(framework_snapshot, "fix: change", {"REVIEW.md": "changed\n"})
+    return run(
+        ["bash", "scripts/sync-sdlc.sh", "main"],
+        cwd=consumer,
+        env={
+            "SDLC_SOURCE": str(framework_snapshot),
+            "PATH": f"{fake}:{os.environ['PATH']}",
+            "FAKE_GH_SECRETS": secrets,
+            "FAKE_GH_VARS": variables,
+            **env,
+        },
+    )
+
+
+def test_sync_lists_every_secret_and_variable_the_workflows_use():
+    script = (REPO / "scripts" / "sync-sdlc.sh").read_text()
+    for wf in (REPO / ".github" / "workflows").glob("*.yml"):
+        if wf.name == "release.yml":  # framework-only, never synced
+            continue
+        for kind, name in re.findall(r"\b(secrets|vars)\.([A-Z0-9_]+)", wf.read_text()):
+            if name == "GITHUB_TOKEN":
+                continue
+            entry = f'"{"secret" if kind == "secrets" else "variable"} {name}'
+            assert entry in script, f"{wf.name} uses {kind}.{name}; list it in sync-sdlc.sh"
+
+
+def test_sync_reports_missing_required_secret_and_optional_app(
+    consumer, framework_snapshot, tmp_path
+):
+    out = sync_with_gh(consumer, framework_snapshot, tmp_path).stdout
+    assert "in o/r (its own and its organization's):" in out
+    assert "MISSING (required): secret CLAUDE_CODE_OAUTH_TOKEN" in out
+    assert "not set (optional): the agent App" in out
+    assert "half set up" not in out
+
+
+def test_sync_reports_a_half_set_up_app(consumer, framework_snapshot, tmp_path):
+    # #82: an App ID and key without the slug opens spec PRs the review then rejects.
+    out = sync_with_gh(
+        consumer,
+        framework_snapshot,
+        tmp_path,
+        secrets="CLAUDE_CODE_OAUTH_TOKEN SDLC_AGENT_APP_KEY",
+        variables="SDLC_AGENT_APP_ID",
+    ).stdout
+    assert "ERROR: the agent App is half set up" in out
+    assert "SDLC_AGENT_APP_SLUG missing" in out
+    assert "MISSING (required)" not in out
+
+
+def test_sync_is_quiet_when_everything_is_set(consumer, framework_snapshot, tmp_path):
+    out = sync_with_gh(
+        consumer,
+        framework_snapshot,
+        tmp_path,
+        secrets="CLAUDE_CODE_OAUTH_TOKEN SDLC_AGENT_APP_KEY",
+        variables="SDLC_AGENT_APP_ID SDLC_AGENT_APP_SLUG",
+    ).stdout
+    assert "secrets and variables" not in out
+
+
+def test_sync_says_when_it_cant_read_secrets(consumer, framework_snapshot, tmp_path):
+    # Fail safe: unreadable secret names are "not checked", never "missing".
+    out = sync_with_gh(
+        consumer,
+        framework_snapshot,
+        tmp_path,
+        secrets="forbidden",
+        variables="SDLC_AGENT_APP_ID SDLC_AGENT_APP_SLUG",
+    ).stdout
+    assert "not checked: can't read o/r's secret names" in out
+    assert "MISSING" not in out
+    assert "half set up" not in out
+
+
+def test_sync_skips_the_check_without_gh_login(consumer, framework_snapshot, tmp_path):
+    result = sync_with_gh(consumer, framework_snapshot, tmp_path, FAKE_GH_AUTH="1")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "secrets and variables" not in result.stdout
+
+
+def test_sync_counts_org_level_secrets_and_variables(consumer, framework_snapshot, tmp_path):
+    # Review on #84: a token shared from the organization isn't missing.
+    out = sync_with_gh(
+        consumer,
+        framework_snapshot,
+        tmp_path,
+        FAKE_GH_ORG_SECRETS="CLAUDE_CODE_OAUTH_TOKEN SDLC_AGENT_APP_KEY",
+        FAKE_GH_ORG_VARS="SDLC_AGENT_APP_ID SDLC_AGENT_APP_SLUG",
+    ).stdout
+    assert "secrets and variables" not in out
+
+
+def test_sync_says_when_it_cant_read_org_secrets(consumer, framework_snapshot, tmp_path):
+    out = sync_with_gh(
+        consumer,
+        framework_snapshot,
+        tmp_path,
+        variables="SDLC_AGENT_APP_ID SDLC_AGENT_APP_SLUG",
+        FAKE_GH_ORG_SECRETS="forbidden",
+    ).stdout
+    assert "not checked: can't read o/r's secret names" in out
+    assert "MISSING" not in out

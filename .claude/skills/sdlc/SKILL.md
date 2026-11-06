@@ -50,6 +50,11 @@ Then ask with AskUserQuestion: update to the latest release (recommended), to a 
    - *CONFLICT … `.sdlc-new`*: the framework's version is beside their file. Merge it by hand the same way, delete the `.sdlc-new` file and `git add` the result.
    - *kept (the framework dropped these…)*: the file is theirs now. Mention it. No action is needed.
    - *your Makefile doesn't define these targets*: the stack-contract ones (`setup fmt lint test validate check new-change status next`) must exist for the pipeline to work. Propose each recipe for this repo's stack, following its existing targets. The optional ones (`coverage`, `evals`, `deploy-dev`, …) only matter for what they name, so ask before adding them.
+   - *secrets and variables the workflows use*: the sync checked the GitHub repo by name (values are never readable). No such section means everything is set, or the check was skipped because there's no GitHub `origin` or `gh` isn't logged in. If it was skipped, say so.
+     - *MISSING (required)*: the named workflows fail until it's set. Tell the person how (`scripts/bootstrap-github.sh`, or the repo's *Settings → Secrets and variables → Actions*). Never ask for or handle the value yourself. Open the sync PR as a draft until it's set.
+     - *ERROR: the agent App is half set up*: spec-from-intent or the Claude review fails at run time. Point at `docs/setup-agent-apps.md` and ask whether to finish setting the App up or remove the parts that are set.
+     - *not set (optional)*: one line on what they lose (spec PRs need the *Approve and run workflows* click) and the link. Nothing to do unless they want the App.
+     - *not checked*: their `gh` login can't read the names (admin or maintain access is needed). Say it wasn't checked; don't report anything as missing.
 5. **Check:** `make check` must exit 0. If it fails because of the new version (say, a new validation rule that existing artifacts break), explain the failure in plain terms and fix the artifacts with the person. Don't edit framework files to make it pass.
 
 ## 4. Open the sync PR
@@ -62,6 +67,7 @@ Commit what the sync staged, plus the files you resolved, by explicit path (`git
   - the breaking changes and what was changed here for each
   - files where local edits were merged, and each conflict with how it was resolved
   - make targets added
+  - the secrets and variables report: anything required that's missing (and that the PR is a draft until it's set), a half-set-up App, the optional ones not set, or that it wasn't checked
   - the optional features in these releases, adopted or not, so the team can decide
   - `make check` passing
 

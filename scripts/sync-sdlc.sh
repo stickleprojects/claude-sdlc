@@ -68,6 +68,18 @@ main() {
     "deploy-dev optional: deploys to dev"
     "deploy-prod optional: the production gate's release route"
   )
+  # Repo secrets and variables the synced workflows use: "<secret|variable> <NAME> <what uses it>".
+  # Required ones break those workflows when missing. The agent App's three are optional but
+  # go together: half set up, spec-from-intent or the Claude review fails at run time.
+  # tests/test_scenario.py checks that every secrets.* and vars.* in the workflows is listed.
+  local required_settings=(
+    "secret CLAUDE_CODE_OAUTH_TOKEN the Claude review, @claude mentions, spec-from-intent and the agent evals"
+  )
+  local app_settings=(
+    "variable SDLC_AGENT_APP_ID"
+    "variable SDLC_AGENT_APP_SLUG"
+    "secret SDLC_AGENT_APP_KEY"
+  )
 
   cd "$(git rev-parse --show-toplevel)"
   if [[ -n "$(git status --porcelain)" ]]; then
@@ -168,6 +180,52 @@ main() {
     echo "your Makefile doesn't define these targets the pipeline uses:"
     for line in "${missing[@]}"; do echo "  make ${line%% *}  (${line#* })"; done
   }
+  # Check the GitHub repo's secrets and variables by name (values are never readable). Skipped
+  # quietly without a GitHub origin or a logged-in gh, so the sync works offline and in CI.
+  report_settings() {
+    # Plain strings, not arrays: under set -u, bash before 4.4 (macOS) treats an empty
+    # array's expansion as an unbound variable.
+    local url gh_repo secrets="" vars="" line kind name uses rc
+    local have="" missing="" n_missing=0 unknown="" out=""
+    url="$(git remote get-url origin 2>/dev/null)" || return 0
+    [[ "$url" =~ github\.com[:/]([^/]+/[^/]+)$ ]] || return 0
+    gh_repo="${BASH_REMATCH[1]%.git}"
+    command -v gh >/dev/null && gh auth status >/dev/null 2>&1 || return 0
+    names_of() {  # <secret|variable>: the repo's own names plus the org's shared with it
+      local plural="${1}s"
+      gh "$1" list -R "$gh_repo" --json name -q '.[].name' 2>/dev/null || return 1
+      gh api --paginate "repos/$gh_repo/actions/organization-$plural" --jq ".$plural[].name" \
+        2>"$tmp/gh-err" && return 0
+      grep -q 'HTTP 422' "$tmp/gh-err"  # 422: a personal account's repo, which has no org ones
+    }
+    secrets="$(names_of secret)" || unknown+=" secret"
+    vars="$(names_of variable)" || unknown+=" variable"
+    set_in() {  # <kind> <name>: 0 set, 1 missing, 2 can't tell
+      [[ "$unknown " == *" $1 "* ]] && return 2
+      if [[ "$1" == secret ]]; then grep -qxF -- "$2" <<<"$secrets"; else grep -qxF -- "$2" <<<"$vars"; fi
+    }
+    for line in "${required_settings[@]}"; do
+      read -r kind name uses <<<"$line"
+      rc=0; set_in "$kind" "$name" || rc=$?
+      ((rc != 1)) || out+="  MISSING (required): $kind $name. Without it these fail: $uses. Set it with scripts/bootstrap-github.sh."$'\n'
+    done
+    for line in "${app_settings[@]}"; do
+      read -r kind name <<<"$line"
+      rc=0; set_in "$kind" "$name" || rc=$?
+      case $rc in 0) have+=" $name" ;; 1) missing+=" $name"; ((n_missing += 1)) ;; esac
+    done
+    if [[ -n "$have" && -n "$missing" ]]; then
+      out+="  ERROR: the agent App is half set up:$have set,$missing missing. Spec-from-intent or the Claude review fails until all three are set (docs/setup-agent-apps.md)."$'\n'
+    elif ((n_missing == ${#app_settings[@]})); then
+      out+="  not set (optional): the agent App (${missing# }). Without it, spec PRs open as github-actions[bot] and need the 'Approve and run workflows' click (docs/setup-agent-apps.md)."$'\n'
+    fi
+    for kind in $unknown; do
+      out+="  not checked: can't read $gh_repo's $kind names, its own or its organization's (needs admin or maintain access)."$'\n'
+    done
+    [[ -n "$out" ]] || return 0
+    echo "secrets and variables the workflows use, in $gh_repo (its own and its organization's):"
+    printf '%s' "$out"
+  }
   src_of() {  # <consumer path>: the framework path it was installed from
     local p from to
     for p in "${paths[@]}"; do
@@ -217,6 +275,7 @@ main() {
   ((${#sidecars[@]})) && git reset -q -- "${sidecars[@]}"
 
   report_targets
+  report_settings
   local f
   if ((${#merged[@]})); then
     echo "kept your local changes (any framework changes are merged in):"
