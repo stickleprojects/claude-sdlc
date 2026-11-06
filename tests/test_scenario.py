@@ -260,7 +260,9 @@ def test_placeholder_words_in_consumer(consumer, framework_snapshot):
     (adrs / "0001-client-stack.md").write_text(accepted.replace("- <trigger>", "- pending"))
     assert make(consumer, "validate").returncode == 0, "'pending' isn't a framework placeholder"
 
-    (consumer / ".sdlc.toml").write_text('[placeholders]\nnothing_written = ["none", "pending"]\n')
+    (consumer / ".sdlc.toml").write_text(
+        '[placeholders.nothing_written]\nadditional_keywords = ["pending"]\n'
+    )
     commit(consumer, "chore: ADR and placeholder words")
     assert sync(consumer, framework_snapshot, "main").returncode == 0
     assert "pending" in (consumer / ".sdlc.toml").read_text()

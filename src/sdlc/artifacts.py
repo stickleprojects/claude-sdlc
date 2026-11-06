@@ -148,7 +148,7 @@ class Build:
 
 @dataclass(frozen=True)
 class Placeholders:
-    """Words that read as "nothing here": the framework's defaults, then the repo's .sdlc.toml.
+    """Words that read as "nothing here": placeholders.toml merged with the repo's .sdlc.toml.
 
     nothing_written: for sections that must have content; compared per line, ignoring case,
     a list marker and a trailing full stop. explicit_none: for sections that must be cleared;
@@ -171,28 +171,48 @@ DEFAULT_PLACEHOLDERS = Path(__file__).with_name("placeholders.toml")
 CONFIG_FILE = ".sdlc.toml"
 
 
+PLACEHOLDER_KEYS = ("keywords", "additional_keywords")
+
+
+def _strings(value: object) -> bool:
+    return isinstance(value, list) and all(isinstance(v, str) for v in value)
+
+
 def placeholders(root: Path) -> Placeholders:
-    words: dict[str, list[str]] = tomllib.loads(DEFAULT_PLACEHOLDERS.read_text(encoding="utf-8"))[
-        "placeholders"
-    ]
+    """The framework's lists, merged with the repo's .sdlc.toml: per list, the repo's `keywords`
+    replace the framework's, then its `additional_keywords` are added."""
+    shipped = tomllib.loads(DEFAULT_PLACEHOLDERS.read_text(encoding="utf-8"))["placeholders"]
+    words = {name: list(table["keywords"]) for name, table in shipped.items()}
     problems: list[str] = []
+    local: object = {}
     config = root / CONFIG_FILE
     if config.exists():
         try:
             local = tomllib.loads(config.read_text(encoding="utf-8")).get("placeholders", {})
         except tomllib.TOMLDecodeError as e:
-            local, problems = {}, [f"isn't valid TOML ({e}); using the framework's words"]
-        if not isinstance(local, dict):
-            local, problems = {}, ["[placeholders] must be a table; using the framework's words"]
-        for key, value in local.items():
-            if key not in words:
+            problems.append(f"isn't valid TOML ({e}); using the framework's words")
+    if not isinstance(local, dict):
+        problems.append("[placeholders] must be a table; using the framework's words")
+        local = {}
+    for name, table in local.items():
+        where = f"placeholders.{name}"
+        if name not in words:
+            problems.append(f"unknown list {where}; expected one of: {', '.join(words)}")
+            continue
+        if not isinstance(table, dict):
+            problems.append(f"{where} must be a table with keywords or additional_keywords")
+            continue
+        for key, value in table.items():
+            if key not in PLACEHOLDER_KEYS:
                 problems.append(
-                    f"unknown key placeholders.{key}; expected one of: {', '.join(words)}"
+                    f"unknown key {where}.{key}; expected one of: {', '.join(PLACEHOLDER_KEYS)}"
                 )
-            elif not isinstance(value, list) or not all(isinstance(v, str) for v in value):
-                problems.append(f"placeholders.{key} must be a list of strings")
-            else:
-                words[key] = value
+            elif not _strings(value):
+                problems.append(f"{where}.{key} must be a list of strings")
+        if _strings(table.get("keywords")):
+            words[name] = list(table["keywords"])
+        if _strings(table.get("additional_keywords")):
+            words[name] += table["additional_keywords"]
     return Placeholders(
         nothing_written=frozenset(w.strip().rstrip(".").lower() for w in words["nothing_written"]),
         explicit_none=frozenset(w.strip() for w in words["explicit_none"]),

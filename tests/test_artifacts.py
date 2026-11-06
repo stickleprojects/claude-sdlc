@@ -414,23 +414,47 @@ def test_placeholder_words_come_from_the_framework_file(tmp_path: Path) -> None:
     assert check_config(tmp_path) == []
 
 
-def test_repo_config_replaces_a_list(tmp_path: Path) -> None:
-    (tmp_path / ".sdlc.toml").write_text('[placeholders]\nnothing_written = ["None", "Pending."]\n')
+def repo_config(root: Path, text: str) -> None:
+    (root / ".sdlc.toml").write_text(text)
+
+
+def test_repo_config_adds_to_the_framework_list(tmp_path: Path) -> None:
+    repo_config(tmp_path, '[placeholders.nothing_written]\nadditional_keywords = ["Pending."]\n')
+    for trigger in ("- pending", "- tbd"):
+        adr(tmp_path, "0001-client-stack.md", accepted_adr(trigger))
+        assert any("names no trigger" in m for m in adr_messages(tmp_path)), trigger
+    assert check_config(tmp_path) == []
+
+
+def test_repo_config_replaces_the_framework_list(tmp_path: Path) -> None:
+    repo_config(tmp_path, '[placeholders.nothing_written]\nkeywords = ["none", "pending"]\n')
     adr(tmp_path, "0001-client-stack.md", accepted_adr("- pending"))
     assert any("names no trigger" in m for m in adr_messages(tmp_path))
     adr(tmp_path, "0001-client-stack.md", accepted_adr("- tbd"))
-    assert adr_messages(tmp_path) == [], "the repo's list replaced the framework's"
+    assert adr_messages(tmp_path) == [], "the repo's keywords replaced the framework's"
+
+
+def test_repo_config_replaces_then_adds(tmp_path: Path) -> None:
+    repo_config(
+        tmp_path,
+        "[placeholders.explicit_none]\n"
+        'keywords = ["None."]\nadditional_keywords = ["Nothing open."]\n',
+    )
+    assert placeholders(tmp_path).explicit_none == {"None.", "Nothing open."}
 
 
 def test_repo_config_sets_what_clears_a_build(change: Path) -> None:
-    root = change.parents[1]
-    (root / ".sdlc.toml").write_text('[placeholders]\nexplicit_none = ["Nothing open."]\n')
-    text = approved(BUILD_TEMPLATE).replace(
+    repo_config(
+        change.parents[1], '[placeholders.explicit_none]\nadditional_keywords = ["Nothing open."]\n'
+    )
+    cleared = approved(BUILD_TEMPLATE).replace(
         "None.\n\n## Milestones", "Nothing open.\n\n## Milestones"
     )
-    planned(change).write_text(text)
+    planned(change).write_text(cleared)
     assert check_change(change) == []
     planned(change).write_text(approved(BUILD_TEMPLATE))
+    assert check_change(change) == [], "the framework's None. still clears it"
+    planned(change).write_text(cleared.replace("Nothing open.", "TBD"))
     assert any("Questions before approval" in m for m in messages(change))
 
 
@@ -439,8 +463,11 @@ def test_repo_config_sets_what_clears_a_build(change: Path) -> None:
     [
         ("[placeholders\n", "isn't valid TOML"),
         ("placeholders = 1\n", "must be a table"),
-        ('[placeholders]\nnothing = ["x"]\n', "unknown key placeholders.nothing"),
-        ('[placeholders]\nexplicit_none = "None."\n', "must be a list of strings"),
+        ('[placeholders.nothing]\nkeywords = ["x"]\n', "unknown list placeholders.nothing"),
+        ('[placeholders]\nexplicit_none = ["None."]\n', "explicit_none must be a table"),
+        ('[placeholders.explicit_none]\nwords = ["x"]\n', "unknown key placeholders.explicit_none"),
+        ('[placeholders.explicit_none]\nkeywords = "None."\n', "keywords must be a list"),
+        ("[placeholders.explicit_none]\nadditional_keywords = [1]\n", "must be a list of strings"),
     ],
 )
 def test_bad_repo_config_is_reported_and_ignored(
