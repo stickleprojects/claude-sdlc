@@ -61,7 +61,13 @@ drop_text_heredocs() {
     if [[ -n "$delim" ]]; then
       t="$line"
       [[ -n "$tabs" ]] && t="${t#"${t%%[!$'\t']*}"}"
-      [[ "$t" == "$delim" ]] && delim=""
+      if [[ "$t" == "$delim" ]]; then
+        delim=""
+      elif [[ "$line" == *'$('* || "$line" == *'`'* ]]; then
+        # An unquoted heredoc runs $( and backticks. By now the delimiter's quotes are gone
+        # (single words were unquoted above), so keep such lines either way: fail safe.
+        printf '%s\n' "$line"
+      fi
       continue
     fi
     printf '%s\n' "$line"

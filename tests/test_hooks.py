@@ -87,6 +87,10 @@ DEPLOY = "deploy" + "-prod"  # split so this file's own text never trips the gat
         (f"cd app && GIT_SSH_COMMAND='make {DEPLOY}' git log", True),
         (f"GIT_PAGER=sh git log -1 --format='make {DEPLOY}'", True),  # the pager runs the output
         (f"env PAGER=sh git show -s --format='make {DEPLOY}'", True),
+        # Review round 7: an unquoted heredoc runs $( and backticks in its body.
+        (f"cat <<EOF\n$(make {DEPLOY})\nEOF", True),
+        (f"git commit -F - <<EOF\nfix: x `make {DEPLOY}`\nEOF", True),
+        (f"cat > notes.md <<EOF\nsee $(date)\nrun make {DEPLOY} later\nEOF", False),
         # Not a text tool, so its heredoc is checked as code: the cost of failing safe.
         (f"python3 - <<'EOF'\nnote = 'make {DEPLOY} needs a human'\nEOF", True),
         # ...and mentioning it isn't.
