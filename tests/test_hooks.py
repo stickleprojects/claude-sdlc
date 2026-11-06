@@ -27,6 +27,33 @@ DEPLOY = "deploy" + "-prod"  # split so this file's own text never trips the gat
         ("git merge -q --no-edit main && git push -q", False),
         ("git switch main && git pull", False),
         ("make check", False),
+        # #78: running the target is blocked, however it's reached...
+        (f"make -C app {DEPLOY}", True),
+        (f"env X=1 make {DEPLOY}", True),
+        (f"gmake {DEPLOY}", True),
+        (f"$(MAKE) {DEPLOY}", True),
+        (f"${{MAKE}} {DEPLOY}", True),
+        (f"make -n setup {DEPLOY}", True),  # a dry run too: simpler, and fails safe
+        (f"cd app && make {DEPLOY}", True),
+        (f'bash -c "make {DEPLOY}"', True),
+        (f"sh -c 'cd app && make {DEPLOY}'", True),
+        (f'eval "make {DEPLOY}"', True),
+        (f"echo {DEPLOY} | xargs make", True),
+        (f'echo "$(make {DEPLOY})"', True),
+        (f"bash <<'EOF'\nmake {DEPLOY}\nEOF", True),
+        (f"cat <<'EOF' | sh\nmake {DEPLOY}\nEOF", True),
+        # ...and mentioning it isn't.
+        (f'git commit -m "fix: the {DEPLOY} gate"', False),
+        (f'gh pr create --title t --body "missing targets: make {DEPLOY} (optional)"', False),
+        (f"gh pr create --body \"$(cat <<'EOF'\n  make {DEPLOY}  (optional: x)\nEOF\n)\"", False),
+        (f"gh api repos/o/r/pulls -F body=@- <<EOF\nmissing: deploy-dev, {DEPLOY}\nEOF", False),
+        (f"python3 - <<'EOF'\nnote = 'make {DEPLOY} needs a human'\nEOF", False),
+        (f"cat > notes.md <<EOF\nrun make {DEPLOY}\nEOF", False),
+        (f"echo 'make {DEPLOY}'", False),
+        (f"grep -n '{DEPLOY}' Makefile", False),
+        (f"grep -n {DEPLOY} Makefile && sed -n 1,5p Makefile", False),
+        (f"awk '/{DEPLOY}/' Makefile", False),
+        (f"x=$(cat <<<'{DEPLOY}') && make check", False),
     ],
 )
 def test_production_gate(command, blocked):
