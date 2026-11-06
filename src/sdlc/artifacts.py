@@ -9,6 +9,10 @@ its predecessor exists. Required sections mirror the files in templates/
 
 build.md is optional and sits outside the chain: the /build skill writes it from
 an approved plan.md to split the build into milestones, one per session.
+
+Architecture decision records (ADRs) sit outside changes altogether, in
+docs/adr/NNNN-slug.md (template: templates/adr.md). They belong to the repo, and
+/plan reads them and checks each accepted one's "Revisit when" triggers.
 """
 
 from __future__ import annotations
@@ -74,6 +78,19 @@ BUILD_SECTIONS = [
 ]
 BUILD_STATUSES = ("draft", "in progress", "PR open")
 MILESTONE_STATUSES = ("todo", "in progress", "done", "reopened")
+
+# Optional: architecture decision records, one file per decision.
+ADR_DIR = Path("docs") / "adr"
+ADR_SECTIONS = [
+    "Status",
+    "Context",
+    "Decision",
+    "Alternatives considered",
+    "Consequences",
+    "Revisit when",
+]
+ADR_STATUS_RE = re.compile(r"^(proposed|accepted|superseded by (?:ADR )?(\d{4}))\b", re.I)
+ADR_SKIP = ("README.md", "index.md")
 
 SLUG_RE = re.compile(r"^[0-9]{4}-[a-z0-9]+(-[a-z0-9]+)*$")
 HEADING_RE = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
@@ -220,6 +237,49 @@ def check_change(change_dir: Path) -> list[Problem]:
         if not (change_dir / "plan.md").exists():
             problems.append(Problem(build, "exists but plan.md is missing"))
         problems.extend(check_build(build))
+    return problems
+
+
+def adr_files(root: Path) -> list[Path]:
+    folder = root / ADR_DIR
+    if not folder.is_dir():
+        return []
+    return sorted(p for p in folder.glob("*.md") if p.name not in ADR_SKIP)
+
+
+def check_adrs(root: Path) -> list[Problem]:
+    """Each ADR has its sections and a known status; an accepted one says when to revisit it."""
+    problems: list[Problem] = []
+    files = adr_files(root)
+    numbers: dict[str, list[Path]] = {}
+    for path in files:
+        if SLUG_RE.match(path.stem):
+            numbers.setdefault(path.stem[:4], []).append(path)
+        else:
+            problems.append(Problem(path, "ADR file name must look like 0001-short-slug.md"))
+    for number, paths in numbers.items():
+        if len(paths) > 1:
+            names = ", ".join(p.name for p in paths)
+            problems.append(Problem(paths[0].parent, f"ADR number {number} is used twice: {names}"))
+    for path in files:
+        text = path.read_text(encoding="utf-8")
+        missing = [h for h in ADR_SECTIONS if h not in headings(text)]
+        if missing:
+            problems.append(Problem(path, f"missing sections: {', '.join(missing)}"))
+        status = section(text, "Status")
+        m = ADR_STATUS_RE.match(status)
+        if not m:
+            problems.append(
+                Problem(path, "Status must start with: proposed, accepted or superseded by NNNN")
+            )
+        elif m.group(2) and m.group(2) not in numbers:
+            problems.append(Problem(path, f"superseded by {m.group(2)}, but there's no such ADR"))
+        elif m.group(1).lower() == "accepted":
+            triggers = section(text, "Revisit when")
+            if triggers.rstrip(".").lower() in ("", "none", "never") or "<trigger>" in triggers:
+                problems.append(
+                    Problem(path, "accepted, but Revisit when names no trigger to check at /plan")
+                )
     return problems
 
 

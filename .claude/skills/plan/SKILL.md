@@ -16,16 +16,32 @@ Follow `.claude/skills/routing.md`. The candidates are the changes whose next st
 
 ## 2. Plan it in plan mode
 
-Planning happens in plan mode, with the change's `intent.md` (or `bug.md`) and `spec.md`. If this session isn't in plan mode, enter it (or ask the person to press Shift+Tab until it says plan mode). Read CLAUDE.md, the intent or bug, the spec and the code involved, then propose the plan. The engineer iterates with you until it can be implemented, then approves it.
+Planning happens in plan mode, with the change's `intent.md` (or `bug.md`) and `spec.md`. If this session isn't in plan mode, enter it (or ask the person to press Shift+Tab until it says plan mode). Read CLAUDE.md, the intent or bug, the spec, the code involved and every architecture decision record in `docs/adr/` (if there are any), then propose the plan. The engineer iterates with you until it can be implemented, then approves it.
+
+### Architecture check
+
+A single change rarely looks like an architecture decision. Several changes that each hand-build a piece a framework would provide do, and only the plan stage sees how a change is built. So before proposing, check the plan against the ADRs:
+
+- **A trigger is met.** For each ADR whose Status is `accepted`, read its **Revisit when** lines and ask whether this plan does what one describes. Judge by what the plan does, not by its wording.
+- **No ADR covers it.** The plan adds a framework, service or datastore, relies on an undocumented internal of a library, or builds by hand something a widely used library provides, for the second time or more in this repo (look at earlier plans under `changes/`).
+- **Build or adopt.** Whenever the plan builds by hand something a widely used library or framework provides, say in **Approach** which one and why it isn't used.
+
+When a trigger is met or no ADR covers the choice, tell the engineer in plain terms: the question ("Should we adopt X instead of building Y by hand?"), the ADR and trigger, and what the earlier changes built. Then ask them to choose, recommending one:
+
+- **Keep the current architecture.** The plan says why in **Risks**, and may suggest a new or sharper trigger for the ADR (a separate ADR PR, not part of this plan).
+- **Raise it with the tech lead or architect** (`docs/roles.md`). They write or update an ADR (from `templates/adr.md`, in `docs/adr/NNNN-<slug>.md`) before this plan merges; the plan may change as a result.
+
+Either way, record it under **Risks** as `Architecture decision needed: <question> (ADR NNNN, trigger: <which>)`, or `(no ADR)`, followed by the decision. The Claude review reports a plan that meets a trigger without this line. With no `docs/adr/` folder, still do the build-or-adopt and "no ADR covers it" checks, and suggest the tech lead start one with the decision this plan depends on.
 
 ## 3. Save the approved plan
 
 Once the plan is approved:
 
 1. Copy `templates/plan.md` to `changes/<slug>/plan.md`. Fill it with the approved plan; don't add new scope.
-2. Under **Verification**, map each acceptance criterion from `spec.md` to an exact command and its expected result.
-3. For a bug fix (a change that starts from `bug.md`, or any fix), the first step is a failing test committed on its own, one per acceptance criterion in the short spec, with the message `test(<slug>): failing test for <symptom>`. Once that commit is on the branch, the files it touched lock automatically for a change with `bug.md` (`scripts/tests-locked.sh`), so the failing test can't be edited; new tests in other files still can. Nobody needs to set `SDLC_LOCK_TESTS=1`.
-4. Size the steps to the change. A small change (a message, a one-line fix) needs one to three steps, not a breakdown: `/build` builds a plan that small in one session.
-5. Run `make validate`, then commit `plan.md` alone on `plan/<slug>` (by explicit path, never `git add -A`), push, and open its PR titled `plan(<slug>): <summary>`. No code is written before it merges. Follow the `agent-identity` skill for the commit trailer and PR signature.
+2. Keep the architecture check's outcome: the build-or-adopt reason in **Approach**, and any `Architecture decision needed:` line, with the engineer's decision, in **Risks**.
+3. Under **Verification**, map each acceptance criterion from `spec.md` to an exact command and its expected result.
+4. For a bug fix (a change that starts from `bug.md`, or any fix), the first step is a failing test committed on its own, one per acceptance criterion in the short spec, with the message `test(<slug>): failing test for <symptom>`. Once that commit is on the branch, the files it touched lock automatically for a change with `bug.md` (`scripts/tests-locked.sh`), so the failing test can't be edited; new tests in other files still can. Nobody needs to set `SDLC_LOCK_TESTS=1`.
+5. Size the steps to the change. A small change (a message, a one-line fix) needs one to three steps, not a breakdown: `/build` builds a plan that small in one session.
+6. Run `make validate`, then commit `plan.md` alone on `plan/<slug>` (by explicit path, never `git add -A`), push, and open its PR titled `plan(<slug>): <summary>`. No code is written before it merges. Follow the `agent-identity` skill for the commit trailer and PR signature.
 
 Then tell the engineer: once the plan PR merges, run `/build` (`/pr` handles its review first). `/build` builds it in its own worktree (`claude --worktree <slug>`): in one session for a small plan, or milestone by milestone from an approved `build.md` for a larger one. It finishes with `make check` and the `verifier` subagent before opening a PR.

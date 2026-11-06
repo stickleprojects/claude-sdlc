@@ -107,7 +107,7 @@ To regenerate a spec by hand, run `claude`, then `/next NNNN`: when the spec is 
    claude --permission-mode plan
    > Plan changes/NNNN-<name> from its intent.md and spec.md
    ```
-   Iterate until you'd be happy implementing the plan yourself, then approve it.
+   Iterate until you'd be happy implementing the plan yourself, then approve it. Claude checks the plan against the repo's architecture decisions (`docs/adr/`). If it meets one's *Revisit when* trigger, or builds by hand something a common library provides, it asks you to keep the current architecture (and say why) or take it to the tech lead before the plan merges.
 2. Save the plan and commit it first: `> /plan`
 3. Once the plan is merged, build it in a dedicated worktree. You can run two or three of these in parallel:
    ```
@@ -135,15 +135,16 @@ To regenerate a spec by hand, run `claude`, then `/next NNNN`: when the spec is 
 
 ## Tech lead / architect
 
-**When:** A spec or plan is flagged as higher risk, or the review policy needs changing.
+**When:** A spec or plan is flagged as higher risk, a plan says `Architecture decision needed:`, or the review policy needs changing.
 
 **What you do**
 
 - Review flagged specs and plans: new services, data model changes, security-sensitive work.
+- Own the architecture decision records in `docs/adr/` (template: `templates/adr.md`). Each one records a decision, the alternatives and, under **Revisit when**, concrete triggers such as "a plan hand-builds navigation state". `/plan` checks every plan against the accepted ones, because a decision like "should we adopt a framework?" builds up over several changes and no single change raises it. When a plan meets a trigger and the engineer brings it to you, decide before the plan merges: keep the decision (and perhaps sharpen its triggers), or write a new ADR that supersedes it. `make validate` checks that each ADR has its sections and that an accepted one has at least one trigger.
 - Own `REVIEW.md`: which review passes run, what counts as *Important*, the cap on nits, and what's excluded.
 - Watch for findings that keep recurring in review, and move the fix into `CLAUDE.md` or a skill.
 
-**Stays with you:** Approving higher-risk changes, and the review thresholds.
+**Stays with you:** Approving higher-risk changes, architecture decisions and their triggers, and the review thresholds.
 
 ---
 

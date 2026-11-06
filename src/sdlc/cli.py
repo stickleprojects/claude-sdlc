@@ -10,7 +10,14 @@ import subprocess
 import sys
 from pathlib import Path
 
-from sdlc.artifacts import build_progress, change_dirs, check_change, next_slug, stage
+from sdlc.artifacts import (
+    build_progress,
+    change_dirs,
+    check_adrs,
+    check_change,
+    next_slug,
+    stage,
+)
 from sdlc.routing import steps
 
 # `make new-change NAME=x TYPE=bug`: make exports command-line variables to recipes, so the
@@ -83,6 +90,7 @@ def check_commits(root: Path) -> list[str]:
 
 def cmd_check(root: Path) -> int:
     problems: list[object] = [p for d in change_dirs(root) for p in check_change(d)]
+    problems += check_adrs(root)
     problems += check_commits(root)
     for problem in problems:
         print(problem, file=sys.stderr)
@@ -120,7 +128,7 @@ def main(argv: list[str] | None = None) -> int:
         default=os.environ.get("TYPE") or "feature",
         help="feature (intent.md, the default) or bug (bug.md); defaults to $TYPE",
     )
-    sub.add_parser("check", help="validate every change folder")
+    sub.add_parser("check", help="validate every change folder and docs/adr")
     sub.add_parser("status", help="show the stage each change has reached")
     nxt = sub.add_parser("next", help="show each change's next step and the skill that owns it")
     nxt.add_argument("slug", nargs="?", help="one change: 0002 or 0002-name")

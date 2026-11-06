@@ -4,11 +4,13 @@ import pytest
 
 from conftest import commit, git, init_repo
 from sdlc.artifacts import (
+    ADR_SECTIONS,
     BUG_CHAIN,
     BUILD_SECTIONS,
     CHAIN,
     TEMPLATES,
     build_progress,
+    check_adrs,
     check_change,
     next_slug,
     stage,
@@ -295,3 +297,90 @@ def test_status_shows_build_progress(tmp_path: Path, capsys: pytest.CaptureFixtu
         "0001-example\tbuild\tin progress, 0/2 milestones done",
         "0002-other\tintent",
     ]
+
+
+ADR_TEMPLATE = (REPO / "templates" / "adr.md").read_text()
+
+
+def accepted_adr(trigger: str = "- a plan hand-builds navigation state") -> str:
+    text = ADR_TEMPLATE.replace("proposed <!--", "accepted (Sam, 2026-11-06) <!--", 1)
+    return text.replace("- <trigger>", trigger)
+
+
+def adr(root: Path, name: str, text: str) -> Path:
+    path = root / "docs" / "adr" / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text)
+    return path
+
+
+def adr_messages(root: Path) -> list[str]:
+    return [p.message for p in check_adrs(root)]
+
+
+def test_no_adr_folder_is_fine(tmp_path: Path) -> None:
+    assert check_adrs(tmp_path) == []
+
+
+def test_adr_template_has_its_sections() -> None:
+    for heading in ADR_SECTIONS:
+        assert f"## {heading}" in ADR_TEMPLATE
+
+
+def test_adr_template_is_a_valid_proposal(tmp_path: Path) -> None:
+    adr(tmp_path, "0001-client-stack.md", ADR_TEMPLATE)
+    adr(tmp_path, "README.md", "# Decisions\n")
+    assert check_adrs(tmp_path) == []
+
+
+def test_accepted_adr_with_a_trigger_is_valid(tmp_path: Path) -> None:
+    adr(tmp_path, "0001-client-stack.md", accepted_adr())
+    assert check_adrs(tmp_path) == []
+
+
+@pytest.mark.parametrize("trigger", ["", "None.", "never", "<!-- later -->", "- <trigger>"])
+def test_accepted_adr_without_a_trigger_is_reported(tmp_path: Path, trigger: str) -> None:
+    adr(tmp_path, "0001-client-stack.md", accepted_adr(trigger))
+    assert any("Revisit when names no trigger" in m for m in adr_messages(tmp_path))
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "expected"),
+    [
+        ("proposed <!--", "agreed <!--", "Status must"),
+        ("proposed <!--", "<!--", "Status must"),
+        ("## Revisit when", "## Later", "missing sections: Revisit when"),
+        ("## Alternatives considered", "## Options", "missing sections: Alternatives"),
+    ],
+)
+def test_unrecognised_adr_text_fails_safe(
+    tmp_path: Path, old: str, new: str, expected: str
+) -> None:
+    adr(tmp_path, "0001-client-stack.md", ADR_TEMPLATE.replace(old, new, 1))
+    assert any(expected in m for m in adr_messages(tmp_path))
+
+
+def test_superseded_adr_names_an_existing_one(tmp_path: Path) -> None:
+    adr(
+        tmp_path,
+        "0001-client-stack.md",
+        ADR_TEMPLATE.replace("proposed <!--", "superseded by 0002 <!--"),
+    )
+    assert any("no such ADR" in m for m in adr_messages(tmp_path))
+    adr(tmp_path, "0002-adopt-router.md", accepted_adr())
+    assert check_adrs(tmp_path) == []
+
+
+def test_bad_adr_names_and_duplicate_numbers_are_reported(tmp_path: Path) -> None:
+    adr(tmp_path, "client-stack.md", ADR_TEMPLATE)
+    adr(tmp_path, "0001-a.md", ADR_TEMPLATE)
+    adr(tmp_path, "0001-b.md", ADR_TEMPLATE)
+    found = adr_messages(tmp_path)
+    assert any("0001-short-slug.md" in m for m in found)
+    assert any("0001 is used twice" in m for m in found)
+
+
+def test_check_reports_adr_problems(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    adr(tmp_path, "0001-client-stack.md", accepted_adr(""))
+    assert main(["--root", str(tmp_path), "check"]) == 1
+    assert "Revisit when" in capsys.readouterr().err

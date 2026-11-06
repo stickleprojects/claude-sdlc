@@ -111,6 +111,7 @@ In Claude Code you need five skills: `/intent` (something new), `/plan`, `/build
 | Plan | `changes/NNNN-*/intent.md` | `/intent` skill |
 | Design | `spec.md` | `/spec` skill; the *Spec from intent* workflow opens a spec PR when an intent merges |
 | Build | `plan.md`, optional `build.md`, code | plan mode, `/plan`, `/build` (small plans in one session; larger ones as approved milestones), worktrees, hooks (format on edit, protected paths) |
+| Architecture | `docs/adr/NNNN-*.md` (optional, per repo) | `/plan` checks each accepted ADR's *Revisit when* triggers against the plan; `make validate` checks the ADRs' sections |
 | Test | tests, evals | `make check`; *Agent evals* (on demand for now) |
 | Deploy | PR | *Claude review* follows [REVIEW.md](REVIEW.md); `@claude` fixes; production gate hook |
 
