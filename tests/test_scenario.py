@@ -45,6 +45,7 @@ def test_sync_installs_framework_owned_files(consumer):
         ".claude/skills/build/SKILL.md",
         ".claude/skills/pr/SKILL.md",
         ".claude/skills/next/SKILL.md",
+        ".claude/skills/sdlc/SKILL.md",
         ".claude/skills/routing.md",
         "templates/build.md",
         "templates/adr.md",

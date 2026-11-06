@@ -12,7 +12,7 @@ from sdlc.routing import steps
 
 REPO = Path(__file__).resolve().parents[1]
 BUILD_TEMPLATE = (REPO / "templates" / "build.md").read_text()
-ENTRY = ["intent", "plan", "build", "pr", "next"]
+ENTRY = ["intent", "plan", "build", "pr", "next", "sdlc"]
 INTERNAL = ["spec", "po-review", "review-findings", "agent-identity", "security-policy"]
 
 

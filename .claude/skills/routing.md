@@ -1,6 +1,6 @@
 # Routing: where a change is, and who takes the next step
 
-People remember five skills:
+People remember six skills:
 
 | Skill | For |
 |---|---|
@@ -9,8 +9,9 @@ People remember five skills:
 | `/build` | building a change whose plan is merged |
 | `/pr [N]` | working through the review on a PR: intent, bug, spec, plan or code |
 | `/next [change]` | "where is everything, and what's next?" |
+| `/sdlc` | the pipeline itself: which version, what's new, update it (sync PR) |
 
-Every other skill (`spec`, `po-review`, `review-findings`, `agent-identity`, `security-policy`) is internal: hidden from the `/` menu, and reached only through these five. Each entry skill starts with the steps below. If the change isn't at its stage, it says where the change is and offers the right skill instead of failing or guessing.
+Every other skill (`spec`, `po-review`, `review-findings`, `agent-identity`, `security-policy`) is internal: hidden from the `/` menu, and reached only through these six. Each entry skill except `/sdlc` (which is about the framework, not a change) starts with the steps below. If the change isn't at its stage, it says where the change is and offers the right skill instead of failing or guessing.
 
 ## 1. Find out where each change is
 

@@ -884,3 +884,25 @@ def test_rekey_replaces_the_key_and_says_what_next(file_keyed):
     assert stored.read_text() == new.read_text()
     assert "--update-agent-key" in out.stdout and "delete the old key" in out.stdout
     assert identity(env, "token").stdout.strip() == "ghs_test"
+
+
+# --- the /sdlc skill reads the sync's output -----------------------------------------------
+
+
+def test_sdlc_skill_matches_what_the_sync_prints():
+    """/sdlc acts on the sync's messages and lists the stack contract; keep them in step."""
+    sync = (REPO / "scripts/sync-sdlc.sh").read_text()
+    skill = (REPO / ".claude/skills/sdlc/SKILL.md").read_text()
+    for message in [
+        "kept your local changes",
+        "CONFLICT",
+        ".sdlc-new",
+        "kept (the framework dropped these",
+        "your Makefile doesn't define these targets",
+    ]:
+        assert message in sync, f"the sync no longer prints {message!r}"
+        assert message in skill, f"/sdlc doesn't handle {message!r}"
+    block = sync.split("local contract_targets=(")[1].split(")")[0]
+    contract = re.findall(r'^\s*"([a-z-]+) ', block, re.MULTILINE)
+    assert contract, "couldn't read contract_targets from the sync"
+    assert f"`{' '.join(contract)}`" in skill, "the stack contract in /sdlc differs from the sync's"
