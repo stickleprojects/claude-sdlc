@@ -47,6 +47,7 @@ def test_sync_installs_framework_owned_files(consumer):
         ".claude/skills/next/SKILL.md",
         ".claude/skills/routing.md",
         "templates/build.md",
+        "templates/adr.md",
         ".claude/settings.json",
         ".github/workflows/claude-review.yml",
         ".github/workflows/pr-title.yml",
@@ -225,6 +226,49 @@ def test_build_plan_in_consumer(consumer):
     refused = make(consumer, "validate")
     assert refused.returncode != 0
     assert "Questions before approval" in refused.stderr
+
+
+def test_adr_in_consumer(consumer, framework_snapshot):
+    """The consumer's ADRs are validated by make validate, and the sync never touches them."""
+    adrs = consumer / "docs" / "adr"
+    adrs.mkdir(parents=True)
+    template = (consumer / "templates" / "adr.md").read_text()
+    accepted = template.replace("proposed <!--", "accepted (Sam, 2026-11-06) <!--", 1)
+    (adrs / "0001-client-stack.md").write_text(
+        accepted.replace("- <trigger>", "- a plan hand-builds navigation state")
+    )
+    assert make(consumer, "validate").returncode == 0
+    commit(consumer, "docs: ADR 0001")
+
+    assert sync(consumer, framework_snapshot, "main").returncode == 0
+    assert "accepted" in (adrs / "0001-client-stack.md").read_text()
+
+    (adrs / "0001-client-stack.md").write_text(accepted.replace("- <trigger>", "None."))
+    refused = make(consumer, "validate")
+    assert refused.returncode != 0
+    assert "Revisit when" in refused.stderr
+
+
+def test_placeholder_words_in_consumer(consumer, framework_snapshot):
+    """The framework's words arrive with the CLI; the repo's .sdlc.toml overrides them and the
+    sync leaves it alone."""
+    assert (consumer / "tools/sdlc/src/sdlc/placeholders.toml").exists()
+    adrs = consumer / "docs" / "adr"
+    adrs.mkdir(parents=True)
+    template = (consumer / "templates" / "adr.md").read_text()
+    accepted = template.replace("proposed <!--", "accepted (Sam, 2026-11-06) <!--", 1)
+    (adrs / "0001-client-stack.md").write_text(accepted.replace("- <trigger>", "- pending"))
+    assert make(consumer, "validate").returncode == 0, "'pending' isn't a framework placeholder"
+
+    (consumer / ".sdlc.toml").write_text(
+        '[placeholders.nothing_written]\nadditional_keywords = ["pending"]\n'
+    )
+    commit(consumer, "chore: ADR and placeholder words")
+    assert sync(consumer, framework_snapshot, "main").returncode == 0
+    assert "pending" in (consumer / ".sdlc.toml").read_text()
+    refused = make(consumer, "validate")
+    assert refused.returncode != 0
+    assert "names no trigger" in refused.stderr
 
 
 def test_hooks_guard_the_consumer(consumer):

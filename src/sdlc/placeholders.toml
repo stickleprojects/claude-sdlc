@@ -1,0 +1,24 @@
+# Words make validate reads as "nothing here" in an artifact section. Framework-owned: the sync
+# replaces this file. To change them for one repo, use .sdlc.toml at the repo root (the sync never
+# touches it), with the same tables. For each list:
+#
+#   keywords             replaces this file's list
+#   additional_keywords  adds to it (or to the repo's own keywords, if both are set)
+#
+#   [placeholders.nothing_written]
+#   additional_keywords = ["pending"]
+#
+# There are two lists because "nothing here" is safe in opposite directions, so one list must
+# never serve both.
+
+# For a section that must have content, such as an accepted ADR's "Revisit when". A line that is
+# one of these (any case, ignoring a list marker and a trailing ".") names nothing, so a section
+# with only these lines fails. More words here make validate stricter.
+[placeholders.nothing_written]
+keywords = ["none", "never", "n/a", "na", "tbd", "todo"]
+
+# For a section that must be cleared, such as build.md's "Questions before approval" before the
+# build is approved. Only an exact match (case and full stop included) means "nothing open";
+# anything else, "TBD" included, reads as an open item. More words here make validate looser.
+[placeholders.explicit_none]
+keywords = ["None", "None."]

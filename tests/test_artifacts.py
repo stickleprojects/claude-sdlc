@@ -4,13 +4,17 @@ import pytest
 
 from conftest import commit, git, init_repo
 from sdlc.artifacts import (
+    ADR_SECTIONS,
     BUG_CHAIN,
     BUILD_SECTIONS,
     CHAIN,
     TEMPLATES,
     build_progress,
+    check_adrs,
     check_change,
+    check_config,
     next_slug,
+    placeholders,
     stage,
 )
 from sdlc.cli import check_commits, main
@@ -295,3 +299,182 @@ def test_status_shows_build_progress(tmp_path: Path, capsys: pytest.CaptureFixtu
         "0001-example\tbuild\tin progress, 0/2 milestones done",
         "0002-other\tintent",
     ]
+
+
+ADR_TEMPLATE = (REPO / "templates" / "adr.md").read_text()
+
+
+def accepted_adr(trigger: str = "- a plan hand-builds navigation state") -> str:
+    text = ADR_TEMPLATE.replace("proposed <!--", "accepted (Sam, 2026-11-06) <!--", 1)
+    return text.replace("- <trigger>", trigger)
+
+
+def adr(root: Path, name: str, text: str) -> Path:
+    path = root / "docs" / "adr" / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text)
+    return path
+
+
+def adr_messages(root: Path) -> list[str]:
+    return [p.message for p in check_adrs(root)]
+
+
+def test_no_adr_folder_is_fine(tmp_path: Path) -> None:
+    assert check_adrs(tmp_path) == []
+
+
+def test_adr_template_has_its_sections() -> None:
+    for heading in ADR_SECTIONS:
+        assert f"## {heading}" in ADR_TEMPLATE
+
+
+def test_adr_template_is_a_valid_proposal(tmp_path: Path) -> None:
+    adr(tmp_path, "0001-client-stack.md", ADR_TEMPLATE)
+    adr(tmp_path, "README.md", "# Decisions\n")
+    assert check_adrs(tmp_path) == []
+
+
+def test_leftover_placeholder_beside_a_real_trigger_is_reported(tmp_path: Path) -> None:
+    adr(tmp_path, "0001-client-stack.md", accepted_adr("- a plan hand-builds routing\n- <trigger>"))
+    assert adr_messages(tmp_path) == ["Revisit when still has the template's <trigger>"]
+
+
+def test_accepted_adr_with_a_trigger_is_valid(tmp_path: Path) -> None:
+    adr(tmp_path, "0001-client-stack.md", accepted_adr())
+    assert check_adrs(tmp_path) == []
+
+
+@pytest.mark.parametrize(
+    "trigger",
+    [
+        "",
+        "None.",
+        "never",
+        "<!-- later -->",
+        "- <trigger>",
+        "- None",
+        "- N/A",
+        "* TBD.",
+        "1. todo",
+        "-",
+    ],
+)
+def test_accepted_adr_without_a_trigger_is_reported(tmp_path: Path, trigger: str) -> None:
+    adr(tmp_path, "0001-client-stack.md", accepted_adr(trigger))
+    assert any("Revisit when names no trigger" in m for m in adr_messages(tmp_path))
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "expected"),
+    [
+        ("proposed <!--", "agreed <!--", "Status must"),
+        ("proposed <!--", "<!--", "Status must"),
+        ("## Revisit when", "## Later", "missing sections: Revisit when"),
+        ("## Alternatives considered", "## Options", "missing sections: Alternatives"),
+    ],
+)
+def test_unrecognised_adr_text_fails_safe(
+    tmp_path: Path, old: str, new: str, expected: str
+) -> None:
+    adr(tmp_path, "0001-client-stack.md", ADR_TEMPLATE.replace(old, new, 1))
+    assert any(expected in m for m in adr_messages(tmp_path))
+
+
+def test_superseded_adr_names_an_existing_one(tmp_path: Path) -> None:
+    adr(
+        tmp_path,
+        "0001-client-stack.md",
+        ADR_TEMPLATE.replace("proposed <!--", "superseded by 0002 <!--"),
+    )
+    assert any("no such ADR" in m for m in adr_messages(tmp_path))
+    adr(tmp_path, "0002-adopt-router.md", accepted_adr())
+    assert check_adrs(tmp_path) == []
+
+
+def test_bad_adr_names_and_duplicate_numbers_are_reported(tmp_path: Path) -> None:
+    adr(tmp_path, "client-stack.md", ADR_TEMPLATE)
+    adr(tmp_path, "0001-a.md", ADR_TEMPLATE)
+    adr(tmp_path, "0001-b.md", ADR_TEMPLATE)
+    found = adr_messages(tmp_path)
+    assert any("0001-short-slug.md" in m for m in found)
+    assert any("0001 is used twice" in m for m in found)
+
+
+def test_check_reports_adr_problems(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    adr(tmp_path, "0001-client-stack.md", accepted_adr(""))
+    assert main(["--root", str(tmp_path), "check"]) == 1
+    assert "Revisit when" in capsys.readouterr().err
+
+
+def test_placeholder_words_come_from_the_framework_file(tmp_path: Path) -> None:
+    words = placeholders(tmp_path)
+    assert {"none", "tbd"} <= words.nothing_written
+    assert words.explicit_none == {"None", "None."}
+    assert check_config(tmp_path) == []
+
+
+def repo_config(root: Path, text: str) -> None:
+    (root / ".sdlc.toml").write_text(text)
+
+
+def test_repo_config_adds_to_the_framework_list(tmp_path: Path) -> None:
+    repo_config(tmp_path, '[placeholders.nothing_written]\nadditional_keywords = ["Pending."]\n')
+    for trigger in ("- pending", "- tbd"):
+        adr(tmp_path, "0001-client-stack.md", accepted_adr(trigger))
+        assert any("names no trigger" in m for m in adr_messages(tmp_path)), trigger
+    assert check_config(tmp_path) == []
+
+
+def test_repo_config_replaces_the_framework_list(tmp_path: Path) -> None:
+    repo_config(tmp_path, '[placeholders.nothing_written]\nkeywords = ["none", "pending"]\n')
+    adr(tmp_path, "0001-client-stack.md", accepted_adr("- pending"))
+    assert any("names no trigger" in m for m in adr_messages(tmp_path))
+    adr(tmp_path, "0001-client-stack.md", accepted_adr("- tbd"))
+    assert adr_messages(tmp_path) == [], "the repo's keywords replaced the framework's"
+
+
+def test_repo_config_replaces_then_adds(tmp_path: Path) -> None:
+    repo_config(
+        tmp_path,
+        "[placeholders.explicit_none]\n"
+        'keywords = ["None."]\nadditional_keywords = ["Nothing open."]\n',
+    )
+    assert placeholders(tmp_path).explicit_none == {"None.", "Nothing open."}
+
+
+def test_repo_config_sets_what_clears_a_build(change: Path) -> None:
+    repo_config(
+        change.parents[1], '[placeholders.explicit_none]\nadditional_keywords = ["Nothing open."]\n'
+    )
+    cleared = approved(BUILD_TEMPLATE).replace(
+        "None.\n\n## Milestones", "Nothing open.\n\n## Milestones"
+    )
+    planned(change).write_text(cleared)
+    assert check_change(change) == []
+    planned(change).write_text(approved(BUILD_TEMPLATE))
+    assert check_change(change) == [], "the framework's None. still clears it"
+    planned(change).write_text(cleared.replace("Nothing open.", "TBD"))
+    assert any("Questions before approval" in m for m in messages(change))
+
+
+@pytest.mark.parametrize(
+    ("config", "expected"),
+    [
+        ("[placeholders\n", "isn't valid TOML"),
+        ("placeholders = 1\n", "must be a table"),
+        ('[placeholders.nothing]\nkeywords = ["x"]\n', "unknown list placeholders.nothing"),
+        ('[placeholders]\nexplicit_none = ["None."]\n', "explicit_none must be a table"),
+        ('[placeholders.explicit_none]\nwords = ["x"]\n', "unknown key placeholders.explicit_none"),
+        ('[placeholders.explicit_none]\nkeywords = "None."\n', "keywords must be a list"),
+        ("[placeholders.explicit_none]\nadditional_keywords = [1]\n", "must be a list of strings"),
+    ],
+)
+def test_bad_repo_config_is_reported_and_ignored(
+    tmp_path: Path, config: str, expected: str
+) -> None:
+    (tmp_path / ".sdlc.toml").write_text(config)
+    [problem] = check_config(tmp_path)
+    assert expected in problem.message
+    assert placeholders(tmp_path).explicit_none == {"None", "None."}
+    assert main(["--root", str(tmp_path), "check"]) == 1
