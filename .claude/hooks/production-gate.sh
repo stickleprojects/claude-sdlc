@@ -6,48 +6,73 @@ set -euo pipefail
 cmd="$(jq -r '.tool_input.command // empty')"
 
 # The production deploy is `make deploy-prod`. Block a command that runs make with that
-# target, not one that only mentions it (#78): text in a quoted string, a commit message or
-# a PR body, a heredoc fed to cat or gh, or a grep pattern. Where text could be run as code
-# (a heredoc or string given to a shell, eval, ssh, sudo or xargs), it's checked as code.
-# It errs towards blocking: a dry run (`make -n`) is blocked too.
+# target, not one that only mentions it (#78). Text is ignored only where it's safe to call it
+# text: quoted strings and heredoc bodies given to a known text tool (git, gh, echo, cat,
+# grep, …) that isn't piped on. Strings given to anything else (a shell, eval, python3 -c,
+# ssh, …) are checked as code. It errs towards blocking: a dry run (`make -n`) is blocked too.
 target='deploy-prod'
-shells='(^|[^[:alnum:]_.-])((ba|z|da|k)?sh|eval|ssh|su|sudo|xargs|watch|docker|kubectl)([^[:alnum:]_.-]|$)'
 make_target="(^|[^[:alnum:]_.-])(g?make|\\\$\\(MAKE\\)|\\\$\\{MAKE\\})([[:space:]]+[^[:space:]]+)*[[:space:]]+$target([^[:alnum:]_-]|$)"
+text_tools='git|gh|echo|printf|cat|tee|grep|egrep|fgrep|rg|jq|yq|head|tail|wc|sort|uniq|cut|tr|diff|cmp|ls|test|true|mkdir|touch|cd|pwd'
 
-# Drop heredoc bodies that go to something other than a shell (`cat <<EOF`, `gh … <<EOF`).
-drop_data_heredocs() {
-  awk -v shells="$shells" '
-    skipping { t = $0; if (tabs) sub(/^\t+/, "", t); if (t == delim) skipping = 0; next }
-    {
-      print
-      line = $0; gsub(/<<</, "", line)  # a here-string, not a heredoc
-      if (match(line, /<<-?[[:space:]]*["\047]?[A-Za-z_][A-Za-z0-9_]*/)) {
-        delim = substr(line, RSTART, RLENGTH); tabs = (delim ~ /^<<-/)
-        sub(/^<<-?[[:space:]]*["\047]?/, "", delim)
-        if (line !~ shells) skipping = 1
-      }
-    }'
+segments() { sed -E 's/(&&|\|\||;|\|)/\n/g'; }
+
+command_word() {  # the command a segment runs: its first word after variables and keywords
+  local w words
+  read -ra words <<<"$1" || true
+  for w in "${words[@]}"; do
+    while [[ "$w" == [\(\{\!]* ]]; do w="${w:1}"; done  # leading ( { !
+    [[ -z "$w" || "$w" =~ ^(then|do|else|elif|if|while|until|time)$ ]] && continue
+    [[ "$w" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]] && continue
+    echo "${w##*/}"
+    return
+  done
 }
 
-# Drop quoted strings, which are text, unless a shell will run them. A double-quoted string
-# with $( or a backtick is kept: the substitution runs.
-drop_strings() {
-  sed -E "s/'[^']*'//g; s/\"([^\"\\\\\$\`]|\\\\.)*\"//g"
+is_text() {  # every segment of $1 runs a known text tool
+  local segment
+  while IFS= read -r segment; do
+    [[ "$(command_word "$segment")" =~ ^($text_tools)$ ]] || return 1
+  done < <(segments <<<"$1")
+}
+
+# Drop heredoc bodies fed to a text tool (`cat > f <<EOF`, `gh … --body "$(cat <<EOF`).
+drop_text_heredocs() {
+  local line l delim="" tabs="" t
+  while IFS= read -r line; do
+    if [[ -n "$delim" ]]; then
+      t="$line"
+      [[ -n "$tabs" ]] && t="${t#"${t%%[!$'\t']*}"}"
+      [[ "$t" == "$delim" ]] && delim=""
+      continue
+    fi
+    printf '%s\n' "$line"
+    l="${line//<<</}"  # a here-string, not a heredoc
+    if [[ "$l" =~ \<\<(-?)[[:space:]]*[\"\']?([A-Za-z_][A-Za-z0-9_]*) ]]; then
+      local d="${BASH_REMATCH[2]}" dash="${BASH_REMATCH[1]}"
+      if is_text "$l"; then delim="$d" tabs="$dash"; fi
+    fi
+  done
 }
 
 runs_prod_deploy() {
-  local code bare segment
-  code="$(drop_data_heredocs <<<"$1")"
-  bare="$(drop_strings <<<"$code")"
-  grep -Eq "$shells" <<<"$bare" || code="$bare"
+  local code segment
+  # A backslash-newline continues the command. Quotes around a single word don't make it
+  # text: `make "deploy-prod"` runs the target.
+  code="$(awk '{ while (/\\$/ && (getline nxt) > 0) { sub(/\\$/, ""); $0 = $0 " " nxt } print }' <<<"$1" \
+    | sed -E "s/'([^'[:space:]]*)'/\\1/g; s/\"([^\"[:space:]\\\\\$\`]*)\"/\\1/g")"
+  code="$(drop_text_heredocs <<<"$code")"
   # `… | xargs make` with the target anywhere in the command.
   if grep -Eq "(^|[^[:alnum:]_.-])xargs([[:space:]][^|;&]*)?[[:space:]](g?make)([[:space:]]|$)" <<<"$code" \
     && grep -Eq "(^|[^[:alnum:]_-])$target([^[:alnum:]_-]|$)" <<<"$code"; then
     return 0
   fi
   while IFS= read -r segment; do
+    # A text tool's quoted strings are text, unless they hold $( or a backtick, which run.
+    if is_text "$segment"; then
+      segment="$(sed -E "s/'[^']*'//g; s/\"([^\"\\\\\$\`]|\\\\.)*\"//g" <<<"$segment")"
+    fi
     grep -Eq "$make_target" <<<"$segment" && return 0
-  done < <(sed -E 's/(&&|\|\||;|\|)/\n/g' <<<"$code")
+  done < <(segments <<<"$code")
   return 1
 }
 
