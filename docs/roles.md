@@ -206,6 +206,7 @@ The production gate hook (`.claude/hooks/production-gate.sh`) blocks Claude from
 | AI tool adapter | `scripts/agent.sh` |
 | Build-time guardrails | `.claude/settings.json`, `.claude/hooks/` |
 | CI and automation | `.github/workflows/` |
+| Framework version and updates | `.sdlc-version`; run `/sdlc` in Claude Code to see what's new and open the sync PR (`make sync-sdlc` by hand) |
 | Agent evals | `evals/`; run with `make evals` |
 | Words `make validate` reads as "nothing here" (`None.`, `TBD`, …) | defaults in `src/sdlc/placeholders.toml`; a repo adds to them (`additional_keywords`) or replaces them (`keywords`) in `.sdlc.toml`, which the sync never touches |
 | Claude's GitHub identity | `scripts/agent-identity.sh`, `scripts/agent-session.sh`; setup in [agent-identity.md](agent-identity.md) |

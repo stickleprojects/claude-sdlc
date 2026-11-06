@@ -102,7 +102,7 @@ make next REF=origin/main       # each change's next step, and the skill to run
 make check                      # lint + tests + artifact chain
 ```
 
-In Claude Code you need five skills: `/intent` (something new), `/plan`, `/build`, `/pr [N]` (work through a PR's review) and `/next` (where everything is). Each one works out where a change is and offers the right next step, so the specialised skills (`spec`, `po-review`, `review-findings`, …) never need remembering ([routing](.claude/skills/routing.md)). The `verifier` subagent checks finished work. Who does what: [docs/roles.md](docs/roles.md).
+In Claude Code you need six skills: `/intent` (something new), `/plan`, `/build`, `/pr [N]` (work through a PR's review), `/next` (where everything is) and `/sdlc` (which pipeline version you're on, what's new, and updating it). Each one works out where a change is and offers the right next step, so the specialised skills (`spec`, `po-review`, `review-findings`, …) never need remembering ([routing](.claude/skills/routing.md)). The `verifier` subagent checks finished work. Who does what: [docs/roles.md](docs/roles.md).
 
 ## How it is put together
 
@@ -128,7 +128,7 @@ CI usage counts against your Claude plan's limits. That's why agent evals run on
 
 ## Updating the framework in a project
 
-Run `make sync-sdlc` (latest release) or `make sync-sdlc REF=main`, then review the staged changes in a PR. Files the project added, even inside `.github/workflows/` or `.claude/skills/`, are never touched. Local edits to framework files are never lost either. The sync merges them three ways with the new version, the way `git merge` does, and lists the files it merged. If a merge conflicts, the file is left unstaged with conflict markers and the sync exits non-zero. A file the framework dropped is kept if the project changed it. The sync also lists the `make` targets the pipeline uses that the project's Makefile doesn't define. To try framework changes before pushing them, run `SDLC_SOURCE=../claude-sdlc make sync-sdlc REF=<branch>`.
+Run `/sdlc` in Claude Code: it shows what's new since your version (breaking changes and optional features first), syncs on a branch, works through any conflicts with you and opens the sync PR. By hand: run `make sync-sdlc` (latest release) or `make sync-sdlc REF=main`, then review the staged changes in a PR. Files the project added, even inside `.github/workflows/` or `.claude/skills/`, are never touched. Local edits to framework files are never lost either. The sync merges them three ways with the new version, the way `git merge` does, and lists the files it merged. If a merge conflicts, the file is left unstaged with conflict markers and the sync exits non-zero. A file the framework dropped is kept if the project changed it. The sync also lists the `make` targets the pipeline uses that the project's Makefile doesn't define. To try framework changes before pushing them, run `SDLC_SOURCE=../claude-sdlc make sync-sdlc REF=<branch>`.
 
 ## Testing the framework
 
