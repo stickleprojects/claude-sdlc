@@ -68,6 +68,12 @@ DEPLOY = "deploy" + "-prod"  # split so this file's own text never trips the gat
         (f"git grep -O'make {DEPLOY}' foo", True),
         (f"rg --pre 'make {DEPLOY}' x .", True),
         (f"sort --compress-program='make {DEPLOY}' f", True),
+        # Review round 4: a text tool piped into something that runs it.
+        (f"echo 'make {DEPLOY}' | sh", True),
+        (f"printf '%s\\n' 'make {DEPLOY}' | bash", True),
+        (f'echo "make {DEPLOY}" | bash -s', True),
+        (f"echo 'make {DEPLOY}' | tee >(sh)", True),
+        (f"git log -1 --format='make {DEPLOY}' | sh", True),
         # Not a text tool, so its heredoc is checked as code: the cost of failing safe.
         (f"python3 - <<'EOF'\nnote = 'make {DEPLOY} needs a human'\nEOF", True),
         # ...and mentioning it isn't.
@@ -77,6 +83,8 @@ DEPLOY = "deploy" + "-prod"  # split so this file's own text never trips the gat
         (f"gh api repos/o/r/pulls -F body=@- <<EOF\nmissing: deploy-dev, {DEPLOY}\nEOF", False),
         (f"cat > notes.md <<EOF\nrun make {DEPLOY}\nEOF", False),
         (f"echo 'make {DEPLOY}'", False),
+        (f"echo 'make {DEPLOY}' | tee notes.txt | wc -l", False),
+        (f'git commit -m "fix: make {DEPLOY} gate" && make check', False),
         (f'git -C repo commit -q -m "fix: make {DEPLOY} gate"', False),
         (f"git --no-pager log --grep 'make {DEPLOY}'", False),
         (f'gh issue comment 1 --body "run make {DEPLOY} later"', False),

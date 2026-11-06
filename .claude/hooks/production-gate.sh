@@ -18,7 +18,8 @@ text_tools='git|gh|echo|printf|cat|tee|grep|egrep|fgrep|jq|head|tail|wc|uniq|cut
 git_text='commit|tag|notes|log|show|status|diff'
 gh_text='pr|issue|api|release|label'
 
-segments() { sed -E 's/(&&|\|\||;|\|)/\n/g'; }
+segments() { sed -E 's/(&&|\|\||;|\|)/\n/g'; }  # each command
+lists() { sed -E 's/(&&|\|\||;)/\n/g'; }  # each pipeline: commands joined by |
 
 command_word() {  # the command a segment runs: its first word after variables and keywords
   local w words
@@ -34,6 +35,8 @@ command_word() {  # the command a segment runs: its first word after variables a
 
 is_text() {  # every segment of $1 runs a known text tool
   local segment word
+  # A process substitution, >(sh) or <(sh), runs a command of its own.
+  [[ "$1" == *'>('* || "$1" == *'<('* ]] && return 1
   while IFS= read -r segment; do
     word="$(command_word "$segment")"
     [[ "$word" =~ ^($text_tools)$ ]] || return 1
@@ -80,13 +83,17 @@ runs_prod_deploy() {
     && grep -Eq "(^|[^[:alnum:]_-])$target([^[:alnum:]_-]|$)" <<<"$code"; then
     return 0
   fi
-  while IFS= read -r segment; do
-    # A text tool's quoted strings are text, unless they hold $( or a backtick, which run.
-    if is_text "$segment"; then
-      segment="$(sed -E "s/'[^']*'//g; s/\"([^\"\\\\\$\`]|\\\\.)*\"//g" <<<"$segment")"
+  local pipeline
+  while IFS= read -r pipeline; do
+    # Quoted strings are text only when every command in the pipeline is a text tool:
+    # `echo '…' | sh` runs them. Even then, $( and backticks run.
+    if is_text "$pipeline"; then
+      pipeline="$(sed -E "s/'[^']*'//g; s/\"([^\"\\\\\$\`]|\\\\.)*\"//g" <<<"$pipeline")"
     fi
-    grep -Eq "$make_target" <<<"$segment" && return 0
-  done < <(segments <<<"$code")
+    while IFS= read -r segment; do
+      grep -Eq "$make_target" <<<"$segment" && return 0
+    done < <(segments <<<"$pipeline")
+  done < <(lists <<<"$code")
   return 1
 }
 
