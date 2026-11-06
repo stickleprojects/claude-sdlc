@@ -46,8 +46,11 @@ def cmd_new(root: Path, name: str, kind: str = "feature") -> int:
 
 
 # A branch that changes more files than this almost certainly swept in dependencies or build
-# output (one `git add -A` once committed ~82,000 files). Override with SDLC_MAX_CHANGED_FILES.
+# output (one `git add -A` once committed ~82,000 files). Override with SDLC_MAX_CHANGED_FILES,
+# or, where an environment variable can't be set (a PR's CI run), with a commit on the branch
+# carrying a `Large-change: <reason>` trailer.
 MAX_CHANGED_FILES = 300
+LARGE_CHANGE_TRAILER = "Large-change"
 
 
 def _git(root: Path, *args: str) -> str | None:
@@ -82,11 +85,29 @@ def check_commits(root: Path) -> list[str]:
     count = len([line for line in changed.splitlines() if line])
     limit = int(os.environ.get("SDLC_MAX_CHANGED_FILES", MAX_CHANGED_FILES))
     if count > limit:
-        problems.append(
-            f"this branch changes {count} files against main (limit {limit}); that usually "
-            "means dependencies or build output were committed. Check `git diff --stat "
-            "main...HEAD`; if it's really intended, set SDLC_MAX_CHANGED_FILES"
+        trailers = _git(
+            root,
+            "log",
+            f"--format=%(trailers:key={LARGE_CHANGE_TRAILER},valueonly,separator=%x0a)",
+            f"{merge_base.strip()}..HEAD",
         )
+        reasons = [r.strip() for r in (trailers or "").splitlines() if r.strip()]
+        if reasons:
+            # Allowed, but say so in the check output, so the reviewer sees why.
+            print(
+                f"note: this branch changes {count} files against main (limit {limit}), "
+                f"allowed by {LARGE_CHANGE_TRAILER}: {'; '.join(reasons)}",
+                file=sys.stderr,
+            )
+        else:
+            problems.append(
+                f"this branch changes {count} files against main (limit {limit}); that usually "
+                "means dependencies or build output were committed. Check `git diff --stat "
+                "main...HEAD`. If it's really intended, add a commit with the trailer "
+                f'`{LARGE_CHANGE_TRAILER}: <reason>` (`git commit --allow-empty -m "chore: '
+                f'large change" -m "{LARGE_CHANGE_TRAILER}: <reason>"`), or set '
+                "SDLC_MAX_CHANGED_FILES locally"
+            )
     return problems
 
 

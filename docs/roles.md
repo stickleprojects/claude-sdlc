@@ -210,7 +210,7 @@ The production gate hook (`.claude/hooks/production-gate.sh`) blocks Claude from
 | Agent evals | `evals/`; run with `make evals` |
 | Words `make validate` reads as "nothing here" (`None.`, `TBD`, …) | defaults in `src/sdlc/placeholders.toml`; a repo adds to them (`additional_keywords`) or replaces them (`keywords`) in `.sdlc.toml`, which the sync never touches |
 | Claude's GitHub identity | `scripts/agent-identity.sh`, `scripts/agent-session.sh`; setup in [agent-identity.md](agent-identity.md) |
-| `.gitignore` baseline (node, python) | `templates/gitignore`; `bootstrap-github.sh` adds any missing line, and `make validate` fails on tracked `node_modules` or a branch changing more than 300 files (`SDLC_MAX_CHANGED_FILES`) |
+| `.gitignore` baseline (node, python) | `templates/gitignore`; `bootstrap-github.sh` adds any missing line, and `make validate` fails on tracked `node_modules` or a branch changing more than 300 files. A PR that really needs more adds a commit with a `Large-change: <reason>` trailer, which the check output shows (`SDLC_MAX_CHANGED_FILES` overrides it locally) |
 
 - Before merging a change to `CLAUDE.md`, `.claude/**`, prompts or evals, run the *Agent evals* workflow: Actions → Agent evals → Run workflow. It's on demand for now to save subscription usage. Don't merge a change that lowers the pass rate.
 - Turn every production incident into a new task under `evals/tasks/`.
