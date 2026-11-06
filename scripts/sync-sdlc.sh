@@ -131,7 +131,11 @@ main() {
     git -C "$tmp/fw" cat-file -e "${base_sha}^{commit}" 2>/dev/null || base_sha=""
   fi
 
-  local pair src dst file installed=() merged=() conflicts=() kept=() sidecars=()
+  local pair src dst file installed=() merged=() conflicts=() kept=() sidecars=() executables=()
+  # The framework's executable files, by git's recorded mode (#79): the consumer's copies get
+  # the same bit, whatever their extension. Nothing else is touched.
+  local fw_exec
+  fw_exec="$(git -C "$tmp/fw" ls-files -s | awk '$1 == "100755" { print $4 }')"
   base_of() {  # <framework path> <out file>: the file as the previous sync installed it
     rm -f "$2"
     [[ -n "$base_sha" ]] && git -C "$tmp/fw" show "$base_sha:$1" > "$2" 2>/dev/null
@@ -139,6 +143,7 @@ main() {
   install_file() {  # <framework path> <consumer path>
     local new="$tmp/fw/$1" base="$tmp/base" out="$tmp/merged"
     installed+=("$2")
+    grep -qxF -- "$1" <<<"$fw_exec" && executables+=("$2")
     if [[ ! -e "$2" ]]; then
       mkdir -p "$(dirname "$2")"
       cp "$new" "$2"
@@ -267,9 +272,10 @@ main() {
 
   printf '%s@%s\n%s\n' "$repo" "$ref" "$sha" > .sdlc-version
 
-  # Git loses the executable bit on some filesystems (NTFS); set it in the index.
+  # Git loses the executable bit on some filesystems (NTFS); set it in the index from the
+  # framework's modes, so a file executable there is executable here.
   git add -A
-  git ls-files '*.sh' | xargs -r git update-index --chmod=+x
+  ((${#executables[@]})) && git update-index --chmod=+x -- "${executables[@]}"
   # Like `git merge`, conflicted files stay unstaged until someone resolves them.
   ((${#conflicts[@]})) && git reset -q -- "${conflicts[@]}"
   ((${#sidecars[@]})) && git reset -q -- "${sidecars[@]}"
