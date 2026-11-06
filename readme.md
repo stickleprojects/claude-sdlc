@@ -165,6 +165,8 @@ gh workflow run release.yml -f dry_run=false   # check, run evals, tag, publish 
 
 `scripts/next-version.sh --explain` shows the same calculation locally.
 
+Release notes list the PR titles. For what a title can't say, such as a new optional feature and how to adopt it, write `docs/release-notes/<version>.md` (e.g. `v0.5.0.md`) before releasing. It's added after the change list.
+
 ## Roadmap
 
 - [ ] **Maintain stage:** a deterministic metric check against a baseline, with response tiers in `bands.yaml` (log, then read-only diagnosis, then a fix PR). Diagnoses are written as a new `intent.md`.

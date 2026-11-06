@@ -3,6 +3,8 @@
 #
 # Usage: scripts/release-notes.sh <version> [repo]    e.g. v0.2.0 stickleprojects/claude-sdlc
 #   Prints Markdown to stdout. Uses the same PR-title rules as next-version.sh.
+#   A hand-written docs/release-notes/<version>.md, if present, goes in after the change list:
+#   for what titles can't say, such as a new optional feature and how to adopt it.
 set -euo pipefail
 
 version="${1:?usage: release-notes.sh <version> [owner/repo]}"
@@ -53,6 +55,11 @@ section "Fixes" "${fixes[@]}"
 section "Pipeline, docs and chores" "${other[@]}"
 if ! ((${#breaking[@]} + ${#features[@]} + ${#fixes[@]} + ${#other[@]})); then
   printf '\nNo changes.\n'
+fi
+notes_file="docs/release-notes/$version.md"
+if [[ -f "$notes_file" ]]; then
+  printf '\n'
+  cat "$notes_file"
 fi
 cat <<EOF
 

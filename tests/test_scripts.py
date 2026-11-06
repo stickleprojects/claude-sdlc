@@ -195,6 +195,18 @@ def test_release_notes_group_by_type(released):
     assert "compare/v0.4.2...v0.5.0" in notes
 
 
+def test_release_notes_include_the_versions_hand_written_notes(released):
+    notes_dir = released / "docs" / "release-notes"
+    notes_dir.mkdir(parents=True)
+    (notes_dir / "v0.5.0.md").write_text("## Optional: ADRs\n\nHow to adopt them.\n")
+    (notes_dir / "v0.4.3.md").write_text("## Older\n")
+    commit(released, "feat: adrs (#9)")
+    notes = _notes(released)
+    assert notes.index("## Features") < notes.index("## Optional: ADRs")
+    assert notes.index("How to adopt them.") < notes.index("## Upgrading a consumer repo")
+    assert "## Older" not in notes
+
+
 def test_release_notes_omit_empty_sections(released):
     commit(released, "fix: only a fix (#3)")
     notes = _notes(released, "v0.4.3")
