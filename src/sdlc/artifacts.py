@@ -91,6 +91,9 @@ ADR_SECTIONS = [
 ]
 ADR_STATUS_RE = re.compile(r"^(proposed|accepted|superseded by (?:ADR )?(\d{4}))\b", re.I)
 ADR_SKIP = ("README.md", "index.md")
+# "Revisit when" lines that name no trigger, once the list marker is stripped.
+NO_TRIGGER = {"none", "never", "n/a", "na", "tbd", "todo", "-"}
+LIST_MARKER_RE = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s*")
 
 SLUG_RE = re.compile(r"^[0-9]{4}-[a-z0-9]+(-[a-z0-9]+)*$")
 HEADING_RE = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
@@ -247,6 +250,14 @@ def adr_files(root: Path) -> list[Path]:
     return sorted(p for p in folder.glob("*.md") if p.name not in ADR_SKIP)
 
 
+def revisit_triggers(text: str) -> list[str]:
+    """An ADR's Revisit when lines, without list markers or placeholders that name no trigger."""
+    lines = (
+        LIST_MARKER_RE.sub("", line).strip() for line in section(text, "Revisit when").splitlines()
+    )
+    return [line for line in lines if line and line.rstrip(".").lower() not in NO_TRIGGER]
+
+
 def check_adrs(root: Path) -> list[Problem]:
     """Each ADR has its sections and a known status; an accepted one says when to revisit it."""
     problems: list[Problem] = []
@@ -275,8 +286,10 @@ def check_adrs(root: Path) -> list[Problem]:
         elif m.group(2) and m.group(2) not in numbers:
             problems.append(Problem(path, f"superseded by {m.group(2)}, but there's no such ADR"))
         elif m.group(1).lower() == "accepted":
-            triggers = section(text, "Revisit when")
-            if triggers.rstrip(".").lower() in ("", "none", "never") or "<trigger>" in triggers:
+            triggers = revisit_triggers(text)
+            if "<trigger>" in triggers:
+                problems.append(Problem(path, "Revisit when still has the template's <trigger>"))
+            if not [t for t in triggers if t != "<trigger>"]:
                 problems.append(
                     Problem(path, "accepted, but Revisit when names no trigger to check at /plan")
                 )

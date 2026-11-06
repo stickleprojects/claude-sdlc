@@ -333,12 +333,20 @@ def test_adr_template_is_a_valid_proposal(tmp_path: Path) -> None:
     assert check_adrs(tmp_path) == []
 
 
+def test_leftover_placeholder_beside_a_real_trigger_is_reported(tmp_path: Path) -> None:
+    adr(tmp_path, "0001-client-stack.md", accepted_adr("- a plan hand-builds routing\n- <trigger>"))
+    assert adr_messages(tmp_path) == ["Revisit when still has the template's <trigger>"]
+
+
 def test_accepted_adr_with_a_trigger_is_valid(tmp_path: Path) -> None:
     adr(tmp_path, "0001-client-stack.md", accepted_adr())
     assert check_adrs(tmp_path) == []
 
 
-@pytest.mark.parametrize("trigger", ["", "None.", "never", "<!-- later -->", "- <trigger>"])
+@pytest.mark.parametrize(
+    "trigger",
+    ["", "None.", "never", "<!-- later -->", "- <trigger>", "- None", "- N/A", "* TBD.", "1. todo"],
+)
 def test_accepted_adr_without_a_trigger_is_reported(tmp_path: Path, trigger: str) -> None:
     adr(tmp_path, "0001-client-stack.md", accepted_adr(trigger))
     assert any("Revisit when names no trigger" in m for m in adr_messages(tmp_path))
