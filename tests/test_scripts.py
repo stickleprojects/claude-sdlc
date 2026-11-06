@@ -580,7 +580,9 @@ def test_workflows_guard_against_agent_loops():
     mention = (REPO / ".github/workflows/claude-mention.yml").read_text()
     assert "github.event.comment.user.type == 'User'" in mention
     review = (REPO / ".github/workflows/claude-review.yml").read_text()
-    assert "allowed_bots: ${{ vars.SDLC_AGENT_APP_SLUG }}" in review
+    # The App's bot and, without an App, the default token's bot (#82); no wildcard.
+    assert "allowed_bots: ${{ format('{0},github-actions', vars.SDLC_AGENT_APP_SLUG) }}" in review
+    assert "allowed_bots: '*'" not in review
     spec = (REPO / ".github/workflows/spec-from-intent.yml").read_text()
     assert "actions/create-github-app-token" in spec
 

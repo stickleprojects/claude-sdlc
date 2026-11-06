@@ -46,8 +46,10 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # PRs and pushes from the agent's own App identity (docs/agent-identity.md) are reviewed
-          # like a person's. The review only comments, so it can't start a loop.
-          allowed_bots: ${{ vars.SDLC_AGENT_APP_SLUG }}
+          # like a person's, and so are spec PRs opened with the default token when there's no
+          # App (github-actions[bot], #82). The review only comments, so it can't start a loop.
+          # An empty slug leaves a blank entry, which the action ignores.
+          allowed_bots: ${{ format('{0},github-actions', vars.SDLC_AGENT_APP_SLUG) }}
           prompt: |
             Review PR #${{ github.event.pull_request.number }} in ${{ github.repository }}.
             Follow REVIEW.md exactly. Check the diff against the spec.md and plan.md
