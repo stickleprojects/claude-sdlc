@@ -80,6 +80,26 @@ def test_sync_marks_scripts_executable(consumer):
     assert modes and all(line.startswith("100755") for line in modes)
 
 
+def test_sync_copies_the_frameworks_executable_bit(consumer, framework_snapshot):
+    # #79: the framework's mode decides, not the extension.
+    assert git(consumer, "ls-files", "-s", "scripts/create-agent-apps.py").startswith("100755")
+    assert git(consumer, "ls-files", "-s", "REVIEW.md").startswith("100644")
+    # A consumer's own script isn't touched, whatever its name.
+    commit(consumer, "chore: own script", {"scripts/ours.sh": "echo ours\n"})
+    git(consumer, "update-index", "--chmod=-x", "scripts/ours.sh")
+    commit(consumer, "chore: not executable")
+    # Like NTFS: git can't see modes on disk, so only the sync can set the bit.
+    git(consumer, "config", "core.fileMode", "false")
+    hook_py = framework_snapshot / ".claude/hooks/new-hook.py"
+    hook_py.write_text("print('hi')\n")
+    hook_py.chmod(0o755)
+    commit(framework_snapshot, "feat: python hook")
+    result = sync(consumer, framework_snapshot, "main")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert git(consumer, "ls-files", "-s", ".claude/hooks/new-hook.py").startswith("100755")
+    assert git(consumer, "ls-files", "-s", "scripts/ours.sh").startswith("100644")
+
+
 def test_sync_defaults_to_tag_not_main(consumer, framework_snapshot):
     commit(framework_snapshot, "feat: unreleased", {"REVIEW.md": "unreleased\n"})
     assert sync(consumer, framework_snapshot).returncode == 0

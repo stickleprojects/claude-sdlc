@@ -54,12 +54,18 @@ def framework_snapshot(tmp_path):
     """A git repo holding the framework's current working tree, tagged v0.0.1."""
     snap = init_repo(tmp_path / "framework")
     files = run(["git", "ls-files", "-co", "--exclude-standard", "-z"], check=True).stdout
+    # Modes come from git's index, not the disk: on NTFS every file looks executable.
+    staged = run(["git", "ls-files", "-s", "-z"], check=True).stdout
+    executable = {
+        line.split("\t", 1)[1] for line in filter(None, staged.split("\0")) if line[:6] == "100755"
+    }
     for rel in filter(None, files.split("\0")):
         src = REPO / rel
         if src.is_file():
             dst = snap / rel
             dst.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(src, dst)
+            shutil.copyfile(src, dst)
+            dst.chmod(0o755 if rel in executable else 0o644)
     commit(snap, "snapshot")
     git(snap, "tag", "v0.0.1")
     return snap
