@@ -38,6 +38,8 @@ is_text() {  # every segment of $1 runs a known text tool
   # A process substitution, >(sh) or <(sh), runs a command of its own.
   [[ "$1" == *'>('* || "$1" == *'<('* ]] && return 1
   while IFS= read -r segment; do
+    # Variables set for the command can be run by it (GIT_PAGER, GIT_EDITOR, PAGER, …).
+    [[ "$segment" =~ ^[[:space:]]*(env[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*= ]] && return 1
     word="$(command_word "$segment")"
     [[ "$word" =~ ^($text_tools)$ ]] || return 1
     # git and gh run strings through aliases, config, hooks and subcommands such as

@@ -80,6 +80,13 @@ DEPLOY = "deploy" + "-prod"  # split so this file's own text never trips the gat
         (f'make $"{DEPLOY}"', True),
         ("make deploy\\-prod", True),
         ("make dep\\loy-prod", True),
+        # Review round 6: variables a text tool runs (GIT_PAGER, GIT_EDITOR, …).
+        (f"GIT_PAGER='make {DEPLOY}' git log", True),
+        (f'GIT_EDITOR="make {DEPLOY}" git commit', True),
+        (f"env PAGER='make {DEPLOY}' git show", True),
+        (f"cd app && GIT_SSH_COMMAND='make {DEPLOY}' git log", True),
+        (f"GIT_PAGER=sh git log -1 --format='make {DEPLOY}'", True),  # the pager runs the output
+        (f"env PAGER=sh git show -s --format='make {DEPLOY}'", True),
         # Not a text tool, so its heredoc is checked as code: the cost of failing safe.
         (f"python3 - <<'EOF'\nnote = 'make {DEPLOY} needs a human'\nEOF", True),
         # ...and mentioning it isn't.
