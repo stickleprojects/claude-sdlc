@@ -55,6 +55,12 @@ DEPLOY = "deploy" + "-prod"  # split so this file's own text never trips the gat
         (f"env -S 'make {DEPLOY}'", True),
         (f"awk 'BEGIN {{ system(\"make {DEPLOY}\") }}'", True),
         (f"git status && bash <<'EOF'\nmake {DEPLOY}\nEOF", True),
+        # Review round 2: git and gh run strings through config and aliases.
+        (f"git -c alias.d='!make {DEPLOY}' d", True),
+        (f"git -c core.pager='make {DEPLOY}' log", True),
+        (f"git --config-env=core.pager=X log && X='make {DEPLOY}'", True),
+        (f"git config alias.d '!make {DEPLOY}' && git d", True),
+        (f"gh alias set d --shell 'make {DEPLOY}'", True),
         # Not a text tool, so its heredoc is checked as code: the cost of failing safe.
         (f"python3 - <<'EOF'\nnote = 'make {DEPLOY} needs a human'\nEOF", True),
         # ...and mentioning it isn't.

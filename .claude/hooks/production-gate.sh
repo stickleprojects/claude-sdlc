@@ -29,9 +29,19 @@ command_word() {  # the command a segment runs: its first word after variables a
 }
 
 is_text() {  # every segment of $1 runs a known text tool
-  local segment
+  local segment word
   while IFS= read -r segment; do
-    [[ "$(command_word "$segment")" =~ ^($text_tools)$ ]] || return 1
+    word="$(command_word "$segment")"
+    [[ "$word" =~ ^($text_tools)$ ]] || return 1
+    # git and gh can run a string as a command through config and aliases
+    # (`git -c alias.x='!…'`, `git -c core.pager=…`, `git config`, `gh alias set`).
+    if [[ "$word" == git ]] \
+      && grep -Eq '(^|[[:space:]])(-c|--config-env)([[:space:]=]|$)|[[:space:]]config([[:space:]]|$)' <<<"$segment"; then
+      return 1
+    fi
+    if [[ "$word" == gh ]] && grep -Eq '[[:space:]]alias([[:space:]]|$)' <<<"$segment"; then
+      return 1
+    fi
   done < <(segments <<<"$1")
 }
 
