@@ -56,6 +56,9 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.agent.outputs.token || github.token }}
           SDLC_AGENT_APP_SLUG: ${{ steps.agent.outputs.app-slug }}
+          # Opt-in auto-merge for the spec PR (scripts/auto-merge.sh); empty means off.
+          SDLC_AUTO_MERGE: ${{ vars.SDLC_AUTO_MERGE }}
+          SDLC_AUTO_MERGE_CONFIRMED: ${{ vars.SDLC_AUTO_MERGE_CONFIRMED }}
           PENDING: ${{ steps.find.outputs.pending }}
         run: |
           # shellcheck disable=SC2086  # one change folder per word

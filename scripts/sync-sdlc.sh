@@ -32,6 +32,7 @@ main() {
     "scripts/agent.sh:scripts/agent.sh"
     "scripts/bootstrap-github.sh:scripts/bootstrap-github.sh"
     "scripts/spec-pr.sh:scripts/spec-pr.sh"
+    "scripts/auto-merge.sh:scripts/auto-merge.sh"
     "scripts/agent-identity.sh:scripts/agent-identity.sh"
     "scripts/agent-session.sh:scripts/agent-session.sh"
     "scripts/create-agent-apps.py:scripts/create-agent-apps.py"
@@ -79,6 +80,12 @@ main() {
     "variable SDLC_AGENT_APP_ID"
     "variable SDLC_AGENT_APP_SLUG"
     "secret SDLC_AGENT_APP_KEY"
+  )
+  # Opt-in auto-merge (#89): not reported when unset. When set, main's protection is checked.
+  # The sync only reads these; it never writes repo variables, so an update can't reset them.
+  local auto_merge_settings=(
+    "variable SDLC_AUTO_MERGE"
+    "variable SDLC_AUTO_MERGE_CONFIRMED"
   )
 
   cd "$(git rev-parse --show-toplevel)"
@@ -223,6 +230,30 @@ main() {
       out+="  ERROR: the agent App is half set up:$have set,$missing missing. Spec-from-intent or the Claude review fails until all three are set (docs/setup-agent-apps.md)."$'\n'
     elif ((n_missing == ${#app_settings[@]})); then
       out+="  not set (optional): the agent App (${missing# }). Without it, spec PRs open as github-actions[bot] and need the 'Approve and run workflows' click (docs/setup-agent-apps.md)."$'\n'
+    fi
+    # Opt-in auto-merge: with this person's login (usually an admin), check main still qualifies.
+    # The pipeline re-checks approvals and the review check live on each PR; the stale-approval
+    # setting is the one an App token may not see, which SDLC_AUTO_MERGE_CONFIRMED stands in for.
+    local prot problems
+    if set_in variable SDLC_AUTO_MERGE; then
+      if prot="$(gh api "repos/$gh_repo/branches/main/protection" 2>/dev/null)"; then
+        problems="$(jq -r '[
+          (if (.required_pull_request_reviews.required_approving_review_count // 0) < 1
+            then "no approving review is required (solo mode)" else empty end),
+          (if .required_pull_request_reviews.dismiss_stale_reviews != true
+            then "stale approvals are not dismissed on push" else empty end),
+          (if ([.required_status_checks.contexts[]?] | index("review")) == null
+            then "the review check is not required" else empty end)
+        ] | join("; ")' <<<"$prot" 2>/dev/null)"
+        if [[ -n "$problems" ]]; then
+          out+="  WARNING: SDLC_AUTO_MERGE is set, but main doesn't qualify: $problems. The pipeline won't enable auto-merge until scripts/bootstrap-github.sh --mode team fixes it."$'\n'
+          if [[ "$problems" == *"stale approvals"* ]] && set_in variable SDLC_AUTO_MERGE_CONFIRMED; then
+            out+="  ERROR: SDLC_AUTO_MERGE_CONFIRMED is set but no longer true of main. Delete it (gh variable delete SDLC_AUTO_MERGE_CONFIRMED) or re-run bootstrap."$'\n'
+          fi
+        fi
+      else
+        out+="  not checked: SDLC_AUTO_MERGE is set, but can't read main's branch protection (needs admin)."$'\n'
+      fi
     fi
     for kind in $unknown; do
       out+="  not checked: can't read $gh_repo's $kind names, its own or its organization's (needs admin or maintain access)."$'\n'

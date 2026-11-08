@@ -13,12 +13,19 @@
 #   5. Actions → PRs      Spec from intent opens PRs; GitHub blocks that by default
 #   6. branch protection  PR + `check` and `pr-title` statuses, no admin bypass, branches must be
 #                         up to date with main before merging (otherwise nobody is told that an
-#                         open PR is behind main), and:
+#                         open PR is behind main), stale approvals dismissed on push, review
+#                         threads resolved before merging (#92). Required checks and strictness
+#                         settings added by hand are kept, not replaced. And:
 #        --mode solo (default)  0 approvals: one person, with Claude using their gh login. GitHub
 #                               can't tell them apart, so the human gate is the merge click, and
 #                               the production-gate hook stops the agent from merging or approving.
 #        --mode team            1 code-owner approval: several people, or Claude under its own bot
 #                               account, so authors and approvers are different GitHub users.
+#        auto-merge (opt-in)    with the SDLC_AUTO_MERGE variable set (merge|squash|rebase; this
+#                               script only reads it), team mode also requires the `review` check,
+#                               turns on the repo's allow_auto_merge, and confirms the protection
+#                               for scripts/auto-merge.sh (variable SDLC_AUTO_MERGE_CONFIRMED).
+#                               Solo mode never auto-merges: the merge click is the human gate.
 #   7. delete branches    delete_branch_on_merge, so merged PR branches don't pile up
 #   8. agent identity     if scripts/agent-identity.sh create was run: checks each App is installed, and
 #                         sets the SDLC_AGENT_APP_ID/_SLUG variables and SDLC_AGENT_APP_KEY secret
@@ -30,28 +37,35 @@
 #  11. workspace trust    run `claude` here once; until then .claude/settings.json allow rules are ignored
 set -euo pipefail
 
-repo="" mode=solo dry=0 skip_token=0 print_protection=0 gitignore_only=0 update_agent_key=0
+repo="" mode=solo auto_merge="" auto_merge_given=0 dry=0 skip_token=0 print_protection=0 gitignore_only=0 update_agent_key=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --repo) repo="$2"; shift 2 ;;
     --mode) mode="$2"; shift 2 ;;
+    --auto-merge) auto_merge="$2"; auto_merge_given=1; shift 2 ;;  # override SDLC_AUTO_MERGE (tests)
     --dry-run) dry=1; shift ;;
     --skip-token) skip_token=1; shift ;;
     --print-protection) print_protection=1; shift ;;  # print the step 6 JSON and exit (tests)
     --gitignore-only) gitignore_only=1; shift ;;       # run only step 9, no GitHub calls
     --update-agent-key) update_agent_key=1; shift ;;   # step 8: re-store the App key secret (after rekey)
-    -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,37p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
 [[ "$mode" == solo || "$mode" == team ]] || { echo "--mode must be solo or team" >&2; exit 2; }
+auto_merge="$(tr '[:upper:]' '[:lower:]' <<<"$auto_merge")"
+[[ "$auto_merge" == off ]] && auto_merge=""
 
 protection_json() {
-  local approvals=0 code_owners=false
+  local approvals=0 code_owners=false checks='["check", "pr-title"]'
   [[ "$mode" == team ]] && approvals=1 code_owners=true
-  jq -n --argjson n "$approvals" --argjson co "$code_owners" '{
-    required_status_checks: { strict: true, contexts: ["check", "pr-title"] },
+  # With auto-merge on, nothing merges without a person in the loop except through the Claude
+  # review, so it becomes a hard gate.
+  [[ "$mode" == team && -n "$auto_merge" ]] && checks='["check", "pr-title", "review"]'
+  jq -n --argjson n "$approvals" --argjson co "$code_owners" --argjson checks "$checks" '{
+    required_status_checks: { strict: true, contexts: $checks },
     enforce_admins: true,
+    required_conversation_resolution: true,
     required_pull_request_reviews: {
       require_code_owner_reviews: $co,
       required_approving_review_count: $n,
@@ -62,7 +76,21 @@ protection_json() {
     allow_deletions: false
   }'
 }
-if ((print_protection)); then protection_json; exit 0; fi
+# What step 6 PUTs: protection_json plus what the repo already has on top of it (required
+# checks and strictness settings someone added by hand), so a re-run never removes them. A PUT
+# replaces the whole protection, so anything not carried over here is reset.
+merged_protection() {  # <current protection JSON, or empty>
+  protection_json | jq --argjson have "${1:-null}" '
+    def on(x): if (x | type) == "object" then x.enabled else x end;
+    if $have == null then . else
+      .required_status_checks.contexts =
+        (.required_status_checks.contexts + [$have.required_status_checks.contexts[]?] | unique)
+      | .required_linear_history = (on($have.required_linear_history) // false)
+      | .required_pull_request_reviews.require_last_push_approval =
+          ($have.required_pull_request_reviews.require_last_push_approval // false)
+    end'
+}
+if ((print_protection)); then merged_protection "${SDLC_HAVE_PROTECTION:-}"; exit 0; fi
 
 ok()   { printf '  \033[32m✓\033[0m %s\n' "$*"; }
 todo() { printf '  \033[33m!\033[0m %s\n' "$*"; }
@@ -97,6 +125,8 @@ for tool in gh git jq; do command -v "$tool" >/dev/null || { echo "missing: $too
 gh auth status >/dev/null 2>&1 || { echo "run: gh auth login" >&2; exit 1; }
 repo="${repo:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
 owner="${repo%%/*}"
+((auto_merge_given)) || auto_merge="$(gh variable get SDLC_AUTO_MERGE -R "$repo" 2>/dev/null | tr '[:upper:]' '[:lower:]' || true)"
+[[ "$auto_merge" == off ]] && auto_merge=""
 
 
 echo "Configuring $repo$( ((dry)) && echo ' (dry run)')"
@@ -175,24 +205,52 @@ fi
 step "6. Branch protection on main ($mode mode)"
 summary="PR + 'check' and 'pr-title' statuses, up to date with main, no admin bypass"
 [[ "$mode" == team ]] && summary+=", 1 code-owner approval" || summary+=", 0 approvals (you merge; the hook stops the agent)"
-# Compare the settings that matter, normalised, with what this mode wants.
-shape='{checks: (.required_status_checks.contexts | sort),
+[[ "$mode" == team && -n "$auto_merge" ]] && summary+=", the review check (auto-merge is on)"
+# Compare the settings that matter, normalised, with what this mode wants (#91: every setting
+# protection_json sets is compared, so a later change by hand shows up and is put back).
+shape='def on(x): if (x | type) == "object" then x.enabled else x end;
+       {checks: (.required_status_checks.contexts | sort),
         strict: .required_status_checks.strict,
-        admins: (if (.enforce_admins | type) == "object" then .enforce_admins.enabled else .enforce_admins end),
+        admins: on(.enforce_admins),
+        conversations: on(.required_conversation_resolution),
         approvals: .required_pull_request_reviews.required_approving_review_count,
-        owners: .required_pull_request_reviews.require_code_owner_reviews}'
-want="$(protection_json | jq -c "$shape")"
-have="$(gh api "repos/$repo/branches/main/protection" 2>/dev/null | jq -c "$shape" 2>/dev/null || true)"
+        owners: .required_pull_request_reviews.require_code_owner_reviews,
+        dismiss: .required_pull_request_reviews.dismiss_stale_reviews}'
+have_raw="$(gh api "repos/$repo/branches/main/protection" 2>/dev/null || true)"
+want="$(merged_protection "$have_raw" | jq -c "$shape")"
+have="$(jq -c "$shape" <<<"$have_raw" 2>/dev/null || true)"
 if [[ "$have" == "$want" ]]; then
   ok "already protected: $summary"
 elif ((dry)); then
   echo "    would PUT repos/$repo/branches/main/protection"
   echo "    have: ${have:-none}"
   echo "    want: $want"
-elif protection_json | gh api -X PUT "repos/$repo/branches/main/protection" --input - >/dev/null 2>/tmp/bootstrap-err; then
+elif merged_protection "$have_raw" | gh api -X PUT "repos/$repo/branches/main/protection" --input - >/dev/null 2>/tmp/bootstrap-err; then
   ok "protected: $summary"
 else
   todo "could not protect main: $(head -c 200 /tmp/bootstrap-err). Private repos on a free plan need GitHub Pro."
+fi
+# Opt-in auto-merge (#89). scripts/auto-merge.sh re-checks approvals and the review check live;
+# the stale-approval setting needs admin to read, so record it here, where it was just read.
+if [[ -n "$auto_merge" && "$mode" != team ]]; then
+  todo "SDLC_AUTO_MERGE=$auto_merge, but solo mode requires no approval, so the pipeline won't auto-merge. Use --mode team, or delete the variable."
+elif [[ -n "$auto_merge" ]]; then
+  if [[ "$(gh api "repos/$repo" -q .allow_auto_merge)" == true ]]; then ok "repo allows auto-merge"
+  else run gh api -X PATCH "repos/$repo" -F allow_auto_merge=true --silent; ((dry)) || ok "allowed auto-merge on the repo"
+  fi
+  confirmed="$(gh variable get SDLC_AUTO_MERGE_CONFIRMED -R "$repo" 2>/dev/null || true)"
+  if ((dry)); then
+    echo "    would confirm main's protection for auto-merge (variable SDLC_AUTO_MERGE_CONFIRMED)"
+  elif gh api "repos/$repo/branches/main/protection" | jq -e '
+      (.required_pull_request_reviews.required_approving_review_count // 0) >= 1
+      and .required_pull_request_reviews.dismiss_stale_reviews == true
+      and ([.required_status_checks.contexts[]?] | index("review")) != null' >/dev/null 2>&1; then
+    [[ "$confirmed" == true ]] || gh variable set SDLC_AUTO_MERGE_CONFIRMED -R "$repo" --body true
+    ok "auto-merge ($auto_merge) confirmed: approval required, stale approvals dismissed, review required"
+  else
+    [[ -z "$confirmed" ]] || gh variable delete SDLC_AUTO_MERGE_CONFIRMED -R "$repo"
+    todo "main doesn't qualify for auto-merge yet (approval, stale-approval dismissal and the review check), so the pipeline won't enable it"
+  fi
 fi
 
 step "7. Delete PR branches after merge"
