@@ -10,6 +10,7 @@
 #          For each folder with a generated spec.md: commit it alone on spec/<slug> (from the
 #          current commit), push, open a PR named after the slug, and close any older
 #          run-numbered spec PR (spec/<digits>) that carried the same change as superseded.
+#          Then scripts/auto-merge.sh turns on auto-merge where the repo opted in (#89).
 #
 # Env: GITHUB_REPOSITORY (owner/name); gh must be authenticated (GH_TOKEN in Actions).
 # A GitHub API error stops the script: guessing "no open PR" would open a duplicate.
@@ -83,6 +84,8 @@ open_prs() {
       -f body="Generated spec for \`$d\` from its accepted \`$kind.md\`. Product owner: review it (\`/pr <this PR>\` in Claude Code) and resolve any flagged policy concerns. — Claude (spec)" \
       --jq .number)"
     echo "opened #$n for $d"
+    # Now, while the PR is new: GitHub refuses auto-merge once it's approved and green.
+    "$(dirname "$0")/auto-merge.sh" "$n" || true
     close_superseded "$d" "$n"
   done
 }
@@ -90,5 +93,5 @@ open_prs() {
 case "${1:-}" in
   pending) pending ;;
   open) shift; open_prs "$@" ;;
-  *) sed -n '2,16p' "$0" >&2; exit 2 ;;
+  *) sed -n '2,17p' "$0" >&2; exit 2 ;;
 esac

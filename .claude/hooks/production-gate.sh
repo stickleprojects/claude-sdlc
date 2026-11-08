@@ -14,12 +14,27 @@ EOF
   exit 2
 fi
 
+# Auto-merge is allowed only through scripts/auto-merge.sh, which first checks that a person's
+# approval is still required (#89). Typing the mutation directly would skip those checks. The
+# whole command is checked, not each line, because a GraphQL query usually spans several. The
+# script's own call never reaches this hook: the hook sees only the command line. Disguising
+# the mutation (variables, base64, eval) is not caught, deliberately, like the merge rules
+# below: the hook stops honest mistakes, not a determined bypass.
+if grep -Eq '(^|[[:space:]])gh[[:space:]]+api([[:space:]]|$)' <<<"$cmd" && grep -q 'enablePullRequestAutoMerge' <<<"$cmd"; then
+  cat >&2 <<'EOF'
+Blocked: turn on auto-merge with scripts/auto-merge.sh <PR>, which checks first that a person's
+approval is still required. Enabling it directly could merge a PR nobody approves.
+EOF
+  exit 2
+fi
+
 # The agent opens and updates PRs but never merges or approves them: a human does.
 # In solo mode Claude uses the human's gh login, so GitHub can't enforce this; this can.
 merge_or_approve() {
   cat >&2 <<'EOF'
 Blocked: merging and approving PRs is a human decision, not the agent's.
 Route: tell the human the PR is ready (checks green, review summary read) and let them merge it.
+For auto-merge (--auto), run scripts/auto-merge.sh <PR>: it enables it only where an approval is required.
 EOF
   exit 2
 }

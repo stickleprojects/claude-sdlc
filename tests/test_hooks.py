@@ -74,6 +74,7 @@ def test_format_hook_never_fails():
 
 
 MERGE = "gh pr " + "merge"  # split so this file's text never trips the gate
+AUTO = "enablePullRequest" + "AutoMerge"
 
 
 @pytest.mark.parametrize(
@@ -93,13 +94,18 @@ MERGE = "gh pr " + "merge"  # split so this file's text never trips the gate
         ("gh pr checks 21", False),
         ("gh api repos/o/r/pulls/21/comments", False),
         ("git merge --no-edit main", False),
+        (f"{MERGE} 21 --auto --merge", True),
+        (f"gh api graphql -f query='mutation {{ {AUTO}(input: {{pullRequestId: 1}}) }}'", True),
+        (f"gh api graphql -f query='\n  mutation {{\n    {AUTO}(input: {{}})\n  }}'", True),
+        ("scripts/auto-merge.sh 21", False),
+        (f"grep -n {AUTO} scripts/auto-merge.sh", False),
     ],
 )
 def test_agent_cannot_merge_or_approve(command, blocked):
     result = hook("production-gate.sh", {"tool_input": {"command": command}})
     assert result.returncode == (2 if blocked else 0), result.stderr
     if blocked:
-        assert "human decision" in result.stderr
+        assert "human decision" in result.stderr or "scripts/auto-merge.sh" in result.stderr
 
 
 def test_protect_paths_locks_a_bug_fixes_tests_after_its_failing_test(tmp_path):

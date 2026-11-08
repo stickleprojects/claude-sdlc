@@ -67,11 +67,11 @@ Commit what the sync staged, plus the files you resolved, by explicit path (`git
   - the breaking changes and what was changed here for each
   - files where local edits were merged, and each conflict with how it was resolved
   - make targets added
-  - the secrets and variables report: anything required that's missing (and that the PR is a draft until it's set), a half-set-up App, the optional ones not set, or that it wasn't checked
+  - the secrets and variables report: anything required that's missing (and that the PR is a draft until it's set), a half-set-up App, the optional ones not set, an auto-merge warning (main no longer qualifies; the fix is `scripts/bootstrap-github.sh --mode team`), or that it wasn't checked
   - the optional features in these releases, adopted or not, so the team can decide
   - `make check` passing
 
-Push, open the PR, and stop: a person reviews and merges it.
+Push, open the PR, run `scripts/auto-merge.sh <N>` on it (the `agent-identity` skill), and stop: a person reviews and merges it.
 
 ## 5. Afterwards
 
