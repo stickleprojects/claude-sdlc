@@ -3,6 +3,8 @@
 # person's approval still stands between the PR and main (#89).
 #
 # Usage: scripts/auto-merge.sh <pr-number>
+#        scripts/auto-merge.sh --setting <NAME>   print a variable as this script reads it:
+#          empty when it isn't set anywhere; exit 1 when it can't be read (bootstrap uses this)
 #
 # Run it straight after opening the PR: GitHub refuses once a PR is approved and green
 # ("clean status"). It enables auto-merge only when all of these hold, and otherwise says why
@@ -25,10 +27,20 @@
 #      silent "not opted in" (spellbound3d's App, #89).
 set -uo pipefail
 
-pr="${1:-}"
-[[ "$pr" =~ ^[0-9]+$ ]] || { sed -n '2,25p' "$0" >&2; exit 2; }
+get_setting=""
+if [[ "${1:-}" == --setting ]]; then
+  get_setting="${2:-}"
+  [[ "$get_setting" =~ ^[A-Z_][A-Z0-9_]*$ ]] || { echo "usage: $0 --setting <NAME>" >&2; exit 2; }
+  pr=""
+else
+  pr="${1:-}"
+  [[ "$pr" =~ ^[0-9]+$ ]] || { sed -n '2,27p' "$0" >&2; exit 2; }
+fi
 repo="${GITHUB_REPOSITORY:-$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)}"
-[[ -n "$repo" ]] || { echo "auto-merge: can't tell which repo this is; not enabled for #$pr" >&2; exit 0; }
+if [[ -z "$repo" ]]; then
+  [[ -z "$get_setting" ]] || { echo "auto-merge: can't tell which repo this is" >&2; exit 1; }
+  echo "auto-merge: can't tell which repo this is; not enabled for #$pr" >&2; exit 0
+fi
 
 skip() { echo "auto-merge not enabled for #$pr: $*" >&2; exit 0; }
 err="$(mktemp)"
@@ -36,16 +48,24 @@ trap 'rm -f "$err"' EXIT
 
 # <name>: the environment's value when set (even empty), else the repo's variable, else the
 # organization's. Prints nothing when it isn't set anywhere; fails when it can't be read.
+# A failed `gh api` still prints the error's body on stdout, so each call's output is kept only
+# when the call succeeds (spellbound3d: the 404 and 422 bodies came back as the value).
 setting() {
+  local out
   if [[ -n "${!1+set}" ]]; then printf '%s' "${!1}"; return 0; fi
-  gh api "repos/$repo/actions/variables/$1" --jq .value 2>"$err" && return 0
+  if out="$(gh api "repos/$repo/actions/variables/$1" --jq .value 2>"$err")"; then
+    printf '%s' "$out"; return 0
+  fi
   grep -q 'HTTP 404' "$err" || return 1
   # Not a repo variable; an organization one shared with the repo still counts. A personal
   # account's repo has none (404 or 422 here).
-  gh api "repos/$repo/actions/organization-variables" \
-    --jq ".variables[] | select(.name == \"$1\") | .value" 2>"$err" && return 0
+  if out="$(gh api "repos/$repo/actions/organization-variables" \
+    --jq ".variables[] | select(.name == \"$1\") | .value" 2>"$err")"; then
+    printf '%s' "$out"; return 0
+  fi
   grep -Eq 'HTTP (404|422)' "$err"
 }
+if [[ -n "$get_setting" ]]; then setting "$get_setting"; exit; fi
 unreadable="can't read the repo variable SDLC_AUTO_MERGE (the token needs Variables: read)"
 
 method="$(setting SDLC_AUTO_MERGE)" || skip "$unreadable"
