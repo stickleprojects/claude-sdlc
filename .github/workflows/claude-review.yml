@@ -24,6 +24,12 @@ jobs:
       (github.event.action != 'labeled' || github.event.label.name == 'review') &&
       (github.event.action != 'synchronize' || vars.SDLC_AUTO_MERGE != '')
     runs-on: ubuntu-latest
+    # One review per PR at a time: a newer push or `review` label replaces a review still
+    # running on an older commit. On the job, not the workflow, so a skipped run (another
+    # label, or a push without auto-merge) never cancels a review in progress.
+    concurrency:
+      group: claude-review-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
     env:
       GH_TOKEN: ${{ github.token }}
       PR: ${{ github.event.pull_request.number }}

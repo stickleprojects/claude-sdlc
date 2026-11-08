@@ -109,6 +109,14 @@ def test_review_runs_on_every_push_only_with_auto_merge():
     assert "(github.event.action != 'synchronize' || vars.SDLC_AUTO_MERGE != '')" in workflow
 
 
+def test_review_runs_once_per_pr_at_a_time():
+    workflow = (REPO / ".github/workflows/claude-review.yml").read_text()
+    job = workflow.split("\njobs:", 1)[1]
+    assert "group: claude-review-${{ github.event.pull_request.number }}" in job
+    assert "cancel-in-progress: true" in job
+    assert "\nconcurrency:" not in workflow, "workflow-level: any label would cancel a review"
+
+
 def test_review_clears_its_label_through_the_rest_api():
     # `gh pr edit` fails in orgs hit by the Projects (classic) GraphQL deprecation.
     workflow = (REPO / ".github/workflows/claude-review.yml").read_text()
@@ -452,7 +460,11 @@ args=("$@") jqf=""
 for ((i = 0; i < ${#args[@]}; i++)); do [[ "${args[i]}" == --jq ]] && jqf="${args[i+1]}"; done
 out() { if [[ -n "$jqf" ]]; then jq -r "$jqf"; else cat; fi; }
 case "$1 $2" in
-  "variable get") [[ -f "$D/var-$3" ]] && { cat "$D/var-$3"; exit 0; }; exit 1 ;;
+  "api repos/o/r/actions/variables/"*)
+    [[ -f "$D/vars-forbidden" ]] && { echo "Not accessible (HTTP 403)" >&2; exit 1; }
+    f="$D/var-${2##*/}"; [[ -f "$f" ]] && { out < "$f"; exit 0; }
+    echo "Not Found (HTTP 404)" >&2; exit 1 ;;
+  "api repos/o/r/actions/organization-variables") out < "$D/org-vars.json" ;;
   "api graphql")
     if [[ "$*" == *mutation* ]]; then
       [[ -f "$D/mutation-fails" ]] && { echo "Pull request is in clean status" >&2; exit 1; }
@@ -500,6 +512,7 @@ def auto_merge(tmp_path):
     for name, data in files.items():
         (state / name).write_text(json.dumps(data))
     (state / "pr.json").write_text(_pr("REVIEW_REQUIRED"))
+    (state / "org-vars.json").write_text(json.dumps({"variables": []}))
     env = {"PATH": f"{fake}:{os.environ['PATH']}", "D": str(state), "GITHUB_REPOSITORY": "o/r"}
 
     def go(**extra):
@@ -515,7 +528,7 @@ def test_auto_merge_is_off_unless_the_repo_opts_in(auto_merge):
     result, mutated, calls = go()
     assert result.returncode == 0 and not mutated
     assert result.stdout == result.stderr == ""
-    assert "variable get SDLC_AUTO_MERGE" in calls  # a session reads the repo variable
+    assert "actions/variables/SDLC_AUTO_MERGE" in calls  # a session reads the repo variable
     result, mutated, _ = go(SDLC_AUTO_MERGE="")  # CI passes an unset variable as empty
     assert result.returncode == 0 and not mutated
 
@@ -530,10 +543,28 @@ def test_auto_merge_enables_with_the_chosen_method(auto_merge):
 
 def test_auto_merge_reads_the_repo_variable_in_a_session(auto_merge):
     state, go = auto_merge
-    (state / "var-SDLC_AUTO_MERGE").write_text("squash")
+    (state / "var-SDLC_AUTO_MERGE").write_text(json.dumps({"value": "squash"}))
     (state / "repo.json").write_text(json.dumps({"allow_auto_merge": True}))
     _, mutated, calls = go()
     assert mutated and "method=SQUASH" in calls
+
+
+def test_auto_merge_reads_an_organization_variable(auto_merge):
+    state, go = auto_merge
+    org = {"variables": [{"name": "SDLC_AUTO_MERGE", "value": "merge"}]}
+    (state / "org-vars.json").write_text(json.dumps(org))
+    _, mutated, _ = go()
+    assert mutated
+
+
+def test_auto_merge_warns_when_it_cant_read_the_variable(auto_merge):
+    # spellbound3d: an App without Variables: read gets 403, which isn't "not opted in".
+    state, go = auto_merge
+    (state / "vars-forbidden").write_text("")
+    result, mutated, _ = go()
+    assert result.returncode == 0 and not mutated
+    assert "can't read the repo variable SDLC_AUTO_MERGE" in result.stderr
+    assert "Variables: read" in result.stderr
 
 
 def _write(name, data):
@@ -611,7 +642,7 @@ def test_spec_pr_open_offers_each_new_pr_to_auto_merge(spec_repo):
     result = spec_pr(repo, env, "open", "changes/0001-a")
     assert result.returncode == 0, result.stderr
     calls = (state / "calls").read_text()
-    assert "variable get SDLC_AUTO_MERGE -R o/r" in calls
+    assert "repos/o/r/actions/variables/SDLC_AUTO_MERGE" in calls
     workflow = (REPO / ".github/workflows/spec-from-intent.yml").read_text()
     assert "SDLC_AUTO_MERGE: ${{ vars.SDLC_AUTO_MERGE }}" in workflow
 

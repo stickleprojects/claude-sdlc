@@ -35,7 +35,9 @@ Each repo that uses the pipeline gets its own App, named after the repo: `jobhun
 
    For scripts: `--name <prefix>` and `--yes`. Also `--org <org>` and `--no-browser`.
 
-   **Permissions:** contents, pull requests, issues and workflows read and write; actions, checks, commit statuses and metadata read.
+   **Permissions:** contents, pull requests, issues and workflows read and write; actions, checks, commit statuses, metadata and variables read.
+
+   **An App created before variables read was added:** on the App's page, under *Permissions & events → Repository permissions*, set **Variables** to *Read-only* and save. Then accept the new permission on each installation (*Settings → GitHub Apps → Configure*, or the email GitHub sends). Until then `scripts/auto-merge.sh` warns that it can't read `SDLC_AUTO_MERGE`, and the PRs Claude opens from a session aren't auto-merged.
 2. **Configure the repo:** `scripts/bootstrap-github.sh --mode team --skip-token`. Step 8 checks the App is installed, and gives the spec workflow the same App (the `SDLC_AGENT_APP_ID`/`_SLUG` variables and the `SDLC_AGENT_APP_KEY` secret). Team mode makes GitHub require a code owner's (your) approval on every PR.
 3. **Check:** `scripts/agent-identity.sh check` should print `ok: a token for this repo was issued`.
 

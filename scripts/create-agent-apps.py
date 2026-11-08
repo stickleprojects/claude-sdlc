@@ -54,7 +54,8 @@ REPO_KEY = ""
 KEYS_DIR: Path | None = None
 
 # What Claude needs: commit and push (workflows too, since builds may change CI), open PRs,
-# comment and label, read CI.
+# comment and label, read CI, and read repo variables (scripts/auto-merge.sh reads
+# SDLC_AUTO_MERGE from a session).
 PERMISSIONS = {
     "contents": "write",
     "pull_requests": "write",
@@ -64,6 +65,7 @@ PERMISSIONS = {
     "checks": "read",
     "statuses": "read",
     "workflows": "write",
+    "actions_variables": "read",
 }
 
 

@@ -20,23 +20,36 @@
 #
 # Env: GITHUB_REPOSITORY (owner/name; default: the gh repo of this checkout).
 #      SDLC_AUTO_MERGE, SDLC_AUTO_MERGE_CONFIRMED: the repo variables. CI passes them in;
-#      in a session, when they aren't in the environment, they're read with `gh variable get`.
+#      in a session, when they aren't in the environment, they're read from the repo (or its
+#      organization). That needs Variables: read; a token without it gets a warning, never a
+#      silent "not opted in" (spellbound3d's App, #89).
 set -uo pipefail
 
 pr="${1:-}"
-[[ "$pr" =~ ^[0-9]+$ ]] || { sed -n '2,23p' "$0" >&2; exit 2; }
+[[ "$pr" =~ ^[0-9]+$ ]] || { sed -n '2,25p' "$0" >&2; exit 2; }
 repo="${GITHUB_REPOSITORY:-$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)}"
 [[ -n "$repo" ]] || { echo "auto-merge: can't tell which repo this is; not enabled for #$pr" >&2; exit 0; }
 
 skip() { echo "auto-merge not enabled for #$pr: $*" >&2; exit 0; }
+err="$(mktemp)"
+trap 'rm -f "$err"' EXIT
 
-setting() {  # <name>: the environment's value when set (even empty), else the repo variable
-  if [[ -n "${!1+set}" ]]; then printf '%s' "${!1}"
-  else gh variable get "$1" -R "$repo" 2>/dev/null || true
-  fi
+# <name>: the environment's value when set (even empty), else the repo's variable, else the
+# organization's. Prints nothing when it isn't set anywhere; fails when it can't be read.
+setting() {
+  if [[ -n "${!1+set}" ]]; then printf '%s' "${!1}"; return 0; fi
+  gh api "repos/$repo/actions/variables/$1" --jq .value 2>"$err" && return 0
+  grep -q 'HTTP 404' "$err" || return 1
+  # Not a repo variable; an organization one shared with the repo still counts. A personal
+  # account's repo has none (404 or 422 here).
+  gh api "repos/$repo/actions/organization-variables" \
+    --jq ".variables[] | select(.name == \"$1\") | .value" 2>"$err" && return 0
+  grep -Eq 'HTTP (404|422)' "$err"
 }
+unreadable="can't read the repo variable SDLC_AUTO_MERGE (the token needs Variables: read)"
 
-method="$(setting SDLC_AUTO_MERGE | tr '[:upper:]' '[:lower:]')"
+method="$(setting SDLC_AUTO_MERGE)" || skip "$unreadable"
+method="$(tr '[:upper:]' '[:lower:]' <<<"$method")"
 case "$method" in
   "" | off) exit 0 ;;  # not opted in: today's behaviour, say nothing
   merge) allow_field=allow_merge_commit ;;
@@ -89,14 +102,14 @@ if [[ "$dismiss" != true ]] && jq -e 'any(.[]; .type == "pull_request"
 fi
 if [[ "$dismiss" == unknown ]]; then
   # This token can't read classic protection. Fall back to bootstrap's confirmation.
-  [[ "$(setting SDLC_AUTO_MERGE_CONFIRMED)" == true ]] && dismiss=true
+  confirmed="$(setting SDLC_AUTO_MERGE_CONFIRMED)" \
+    || skip "${unreadable/SDLC_AUTO_MERGE/SDLC_AUTO_MERGE_CONFIRMED}"
+  [[ "$confirmed" == true ]] && dismiss=true
   [[ "$dismiss" == true ]] || skip "can't read $base's protection to confirm stale approvals are dismissed;" \
     "give the token Administration: read, or run scripts/bootstrap-github.sh --mode team as an admin"
 fi
 [[ "$dismiss" == true ]] || skip "$base doesn't dismiss stale approvals on push, so an early approval would cover later commits"
 
-err="$(mktemp)"
-trap 'rm -f "$err"' EXIT
 upper="$(tr '[:lower:]' '[:upper:]' <<<"$method")"
 # The mutation runs only from this script: the production-gate hook blocks it typed directly.
 if gh api graphql -f id="$node_id" -f method="$upper" -f query='
