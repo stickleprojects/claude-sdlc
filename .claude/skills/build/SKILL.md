@@ -159,7 +159,7 @@ For a small build after its steps, and for a large build as part of its last mil
 
 1. **Run `make check` and `make coverage`.** Both must exit 0.
 2. **Run the `verifier` subagent** on `changes/<slug>`. Fix any FAIL that's within the plan. If a fix would change the plan or the spec, stop and ask.
-3. **Open the PR** with `gh api` (see the rules above).
+3. **Open the PR** with `gh api` (see the rules above), then run `scripts/auto-merge.sh <N>` on it (the `agent-identity` skill).
    - Title: `feat(<slug>): <summary>` (a change with `bug.md`: `fix(<slug>): <summary>`).
    - Body: what was built; the verifier's per-criterion results; the coverage per suite against its threshold; the deviations; the plan's manual end-to-end steps, for the engineer. End it with the attribution line the session asks for.
    - Don't add the `review` label. The review already runs when the PR opens.

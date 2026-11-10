@@ -81,7 +81,7 @@ You don't need to comment on GitHub yourself.
    Claude goes through the items one at a time: it quotes the spec text, explains the problem, suggests a fix and asks what you want. Then it edits the artifact, records your decisions, pushes, replies on every thread (signed `(posted from Claude Code)`, since the reply appears under your account) and resolves it. If it can't resolve a thread, it tells you which ones to resolve on GitHub.
    If you prefer, you can edit the file directly in the GitHub UI or your editor instead. Avoid tagging `@claude` on a thread you've also discussed with Claude Code: that starts a second agent on the same finding.
 3. **Wait for the fresh review**, which `/pr` asks for after it pushes. Check that its summary shows no open findings for you. If you edited the file yourself, add the `review` label to the PR to get one.
-4. **Accept** by merging the PR, once its checks are green. In solo mode the merge *is* the approval. In team mode, a code owner approves first. Claude never merges for you: a hook blocks it.
+4. **Accept** by merging the PR, once its checks are green. In solo mode the merge *is* the approval. In team mode, a code owner approves first. Claude never merges for you: a hook blocks it. A team-mode repo can opt into auto-merge (`SDLC_AUTO_MERGE`, see the readme), and then the approval is the last step: the PR merges by itself once the checks pass.
 
 What you check at each gate:
 

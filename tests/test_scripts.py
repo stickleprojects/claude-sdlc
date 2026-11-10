@@ -101,10 +101,20 @@ def test_bootstrap_creates_the_review_label_the_workflow_listens_for():
     assert "github.event.label.name == 'review'" in workflow
 
 
-def test_review_does_not_run_on_every_push():
+def test_review_runs_on_every_push_only_with_auto_merge():
+    # Each review uses subscription limits (#11). With auto-merge on, `review` is a required
+    # check, and required checks belong to the head commit, so then every push needs one (#89).
     workflow = (REPO / ".github/workflows/claude-review.yml").read_text()
-    assert "types: [opened, ready_for_review, labeled]" in workflow
-    assert "synchronize" not in workflow
+    assert "types: [opened, ready_for_review, labeled, synchronize]" in workflow
+    assert "(github.event.action != 'synchronize' || vars.SDLC_AUTO_MERGE != '')" in workflow
+
+
+def test_review_runs_once_per_pr_at_a_time():
+    workflow = (REPO / ".github/workflows/claude-review.yml").read_text()
+    job = workflow.split("\njobs:", 1)[1]
+    assert "group: claude-review-${{ github.event.pull_request.number }}" in job
+    assert "cancel-in-progress: true" in job
+    assert "\nconcurrency:" not in workflow, "workflow-level: any label would cancel a review"
 
 
 def test_review_clears_its_label_through_the_rest_api():
@@ -439,6 +449,297 @@ def test_spec_from_intent_queues_runs_and_uses_spec_pr():
     assert "cancel-in-progress: false" in workflow
     assert "scripts/spec-pr.sh pending" in workflow
     assert "GITHUB_RUN_ID" not in workflow
+
+
+# --- auto-merge: opt-in, only where a person's approval is still required (#89) -------------
+
+FAKE_GH_AUTO_MERGE = r"""#!/usr/bin/env bash
+# Answers from $D/<name> files; records each call. Applies --jq like gh does.
+echo "$*" >> "$D/calls"
+args=("$@") jqf=""
+for ((i = 0; i < ${#args[@]}; i++)); do [[ "${args[i]}" == --jq ]] && jqf="${args[i+1]}"; done
+out() { if [[ -n "$jqf" ]]; then jq -r "$jqf"; else cat; fi; }
+# Like gh api: a failed call prints the response body on stdout and the status on stderr.
+fail() { printf '{"message":"%s","status":"%s"}' "$2" "$1"; echo "gh: $2 (HTTP $1)" >&2; exit 1; }
+case "$1 $2" in
+  "api repos/o/r/actions/variables/"*)
+    [[ -f "$D/vars-forbidden" ]] && fail 403 "Resource not accessible by integration"
+    f="$D/var-${2##*/}"; [[ -f "$f" ]] && { out < "$f"; exit 0; }
+    fail 404 "Not Found" ;;
+  "api repos/o/r/actions/organization-variables")
+    [[ -f "$D/personal-account" ]] && fail 422 "Validation Failed"
+    out < "$D/org-vars.json" ;;
+  "api graphql")
+    if [[ "$*" == *mutation* ]]; then
+      [[ -f "$D/mutation-fails" ]] && { echo "Pull request is in clean status" >&2; exit 1; }
+      exit 0
+    fi
+    out < "$D/pr.json" ;;
+  "api repos/o/r") out < "$D/repo.json" ;;
+  "api repos/o/r/branches/main") out < "$D/branch.json" ;;
+  "api repos/o/r/branches/main/protection")
+    [[ -f "$D/protection.json" ]] || { echo "Not accessible (HTTP 403)" >&2; exit 1; }
+    out < "$D/protection.json" ;;
+  "api repos/o/r/rules/branches/main") cat "$D/rules.json" 2>/dev/null || echo '[]' ;;
+  *) exit 1 ;;
+esac
+"""
+MUTATION = "enablePullRequest" + "AutoMerge"
+
+
+def _pr(decision):
+    pr = {"id": "PR_kw1", "reviewDecision": decision, "baseRefName": "main"}
+    return json.dumps({"data": {"repository": {"pullRequest": pr}}})
+
+
+@pytest.fixture
+def auto_merge(tmp_path):
+    """A repo that qualifies: team-mode protection with the review check required."""
+    fake = tmp_path / "fakebin"
+    fake.mkdir()
+    (fake / "gh").write_text(FAKE_GH_AUTO_MERGE)
+    (fake / "gh").chmod(0o755)
+    state = tmp_path / "gh"
+    state.mkdir()
+    files = {
+        "repo.json": {"allow_auto_merge": True, "allow_merge_commit": True},
+        "branch.json": {
+            "protection": {"required_status_checks": {"contexts": ["check", "review"]}}
+        },
+        "protection.json": {
+            "required_pull_request_reviews": {
+                "required_approving_review_count": 1,
+                "dismiss_stale_reviews": True,
+            }
+        },
+    }
+    for name, data in files.items():
+        (state / name).write_text(json.dumps(data))
+    (state / "pr.json").write_text(_pr("REVIEW_REQUIRED"))
+    (state / "org-vars.json").write_text(json.dumps({"variables": []}))
+    env = {"PATH": f"{fake}:{os.environ['PATH']}", "D": str(state), "GITHUB_REPOSITORY": "o/r"}
+
+    def go(**extra):
+        result = run(["bash", str(REPO / "scripts/auto-merge.sh"), "7"], env={**env, **extra})
+        calls = (state / "calls").read_text() if (state / "calls").exists() else ""
+        return result, MUTATION in calls, calls
+
+    return state, go
+
+
+def test_auto_merge_is_off_unless_the_repo_opts_in(auto_merge):
+    _, go = auto_merge
+    result, mutated, calls = go()
+    assert result.returncode == 0 and not mutated
+    assert result.stdout == result.stderr == ""
+    assert "actions/variables/SDLC_AUTO_MERGE" in calls  # a session reads the repo variable
+    result, mutated, _ = go(SDLC_AUTO_MERGE="")  # CI passes an unset variable as empty
+    assert result.returncode == 0 and not mutated
+
+
+def test_auto_merge_enables_with_the_chosen_method(auto_merge):
+    _, go = auto_merge
+    result, mutated, calls = go(SDLC_AUTO_MERGE="merge")
+    assert result.returncode == 0, result.stderr
+    assert mutated and "method=MERGE" in calls
+    assert "auto-merge enabled for #7 (merge)" in result.stdout
+
+
+def test_auto_merge_reads_the_repo_variable_in_a_session(auto_merge):
+    state, go = auto_merge
+    (state / "var-SDLC_AUTO_MERGE").write_text(json.dumps({"value": "squash"}))
+    (state / "repo.json").write_text(json.dumps({"allow_auto_merge": True}))
+    _, mutated, calls = go()
+    assert mutated and "method=SQUASH" in calls
+
+
+def test_auto_merge_reads_an_organization_variable(auto_merge):
+    state, go = auto_merge
+    org = {"variables": [{"name": "SDLC_AUTO_MERGE", "value": "merge"}]}
+    (state / "org-vars.json").write_text(json.dumps(org))
+    _, mutated, _ = go()
+    assert mutated
+
+
+def test_auto_merge_warns_when_it_cant_read_the_variable(auto_merge):
+    # spellbound3d: an App without Variables: read gets 403, which isn't "not opted in".
+    state, go = auto_merge
+    (state / "vars-forbidden").write_text("")
+    result, mutated, _ = go()
+    assert result.returncode == 0 and not mutated
+    assert "can't read the repo variable SDLC_AUTO_MERGE" in result.stderr
+    assert "Variables: read" in result.stderr
+
+
+def test_auto_merge_is_silent_on_a_personal_accounts_repo(auto_merge):
+    # spellbound3d: the repo lookup's 404 body and the org lookup's 422 body came back as the
+    # variable's value ("SDLC_AUTO_MERGE is '{"message":...}'"), instead of "not opted in".
+    state, go = auto_merge
+    (state / "personal-account").write_text("")
+    result, mutated, calls = go()
+    assert result.returncode == 0 and not mutated
+    assert result.stdout == result.stderr == ""
+    assert "organization-variables" in calls
+
+
+def test_auto_merge_prints_a_setting_for_bootstrap(auto_merge):
+    state, _ = auto_merge
+    env = {"PATH": f"{state.parent / 'fakebin'}:{os.environ['PATH']}", "D": str(state)}
+    env["GITHUB_REPOSITORY"] = "o/r"
+
+    def setting(name="SDLC_AUTO_MERGE"):
+        return run(["bash", str(REPO / "scripts/auto-merge.sh"), "--setting", name], env=env)
+
+    (state / "personal-account").write_text("")
+    unset = setting()
+    assert (unset.returncode, unset.stdout) == (0, "")
+    (state / "var-SDLC_AUTO_MERGE_CONFIRMED").write_text(json.dumps({"value": "true"}))
+    assert setting("SDLC_AUTO_MERGE_CONFIRMED").stdout == "true"
+    (state / "vars-forbidden").write_text("")
+    forbidden = setting()
+    assert forbidden.returncode == 1 and forbidden.stdout == ""
+    assert run(["bash", str(REPO / "scripts/auto-merge.sh"), "--setting", "a;b"]).returncode == 2
+
+
+def test_bootstrap_reads_the_variables_like_auto_merge_does():
+    # spellbound3d: `gh variable get` doesn't exist before gh 2.48 (Ubuntu ships 2.46), and its
+    # error was thrown away, so bootstrap skipped auto-merge without a word.
+    script = (REPO / "scripts/bootstrap-github.sh").read_text()
+    assert "gh variable get" not in script.replace("Not `gh variable get`", "")
+    assert "bash scripts/auto-merge.sh --setting" in script
+    assert "can't read the SDLC_AUTO_MERGE variable" in script
+    assert "scripts/auto-merge.sh" in (REPO / "scripts/sync-sdlc.sh").read_text()
+
+
+def _write(name, data):
+    return lambda state: (state / name).write_text(json.dumps(data))
+
+
+@pytest.mark.parametrize(
+    ("setup", "reason"),
+    [
+        (lambda s: (s / "pr.json").write_text(_pr(None)), "solo mode"),
+        (_write("branch.json", {"protection": {}}), "isn't a required check"),
+        (
+            _write(
+                "protection.json",
+                {"required_pull_request_reviews": {"dismiss_stale_reviews": False}},
+            ),
+            "doesn't dismiss stale approvals",
+        ),
+        (lambda s: (s / "protection.json").unlink(), "can't read main's protection"),
+        (_write("repo.json", {"allow_auto_merge": False}), "doesn't allow auto-merge"),
+        (_write("repo.json", {"allow_merge_commit": False}), "doesn't allow 'merge' merges"),
+    ],
+    ids=["no-approval", "no-review-check", "stale-kept", "protection-403", "repo-off", "method"],
+)
+def test_auto_merge_skips_and_warns_unless_an_approval_gates_the_merge(auto_merge, setup, reason):
+    state, go = auto_merge
+    setup(state)
+    result, mutated, _ = go(SDLC_AUTO_MERGE="merge")
+    assert result.returncode == 0, "a skip never fails the caller"
+    assert not mutated
+    assert "auto-merge not enabled for #7" in result.stderr and reason in result.stderr
+
+
+def test_auto_merge_rejects_an_unknown_method(auto_merge):
+    _, go = auto_merge
+    result, mutated, _ = go(SDLC_AUTO_MERGE="yes")
+    assert result.returncode == 0 and not mutated
+    assert "use merge, squash or rebase" in result.stderr
+
+
+def test_auto_merge_with_unreadable_protection_relies_on_bootstraps_confirmation(auto_merge):
+    # An App token without Administration: read gets 403 on the protection (spellbound3d).
+    state, go = auto_merge
+    (state / "protection.json").unlink()
+    _, mutated, _ = go(SDLC_AUTO_MERGE="merge", SDLC_AUTO_MERGE_CONFIRMED="true")
+    assert mutated
+
+
+def test_auto_merge_reads_rulesets_too(auto_merge):
+    state, go = auto_merge
+    (state / "protection.json").unlink()
+    (state / "branch.json").write_text("{}")
+    checks = {"required_status_checks": [{"context": "review"}]}
+    rules = [
+        {"type": "required_status_checks", "parameters": checks},
+        {"type": "pull_request", "parameters": {"dismiss_stale_reviews_on_push": True}},
+    ]
+    (state / "rules.json").write_text(json.dumps(rules))
+    _, mutated, _ = go(SDLC_AUTO_MERGE="merge")
+    assert mutated
+
+
+def test_auto_merge_only_warns_when_github_refuses(auto_merge):
+    state, go = auto_merge
+    (state / "mutation-fails").write_text("")
+    result, _, calls = go(SDLC_AUTO_MERGE="merge")
+    assert result.returncode == 0
+    assert "GitHub refused: Pull request is in clean status" in result.stderr
+    assert "/merge" not in calls, "never falls back to merging directly"
+
+
+def test_spec_pr_open_offers_each_new_pr_to_auto_merge(spec_repo):
+    repo, _, state, env = spec_repo
+    (repo / "changes/0001-a/spec.md").write_text("# a spec\n")
+    result = spec_pr(repo, env, "open", "changes/0001-a")
+    assert result.returncode == 0, result.stderr
+    calls = (state / "calls").read_text()
+    assert "repos/o/r/actions/variables/SDLC_AUTO_MERGE" in calls
+    workflow = (REPO / ".github/workflows/spec-from-intent.yml").read_text()
+    assert "SDLC_AUTO_MERGE: ${{ vars.SDLC_AUTO_MERGE }}" in workflow
+
+
+def test_bootstrap_hard_gates_the_review_only_with_auto_merge_in_team_mode():
+    def contexts(*args):
+        result = run(["scripts/bootstrap-github.sh", *args, "--print-protection"])
+        assert result.returncode == 0, result.stderr
+        return sorted(json.loads(result.stdout)["required_status_checks"]["contexts"])
+
+    assert contexts("--mode", "team", "--auto-merge", "merge") == ["check", "pr-title", "review"]
+    assert contexts("--mode", "team", "--auto-merge", "off") == ["check", "pr-title"]
+    assert contexts("--mode", "solo", "--auto-merge", "merge") == ["check", "pr-title"]
+
+
+def test_bootstrap_requires_resolved_conversations_and_compares_every_setting():
+    # #92 and #91: a setting bootstrap applies but doesn't compare drifts unnoticed.
+    for mode in ("solo", "team"):
+        result = run(["scripts/bootstrap-github.sh", "--mode", mode, "--print-protection"])
+        protection = json.loads(result.stdout)
+        assert protection["required_conversation_resolution"] is True
+    script = (REPO / "scripts/bootstrap-github.sh").read_text()
+    shape = script.split("shape='", 1)[1].split("'", 1)[0]
+    for field in (
+        "dismiss_stale_reviews",
+        "required_conversation_resolution",
+        "require_code_owner",
+    ):
+        assert field in shape, field
+
+
+def test_bootstrap_keeps_protection_added_by_hand():
+    have = {
+        "required_status_checks": {"contexts": ["check", "review", "e2e"]},
+        "required_linear_history": {"enabled": True},
+        "required_pull_request_reviews": {"require_last_push_approval": True},
+    }
+    result = run(
+        ["scripts/bootstrap-github.sh", "--print-protection"],
+        env={"SDLC_HAVE_PROTECTION": json.dumps(have)},
+    )
+    protection = json.loads(result.stdout)
+    contexts = sorted(protection["required_status_checks"]["contexts"])
+    assert contexts == ["check", "e2e", "pr-title", "review"]
+    assert protection["required_linear_history"] is True
+    assert protection["required_pull_request_reviews"]["require_last_push_approval"] is True
+
+
+def test_bootstrap_and_sync_never_write_the_auto_merge_setting():
+    # It's the project's choice; re-running bootstrap or syncing must not reset it.
+    for path in ("scripts/bootstrap-github.sh", "scripts/sync-sdlc.sh"):
+        text = (REPO / path).read_text()
+        assert not re.search(r"variable (set|delete) SDLC_AUTO_MERGE\b(?!_)", text), path
 
 
 # --- agent identity -------------------------------------------------------------------------

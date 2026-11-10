@@ -64,7 +64,7 @@ The script checks and fixes each item below. Every one of these broke the first 
 | 3 | `.github/CODEOWNERS` names the repo owner | Branch protection requires a code owner's review | No one counts as owner, so the review rule has no effect |
 | 4 | `CLAUDE_CODE_OAUTH_TOKEN` secret | Every Claude workflow logs in with it | The review fails instantly with no model usage. The script tests the token before saving it, and copes with line-wrapped pastes. |
 | 5 | Actions may create PRs | *Spec from intent* opens the spec PR | *"GitHub Actions is not permitted to create or approve pull requests"* |
-| 6 | Branch protection on `main` | Requires a PR and green `check` and `pr-title` statuses, with **no admin bypass**. `--mode solo` (default) needs 0 approvals; `--mode team` needs a code owner's approval (see below) | Anyone, including the agent, could push straight to `main` or merge a red PR |
+| 6 | Branch protection on `main` | Requires a PR and green `check` and `pr-title` statuses, with **no admin bypass**, stale approvals dismissed on push, and review threads resolved before merging. `--mode solo` (default) needs 0 approvals; `--mode team` needs a code owner's approval (see below). Required checks and settings you add by hand are kept on re-runs | Anyone, including the agent, could push straight to `main` or merge a red PR |
 
 It **can't** do these two; they need you:
 
@@ -84,6 +84,17 @@ If the script changed any files (items 1 and 3), commit them in a PR.
 | Agent can't merge or approve | The production-gate hook blocks it | The hook, plus GitHub's own rules |
 
 Switching modes later only means re-running `scripts/bootstrap-github.sh --mode team`.
+
+**Auto-merge (optional, team mode only).** By default every PR waits for someone to click *Merge*. To have the pipeline turn on GitHub's auto-merge for the PRs it opens (the spec PR from CI, and the intent, plan, build and sync PRs from sessions), set the repo variable `SDLC_AUTO_MERGE` to `merge`, `squash` or `rebase`, then re-run `scripts/bootstrap-github.sh --mode team`:
+
+```sh
+gh variable set SDLC_AUTO_MERGE --body merge   # use merge if you use /build: build.md records commit shas
+scripts/bootstrap-github.sh --mode team
+```
+
+Bootstrap then also requires the Claude review (`review`) as a status check, allows auto-merge on the repo, and confirms the protection (variable `SDLC_AUTO_MERGE_CONFIRMED`). The review then runs on every push, not only when the PR opens, because a required check belongs to the latest commit. That uses more of the Claude subscription.
+
+A PR still merges only after a person approves it and every check passes. `scripts/auto-merge.sh` checks this on each PR and skips, with a warning, unless an approval is required, stale approvals are dismissed and the review check is required. So **solo mode never auto-merges**: there the merge click is the only human gate. The variable is yours: syncing and bootstrap never change it. Delete it to turn the feature off. Without the agent App, the spec PR's auto-merge is enabled by the workflow token, and GitHub doesn't run workflows for pushes made with that token, so workflows triggered by pushes to `main` won't run for that merge.
 
 ### 4. Check it works
 

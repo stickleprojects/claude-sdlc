@@ -4,6 +4,7 @@ The consumer starts with only its own Makefile (a no-op stack) and the sync scri
 pulls the framework from a snapshot of this working tree, as `make sync-sdlc` would.
 """
 
+import json
 import os
 import re
 import shutil
@@ -400,6 +401,8 @@ case "$1 $2" in
       forbidden) echo "gh: Resource not accessible (HTTP 403)" >&2; exit 1 ;;
     esac
     printf '%s\\n' $org ;;
+  "api repos/o/r/branches/main/protection")
+    [[ -n "${FAKE_GH_PROTECTION:-}" ]] || exit 1; echo "$FAKE_GH_PROTECTION" ;;
   *) exit 1 ;;
 esac
 """
@@ -514,3 +517,65 @@ def test_sync_says_when_it_cant_read_org_secrets(consumer, framework_snapshot, t
     ).stdout
     assert "not checked: can't read o/r's secret names" in out
     assert "MISSING" not in out
+
+
+# --- opt-in auto-merge (#89) ----------------------------------------------------------------
+
+ALL_SET = {"secrets": "CLAUDE_CODE_OAUTH_TOKEN SDLC_AGENT_APP_KEY"}
+APP_VARS = "SDLC_AGENT_APP_ID SDLC_AGENT_APP_SLUG"
+
+
+def _protection(dismiss):
+    return json.dumps(
+        {
+            "required_status_checks": {"contexts": ["check", "pr-title", "review"]},
+            "required_pull_request_reviews": {
+                "required_approving_review_count": 1,
+                "dismiss_stale_reviews": dismiss,
+            },
+        }
+    )
+
+
+def test_sync_installs_auto_merge_and_is_quiet_when_not_opted_in(
+    consumer, framework_snapshot, tmp_path
+):
+    out = sync_with_gh(consumer, framework_snapshot, tmp_path, variables=APP_VARS, **ALL_SET)
+    assert "SDLC_AUTO_MERGE" not in out.stdout
+    staged = git(consumer, "ls-files", "-s", "scripts/auto-merge.sh")
+    assert staged.startswith("100755"), staged
+
+
+def test_sync_warns_when_main_no_longer_qualifies_for_auto_merge(
+    consumer, framework_snapshot, tmp_path
+):
+    out = sync_with_gh(
+        consumer,
+        framework_snapshot,
+        tmp_path,
+        variables=f"{APP_VARS} SDLC_AUTO_MERGE SDLC_AUTO_MERGE_CONFIRMED",
+        FAKE_GH_PROTECTION=_protection(False),
+        **ALL_SET,
+    ).stdout
+    assert "WARNING: SDLC_AUTO_MERGE is set, but main doesn't qualify" in out
+    assert "stale approvals are not dismissed" in out
+    assert "ERROR: SDLC_AUTO_MERGE_CONFIRMED is set but no longer true" in out
+
+
+def test_sync_is_quiet_when_main_qualifies_for_auto_merge(consumer, framework_snapshot, tmp_path):
+    out = sync_with_gh(
+        consumer,
+        framework_snapshot,
+        tmp_path,
+        variables=f"{APP_VARS} SDLC_AUTO_MERGE",
+        FAKE_GH_PROTECTION=_protection(True),
+        **ALL_SET,
+    ).stdout
+    assert "secrets and variables" not in out
+
+
+def test_sync_says_when_it_cant_check_auto_merge(consumer, framework_snapshot, tmp_path):
+    out = sync_with_gh(
+        consumer, framework_snapshot, tmp_path, variables=f"{APP_VARS} SDLC_AUTO_MERGE", **ALL_SET
+    ).stdout
+    assert "not checked: SDLC_AUTO_MERGE is set, but can't read main's branch protection" in out
