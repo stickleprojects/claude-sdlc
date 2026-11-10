@@ -459,12 +459,16 @@ echo "$*" >> "$D/calls"
 args=("$@") jqf=""
 for ((i = 0; i < ${#args[@]}; i++)); do [[ "${args[i]}" == --jq ]] && jqf="${args[i+1]}"; done
 out() { if [[ -n "$jqf" ]]; then jq -r "$jqf"; else cat; fi; }
+# Like gh api: a failed call prints the response body on stdout and the status on stderr.
+fail() { printf '{"message":"%s","status":"%s"}' "$2" "$1"; echo "gh: $2 (HTTP $1)" >&2; exit 1; }
 case "$1 $2" in
   "api repos/o/r/actions/variables/"*)
-    [[ -f "$D/vars-forbidden" ]] && { echo "Not accessible (HTTP 403)" >&2; exit 1; }
+    [[ -f "$D/vars-forbidden" ]] && fail 403 "Resource not accessible by integration"
     f="$D/var-${2##*/}"; [[ -f "$f" ]] && { out < "$f"; exit 0; }
-    echo "Not Found (HTTP 404)" >&2; exit 1 ;;
-  "api repos/o/r/actions/organization-variables") out < "$D/org-vars.json" ;;
+    fail 404 "Not Found" ;;
+  "api repos/o/r/actions/organization-variables")
+    [[ -f "$D/personal-account" ]] && fail 422 "Validation Failed"
+    out < "$D/org-vars.json" ;;
   "api graphql")
     if [[ "$*" == *mutation* ]]; then
       [[ -f "$D/mutation-fails" ]] && { echo "Pull request is in clean status" >&2; exit 1; }
@@ -565,6 +569,46 @@ def test_auto_merge_warns_when_it_cant_read_the_variable(auto_merge):
     assert result.returncode == 0 and not mutated
     assert "can't read the repo variable SDLC_AUTO_MERGE" in result.stderr
     assert "Variables: read" in result.stderr
+
+
+def test_auto_merge_is_silent_on_a_personal_accounts_repo(auto_merge):
+    # spellbound3d: the repo lookup's 404 body and the org lookup's 422 body came back as the
+    # variable's value ("SDLC_AUTO_MERGE is '{"message":...}'"), instead of "not opted in".
+    state, go = auto_merge
+    (state / "personal-account").write_text("")
+    result, mutated, calls = go()
+    assert result.returncode == 0 and not mutated
+    assert result.stdout == result.stderr == ""
+    assert "organization-variables" in calls
+
+
+def test_auto_merge_prints_a_setting_for_bootstrap(auto_merge):
+    state, _ = auto_merge
+    env = {"PATH": f"{state.parent / 'fakebin'}:{os.environ['PATH']}", "D": str(state)}
+    env["GITHUB_REPOSITORY"] = "o/r"
+
+    def setting(name="SDLC_AUTO_MERGE"):
+        return run(["bash", str(REPO / "scripts/auto-merge.sh"), "--setting", name], env=env)
+
+    (state / "personal-account").write_text("")
+    unset = setting()
+    assert (unset.returncode, unset.stdout) == (0, "")
+    (state / "var-SDLC_AUTO_MERGE_CONFIRMED").write_text(json.dumps({"value": "true"}))
+    assert setting("SDLC_AUTO_MERGE_CONFIRMED").stdout == "true"
+    (state / "vars-forbidden").write_text("")
+    forbidden = setting()
+    assert forbidden.returncode == 1 and forbidden.stdout == ""
+    assert run(["bash", str(REPO / "scripts/auto-merge.sh"), "--setting", "a;b"]).returncode == 2
+
+
+def test_bootstrap_reads_the_variables_like_auto_merge_does():
+    # spellbound3d: `gh variable get` doesn't exist before gh 2.48 (Ubuntu ships 2.46), and its
+    # error was thrown away, so bootstrap skipped auto-merge without a word.
+    script = (REPO / "scripts/bootstrap-github.sh").read_text()
+    assert "gh variable get" not in script.replace("Not `gh variable get`", "")
+    assert "bash scripts/auto-merge.sh --setting" in script
+    assert "can't read the SDLC_AUTO_MERGE variable" in script
+    assert "scripts/auto-merge.sh" in (REPO / "scripts/sync-sdlc.sh").read_text()
 
 
 def _write(name, data):
