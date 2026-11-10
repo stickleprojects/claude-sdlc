@@ -79,6 +79,54 @@ drop_text_heredocs() {
   done
 }
 
+# Join the lines of a quoted string that spans several, so a multi-line `--body "…"` or `-m "…"`
+# given to a text tool is dropped as one string (#88). It follows bash, failing safe where it
+# can't: heredoc bodies are left line by line (bash reads no quotes there), a `#` comment opens
+# no quote, and backslashes still escape, in `$'…'` too (this runs before they're removed). A
+# heredoc opened inside a quote (`--body "$(cat <<'EOF'`) is never joined across; the quote it was in
+# carries on after the body, so `)"` closes it. Text it can't follow stays line by line, as
+# before this was added.
+join_quoted_lines() {
+  awk '
+    function scan(s,   i, n, c, prev) {
+      n = length(s); prev = " "
+      for (i = 1; i <= n; i++) {
+        c = substr(s, i, 1)
+        if (state == 1) { if (c == "\047") state = 0; prev = c; continue }
+        if (c == "\\") { i++; prev = "x"; continue }
+        if (state == 3) { if (c == "\047") state = 0; prev = c; continue }  # ANSI-C string: a backslash escapes its quote
+        if (state == 2) { if (c == "\"") state = 0; prev = c; continue }
+        if (c == "#" && prev ~ /[[:space:];&|(]/) return  # a comment: no quotes after it
+        if (c == "\047") state = (prev == "$") ? 3 : 1; else if (c == "\"") state = 2
+        prev = c
+      }
+    }
+    function heredocs(s,   rest, op, word) {  # queue each heredoc this line opens
+      rest = s; gsub(/<<</, "", rest)
+      while (match(rest, /<<-?[ \t]*["\047]?[A-Za-z_][A-Za-z0-9_]*/)) {
+        op = substr(rest, RSTART, RLENGTH); rest = substr(rest, RSTART + RLENGTH)
+        dash[++nq] = (op ~ /^<<-/); word = op
+        sub(/^<<-?[ \t]*["\047]?/, "", word); delim[nq] = word
+      }
+    }
+    {
+      if (body) {  # inside a heredoc: print it as it is, and watch for its delimiter
+        t = $0; if (dash[cur]) sub(/^\t+/, "", t)
+        print
+        if (t == delim[cur]) { if (++cur > nq) { body = 0; nq = 0; cur = 0; state = saved } }
+        next
+      }
+      line = open ? pending " " $0 : $0
+      scan($0); heredocs($0)
+      if (nq) {  # a heredoc starts: print what we have, then its body line by line
+        print line; open = 0; pending = ""; saved = state; state = 0; body = 1; cur = 1; next
+      }
+      if (state) { open = 1; pending = line } else { open = 0; pending = ""; print line }
+    }
+    END { if (open) print pending }
+  '
+}
+
 runs_prod_deploy() {
   local code segment
   # A backslash-newline continues the command. Escapes and quotes around a single word don't
@@ -86,6 +134,7 @@ runs_prod_deploy() {
   # target. Deliberate disguises (brace expansion, the target built from variables) are out of
   # scope: this guards against accidents, and a human still holds the release.
   code="$(awk '{ while (/\\$/ && (getline nxt) > 0) { sub(/\\$/, ""); $0 = $0 " " nxt } print }' <<<"$1" \
+    | join_quoted_lines \
     | sed -E "s/\\\$(['\"])/\1/g; s/\\\\(.)/\1/g" \
     | sed -E "s/'([^'[:space:]]*)'/\\1/g; s/\"([^\"[:space:]\\\\\$\`]*)\"/\\1/g")"
   code="$(drop_text_heredocs <<<"$code")"
