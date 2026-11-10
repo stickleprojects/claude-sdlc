@@ -15,6 +15,8 @@ Run these in order. Report only what each pass actually finds.
    - **ADR PRs** (`docs/adr/`): an accepted ADR's **Revisit when** lines are concrete enough to check against a single plan ("a plan hand-builds navigation state", not "if it gets complex"). Report vague triggers as Important; the tech lead decides.
    - **Repos that track changes as issues:** if the repo's `CLAUDE.md` contains the line `Change tracking: issues` (the claude-sdlc framework repo does), skip the change-folder requirement for every PR type, `feat:` included. Instead, check that the PR description links an issue, or explains the problem it solves and how the change was tested. Report a missing explanation as Important.
 4. **Verification:** every acceptance criterion has a test or a command in the plan's Verification section. Bug fixes include a test that failed before the fix.
+   - **At the right level:** the test drives the criterion at the level it describes (`.claude/skills/scope.md`). A UI behaviour tested only through the model beneath the UI, or a criterion whose only evidence is a file that exists, is Important.
+5. **Descopes:** silence is not permission, and a rule's scope is a minimum (`.claude/skills/scope.md`). Report as Important anything the PR leaves undone, untested or unchecked that nobody has approved: wording such as "not tested", "manual", "skipped", "out of scope", "not covered" or "like the rest of …" in a plan, build.md, PR body or code comment; new `skip` or no-cover markers; and first-party files the PR adds or edits under a lint, format, type-check or coverage exclusion. A plan descope is approved only by a `Descope: … Approved: <name>, <date>.` line in its Risks; a spec's is its **Out of scope** section, which the product owner decides. Quote the text, and say who decides.
 
 ## Severity
 
@@ -40,10 +42,11 @@ The product owner and code owners read findings on GitHub, often without the fil
 
 Keep exactly **one** summary comment per PR, and replace it on each new review rather than adding another. It contains:
 
-1. The number of findings per severity, and whether each earlier finding is now resolved.
-2. One line per open finding: a short quote of the text it's about, plus the owner who decides.
-3. One line on whether the change matches its spec.
-4. How to handle the findings, as a one-line reminder:
+1. The descopes, each quoted with who approved it or "not approved", and the plan's Risks that need a decision. These come first.
+2. The number of findings per severity, and whether each earlier finding is now resolved.
+3. One line per open finding: a short quote of the text it's about, plus the owner who decides.
+4. One line on whether the change matches its spec.
+5. How to handle the findings, as a one-line reminder:
    - Whoever decides runs `/pr <N>` in Claude Code: the product owner for `intent:`, `bug:` and `spec:` PRs, the engineer for the rest.
    - Tagging `@claude` on a thread is optional. It hands that finding to the GitHub bot instead, so don't do both for one finding.
 

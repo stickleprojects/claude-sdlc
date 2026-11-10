@@ -30,6 +30,7 @@ Check out the PR's head branch and pull it.
 - What the change is, in one sentence taken from `intent.md`.
 - What this PR asks them to accept: the intent or the spec.
 - How many open items there are: unresolved review findings, plus anything under "Open questions".
+- For a spec, what it leaves out: its **Out of scope** items, quoted. Leaving something out is a product decision, so it comes before the rest.
 
 ## 3. Go through each item, one at a time
 

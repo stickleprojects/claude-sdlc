@@ -15,7 +15,10 @@ Numbered, testable requirements (R1, R2, ...).
 
 ## Acceptance criteria
 
-Quantifiable checks that prove each requirement, e.g. "command exits 0 and prints X".
+Quantifiable checks that prove each requirement, one `- AC<n> (R…):` bullet each (`- A<n>` also
+reads). The checks only read bullets in this form, not a numbered list:
+
+- AC1 (R1): <command> exits 0 and prints X.
 
 ## Policy concerns
 

@@ -37,6 +37,7 @@ The framework itself. Its changes are tracked as GitHub issues (label `pipeline`
 - **Artifact chain:** `changes/NNNN-name/{intent,spec,plan}.md`. The required `##` sections are defined in `src/sdlc/artifacts.py` (`CHAIN`) and must match `templates/`. A test enforces this. Change both together.
 - **Optional build plan:** `changes/NNNN-name/build.md`, written by `/build` for builds of more than one session. It sits outside `CHAIN`; `check_build` validates it when present (sections from `templates/build.md`, no approval with open questions). Small plans are built without one.
 - **Skills:** six entry skills people remember (`intent`, `plan`, `build`, `pr`, `next`, and `sdlc` for updating the pipeline itself) route by a change's state (`src/sdlc/routing.py`, `.claude/skills/routing.md`) to internal ones (`spec`, `po-review`, `review-findings`, `agent-identity`, `security-policy`, all `user-invocable: false`). A new skill is one or the other; `tests/test_routing.py` enforces it. Policy skills (e.g. `security-policy`) are advisory; rules that must always hold need a hook or CI check.
+- **Scope rules:** `.claude/skills/scope.md` (silence is not permission, a rule's scope is a minimum, descopes need a person's approval, test at the criterion's level) is shared by the plan, build, spec and review skills, the verifier and `REVIEW.md`. Change it there, not in each one.
 
 ## Guardrails (hooks in .claude/settings.json)
 
