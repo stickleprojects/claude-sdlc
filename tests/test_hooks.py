@@ -109,6 +109,18 @@ DEPLOY = "deploy" + "-prod"  # split so this file's own text never trips the gat
         (f"grep -n {DEPLOY} Makefile && sed -n 1,5p Makefile", False),
         (f"awk '/{DEPLOY}/' Makefile", False),
         (f"x=$(cat <<<'{DEPLOY}') && make check", False),
+        # #88: a quoted string spanning several lines is one string, not a line each.
+        (f'gh pr create --body "intro\nrun make {DEPLOY} later\nend"', False),
+        (f'git commit -m "fix: the gate\n\nmake {DEPLOY} needs a human"', False),
+        (f'gh pr create --body "it\'s fine\nmake {DEPLOY}\nend"', False),  # \' in "…" opens nothing
+        (f'git commit -m "say \\"hi\\"\nmake {DEPLOY}\nend"', False),  # escaped quotes stay inside
+        (f'bash -c "echo hi\nmake {DEPLOY}"', True),  # not a text tool: checked as code
+        (f'echo "notes\nmake {DEPLOY}" | sh', True),  # piped on to a shell
+        (f'git commit -m "a\nb" && make {DEPLOY}', True),  # after the string closes
+        (f'git commit -m "a\nb"\nmake {DEPLOY}', True),
+        (f'echo "unclosed\nmake {DEPLOY}', True),  # a quote that never closes: fail safe
+        (f"# don't\nmake {DEPLOY}", True),  # a comment opens no quote
+        (f'git commit -m "x\n$(make {DEPLOY})\ny"', True),  # $( runs inside double quotes
     ],
 )
 def test_production_gate(command, blocked):
