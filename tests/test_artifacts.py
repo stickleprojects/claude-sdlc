@@ -501,6 +501,7 @@ def spec_with_criteria(change: Path, criteria: str) -> Path:
         "- AC1 (R1): `make check` exits 0.\n- AC2 (R2): prints X.",
         "- A1 (R1). Starting the app exits non-zero.\n  It names the setting.",
         "Each is a test that fails before the change.\n\n- AC1: a test shows it.",
+        "- AC1 (R1): the save flow works:\n  1. open the app\n  2. click save",
     ],
 )
 def test_readable_criteria_are_valid(change: Path, criteria: str) -> None:

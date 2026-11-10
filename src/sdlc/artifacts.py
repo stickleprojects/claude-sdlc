@@ -309,11 +309,12 @@ def check_criteria(path: Path) -> list[Problem]:
         return []  # reported as a missing section
     body = section(text, "Acceptance criteria")
     expected = "expected '- AC<n> (R<n>): ...' bullets"
+    # A readable criterion passes, even with numbered steps nested under it.
+    if CRITERION_RE.search(body):
+        return []
     if NUMBERED_RE.search(body):
         return [Problem(path, f"Acceptance criteria are a numbered list; {expected}")]
-    if not CRITERION_RE.search(body):
-        return [Problem(path, f"Acceptance criteria has no criterion that can be read; {expected}")]
-    return []
+    return [Problem(path, f"Acceptance criteria has no criterion that can be read; {expected}")]
 
 
 def check_change(change_dir: Path, words: Placeholders | None = None) -> list[Problem]:
