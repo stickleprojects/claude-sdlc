@@ -22,10 +22,14 @@ Anything the change would leave undone, untested or unchecked that someone would
 A descope is valid only when it's written down with its reason and a person's approval:
 
 - **In a spec:** under **Out of scope**. The product owner approves it by merging the spec PR.
-- **In a plan:** a line under **Risks**: `Descope: <what isn't done, tested or checked> because <reason>. Approved: <name>, <date>.` The engineer approves each one explicitly while planning, one at a time, never as part of approving the whole plan.
+- **In a plan:** an entry under **Descopes**: `- Descope: <what isn't done, tested or checked> because <reason>. Approved: <name>, <date>.` The engineer approves each one explicitly while planning, one at a time, never as part of approving the whole plan. A plan with none says `None.`; `make validate` fails a plan the branch adds or edits whose Descopes is missing, still the template's text, or has an entry without `Approved:`.
 - **During a build:** a deviation in build.md (or the PR body for a small build) marked `Engineer decides: yes`. Until the person answers, it is a question, not a decision.
 
-A descope in Risks with no `Approved:`, or one inherited from an earlier milestone or a neighbouring file ("not tested, like the rest of the dock"), is not approved.
+A descope with no `Approved:`, one written in Risks rather than Descopes, or one inherited from an earlier milestone or a neighbouring file ("not tested, like the rest of the dock"), is not approved.
+
+## Human checks
+
+Some things no test can settle: how a game feels, timing, real hardware, a look in the real editor. A check a person must try by hand is a descope of automation, recorded the same way under the plan's **Descopes**: `- Human check: <what to try, and how> because <why a test can't>. Approved: <name>, <date>.` A manual step that a test could do is a plain descope, not a human check. The verifier reports each human check as PENDING, never PASS, and the PR lists them under **To check by hand** for the owner to try before merging.
 
 ## Testing at the level the criterion describes
 

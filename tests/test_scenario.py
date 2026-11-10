@@ -235,6 +235,8 @@ def test_build_plan_in_consumer(consumer):
     change = consumer / "changes" / "0001-role-list"
     for name, sections in CHAIN.items():
         (change / name).write_text("# T\n\n" + "".join(f"## {s}\n\nx\n\n" for s in sections))
+    plan = change / "plan.md"
+    plan.write_text(plan.read_text().replace("## Descopes\n\nx", "## Descopes\n\nNone."))
     draft = (consumer / "templates" / "build.md").read_text()
     (change / "build.md").write_text(draft)
     assert make(consumer, "validate").returncode == 0
@@ -250,6 +252,30 @@ def test_build_plan_in_consumer(consumer):
     refused = make(consumer, "validate")
     assert refused.returncode != 0
     assert "Questions before approval" in refused.stderr
+
+
+def test_plan_descopes_in_consumer(consumer):
+    """A new plan copied from the template fails until its Descopes is filled, and an entry
+    needs a person's approval (#95)."""
+    assert make(consumer, "new-change", "NAME=dock").returncode == 0
+    change = consumer / "changes" / "0001-dock"
+    for name in ("intent.md", "spec.md"):
+        (change / name).write_text("# T\n\n" + "".join(f"## {s}\n\nx\n\n" for s in CHAIN[name]))
+    template = (consumer / "templates" / "plan.md").read_text()
+    plan = change / "plan.md"
+    plan.write_text(template)
+    refused = make(consumer, "validate")
+    assert refused.returncode != 0
+    assert "Descopes still has the template's text" in refused.stderr
+
+    entry = "- Descope: dock widget tests because the editor can't run headless."
+    plan.write_text(template.replace("<None., or each descope and human check, as below>", entry))
+    refused = make(consumer, "validate")
+    assert refused.returncode != 0
+    assert "no 'Approved: <name>, <date>'" in refused.stderr
+
+    plan.write_text(plan.read_text().replace(entry, entry + " Approved: Sam, 2026-11-10."))
+    assert make(consumer, "validate").returncode == 0
 
 
 def test_adr_in_consumer(consumer, framework_snapshot):

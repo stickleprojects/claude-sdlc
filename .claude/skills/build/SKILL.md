@@ -31,7 +31,7 @@ Ask whenever something is ambiguous, but **one decision at a time**. Use AskUser
 
 - **spec.md is never edited on a build branch.**
 - **plan.md isn't edited here either.** If the plan is wrong or can't be built, stop and ask, offering to send the change back to plan (`/plan`, which amends it through a plan PR; build.md then goes back to draft). A small implementation detail can be recorded as a deviation for the engineer. Anything that changes behaviour or a Verification row needs a plan PR first.
-- **Follow `.claude/skills/scope.md`.** Silence is not permission, and a rule's scope is a minimum. Never leave something undone, untested or unchecked (a descope) unless plan.md's Risks records it with an `Approved:` line, or the engineer has answered it as a deviation. That includes descopes carried forward from earlier milestones or neighbouring code ("not tested, like the rest of …"): each new piece of work meets the bar on its own. Test each criterion at the level it describes; a UI criterion is tested through the UI. In a single session, ask; a worker returns `BLOCKED`.
+- **Follow `.claude/skills/scope.md`.** Silence is not permission, and a rule's scope is a minimum. Never leave something undone, untested or unchecked (a descope) unless plan.md's **Descopes** records it with an `Approved:` line, or the engineer has answered it as a deviation. That includes descopes carried forward from earlier milestones or neighbouring code ("not tested, like the rest of …"): each new piece of work meets the bar on its own. Test each criterion at the level it describes; a UI criterion is tested through the UI. In a single session, ask; a worker returns `BLOCKED`.
 - **Follow CLAUDE.md**, including any repo-specific rules about data, fixtures and outbound actions.
 - **Follow the `agent-identity` skill** whenever you commit, push, open the PR or post on GitHub: the `Requested-by:` trailer, signing with `— Claude` (or `(posted from Claude Code)` when acting as the person), no @-mentions, and fetch-and-merge before every push.
 - **Commit by explicit path** (`git add <file> …`), never `git add -A` or `git add .`. Check `git status` before each commit.
@@ -160,10 +160,10 @@ If it turns out bigger than it looked, stop at the end of a finished, passing st
 For a small build after its steps, and for a large build as part of its last milestone:
 
 1. **Run `make check` and `make coverage`.** Both must exit 0.
-2. **Run the `verifier` subagent** on `changes/<slug>`. Fix any FAIL that's within the plan. If a fix would change the plan or the spec, stop and ask.
+2. **Run the `verifier` subagent** on `changes/<slug>`. `VERDICT: PENDING` (only human checks left) is a clean result: the PR lists them. Fix any FAIL that's within the plan. If a fix would change the plan or the spec, stop and ask.
 3. **Open the PR** with `gh api` (see the rules above), then run `scripts/auto-merge.sh <N>` on it (the `agent-identity` skill).
    - Title: `feat(<slug>): <summary>` (a change with `bug.md`: `fix(<slug>): <summary>`).
-   - Body, in this order, so the reviewer sees what needs a decision first: the descopes, each quoted with who approved it; the deviations; the plan's manual end-to-end steps, for the engineer; then what was built; the verifier's per-criterion results; the coverage per suite against its threshold. End it with the attribution line the session asks for.
+   - Body, in this order, so the reviewer sees what needs a decision first: the descopes, each quoted with who approved it; the deviations; a **To check by hand** list with each of the plan's human checks (`Human check:` entries), for the owner to try before merging, or "None"; then what was built; the verifier's per-criterion results; the coverage per suite against its threshold. End it with the attribution line the session asks for.
    - Don't add the `review` label. The review already runs when the PR opens.
 4. **Large build:** record the PR in build.md (`Status: PR open (#N)`), commit and push.
 5. **Never approve or merge.** A person merges.
@@ -206,7 +206,7 @@ A worker follows sections 1, 2, 5 and 6 like a single session, with these differ
 - **The change is the one named in the prompt.**
 - **No build.md, or a draft one:** return `BLOCKED`, saying the build plan is missing or not approved. Never build from a draft.
 - **Never use AskUserQuestion.** Wherever this skill says to ask: commit and push only what is finished and passing, write the half-made decision into the milestone's notes, commit and push that, and return `BLOCKED`.
-- **A descope nobody approved:** if the milestone would leave something undone, untested or unchecked (`scope.md`) that plan.md's Risks doesn't approve and no answer in your prompt covers, return `BLOCKED`. Don't take the plan's or an earlier worker's word for it, and don't report `DONE` with it written into the notes. Options: build it to the bar (recommended unless it's far outside the plan), approve the descope, or send the change back to `/plan`.
+- **A descope nobody approved:** if the milestone would leave something undone, untested or unchecked (`scope.md`) that plan.md's Descopes doesn't approve and no answer in your prompt covers, return `BLOCKED`. Don't take the plan's or an earlier worker's word for it, and don't report `DONE` with it written into the notes. Options: build it to the bar (recommended unless it's far outside the plan), approve the descope, or send the change back to `/plan`.
 - **Uncommitted changes from a previous session:** return `BLOCKED` with keep, stash and discard as options and your recommendation.
 - **The last milestone:** do its own steps and section 6 step 1, then return `READY-FOR-VERIFY`. With the verifier's FAILs in the prompt, fix those within the plan and return `READY-FOR-VERIFY` again. With a clean result, do section 6 steps 3–4 and return `PR-OPEN`.
 - **Return this report**, and nothing after it:

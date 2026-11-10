@@ -63,6 +63,27 @@ def _git(root: Path, *args: str) -> str | None:
     return result.stdout if result.returncode == 0 else None
 
 
+def merge_base(root: Path) -> str | None:
+    """Where this branch left main, or None (not a git checkout, or no main to compare with)."""
+    for base in ("origin/main", "main"):
+        found = _git(root, "merge-base", base, "HEAD")
+        if found:
+            return found.strip()
+    return None
+
+
+def branch_changes(root: Path) -> set[Path] | None:
+    """Files the branch adds or edits against main, committed or not (plan.md is validated before
+    it's committed), as resolved paths. None when there's no main to compare with."""
+    base = merge_base(root)
+    if base is None:
+        return None
+    edited = _git(root, "diff", "--name-only", "--relative", base) or ""
+    untracked = _git(root, "ls-files", "--others", "--exclude-standard") or ""
+    names = [n for n in (edited + "\n" + untracked).splitlines() if n]
+    return {(root / n).resolve() for n in names}
+
+
 def check_commits(root: Path) -> list[str]:
     """Problems with what is committed: dependency folders, or far too many changed files."""
     problems: list[str] = []
@@ -75,13 +96,10 @@ def check_commits(root: Path) -> list[str]:
             f"{len(vendored)} tracked file(s) under node_modules (e.g. {vendored[0]}); "
             "remove them with `git rm -r --cached` and add node_modules/ to .gitignore"
         )
-    for base in ("origin/main", "main"):
-        merge_base = _git(root, "merge-base", base, "HEAD")
-        if merge_base:
-            break
-    else:
+    base = merge_base(root)
+    if base is None:
         return problems  # no main to compare with, e.g. a shallow CI checkout
-    changed = _git(root, "diff", "--name-only", merge_base.strip(), "HEAD") or ""
+    changed = _git(root, "diff", "--name-only", base, "HEAD") or ""
     count = len([line for line in changed.splitlines() if line])
     limit = int(os.environ.get("SDLC_MAX_CHANGED_FILES", MAX_CHANGED_FILES))
     if count > limit:
@@ -89,7 +107,7 @@ def check_commits(root: Path) -> list[str]:
             root,
             "log",
             f"--format=%(trailers:key={LARGE_CHANGE_TRAILER},valueonly,separator=%x0a)",
-            f"{merge_base.strip()}..HEAD",
+            f"{base}..HEAD",
         )
         reasons = [r.strip() for r in (trailers or "").splitlines() if r.strip()]
         if reasons:
@@ -113,7 +131,8 @@ def check_commits(root: Path) -> list[str]:
 
 def cmd_check(root: Path) -> int:
     words = placeholders(root)
-    problems: list[object] = [p for d in change_dirs(root) for p in check_change(d, words)]
+    changed = branch_changes(root)
+    problems: list[object] = [p for d in change_dirs(root) for p in check_change(d, words, changed)]
     problems += check_adrs(root, words)
     problems += check_config(root)
     problems += check_commits(root)
