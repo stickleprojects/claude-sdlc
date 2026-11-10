@@ -236,7 +236,10 @@ def test_build_plan_in_consumer(consumer):
     for name, sections in CHAIN.items():
         (change / name).write_text("# T\n\n" + "".join(f"## {s}\n\nx\n\n" for s in sections))
     plan = change / "plan.md"
-    plan.write_text(plan.read_text().replace("## Descopes\n\nx", "## Descopes\n\nNone."))
+    text = plan.read_text().replace("## Descopes\n\nx", "## Descopes\n\nNone.")
+    plan.write_text(
+        text.replace("## Verification\n\n", "## Verification\n\n- **Definition of done:** UI\n\n")
+    )
     draft = (consumer / "templates" / "build.md").read_text()
     (change / "build.md").write_text(draft)
     assert make(consumer, "validate").returncode == 0
@@ -265,6 +268,8 @@ def test_plan_descopes_in_consumer(consumer):
     plan = change / "plan.md"
     plan.write_text(template)
     refused = make(consumer, "validate")
+    assert "Definition of done names no kind" in refused.stderr
+    template = template.replace("<the kinds of work that apply, e.g. Any code, UI>", "Any code, UI")
     assert refused.returncode != 0
     assert "Descopes still has the template's text" in refused.stderr
 
@@ -276,6 +281,37 @@ def test_plan_descopes_in_consumer(consumer):
 
     plan.write_text(plan.read_text().replace(entry, entry + " Approved: Sam, 2026-11-10."))
     assert make(consumer, "validate").returncode == 0
+
+
+def test_definition_of_done_in_consumer(consumer, framework_snapshot):
+    """The framework's rows arrive with the sync, the consumer's own file adds a kind a plan can
+    name, and a later sync leaves that file alone (#95)."""
+    assert (consumer / "templates" / "definition-of-done.md").exists()
+    own = consumer / "docs" / "definition-of-done.md"
+    own.parent.mkdir(parents=True, exist_ok=True)
+    own.write_text("| Kind of work | Done means |\n|---|---|\n| Godot scene | Loads headless. |\n")
+    git(consumer, "add", "docs/definition-of-done.md")
+    git(consumer, "commit", "-q", "-m", "docs: our definition of done")
+
+    assert make(consumer, "new-change", "NAME=scene").returncode == 0
+    change = consumer / "changes" / "0001-scene"
+    for name, sections in CHAIN.items():
+        (change / name).write_text("# T\n\n" + "".join(f"## {s}\n\nx\n\n" for s in sections))
+    plan = change / "plan.md"
+    text = plan.read_text().replace("## Descopes\n\nx", "## Descopes\n\nNone.")
+    line = "## Verification\n\n- **Definition of done:** {}\n\n"
+    plan.write_text(text.replace("## Verification\n\n", line.format("Godot scene, Any code")))
+    assert make(consumer, "validate").returncode == 0
+    plan.write_text(text.replace("## Verification\n\n", line.format("Godot level")))
+    refused = make(consumer, "validate")
+    assert refused.returncode != 0
+    assert "names Godot level, not in the definition of done" in refused.stderr
+
+    plan.unlink()
+    git(consumer, "add", "-A")
+    git(consumer, "commit", "-q", "-m", "wip")
+    assert sync(consumer, framework_snapshot).returncode == 0
+    assert "Godot scene" in own.read_text()
 
 
 def test_adr_in_consumer(consumer, framework_snapshot):
