@@ -8,6 +8,10 @@ Shared rules for every stage: the plan, build, review and verify steps all follo
 - **A rule's scope is a minimum, never a limit.** "Every class in `core/` has a test" doesn't mean code outside `core/` goes untested. A tool's exclusion list is for vendored or generated code, not for first-party code that happens to live in the same folder.
 - **Agents propose descopes; people decide them.** No agent, worker or reviewer drops scope on its own judgement, and none carries forward a descope that a person hasn't explicitly approved.
 
+## The definition of done
+
+`templates/definition-of-done.md` says what done means for each kind of work (any code, UI, a plugin, a command, data, …), and a repo's own `docs/definition-of-done.md` adds kinds or replaces a row. Each plan names the kinds it is under Verification (`- **Definition of done:** Any code, UI`), and every stage holds the work to those rows. A row is a minimum. Leaving out a kind the change plainly is (a UI change that doesn't name UI), or doing less than a named row asks, is a descope.
+
 ## What counts as a descope
 
 Anything the change would leave undone, untested or unchecked that someone would reasonably expect it to cover. It shows up in wording such as "not tested", "not unit-tested", "manual", "by hand", "skipped", "out of scope", "not covered", "later", "follow-up", "TODO", "like the rest of …", or "the rule only covers …". It also shows up without the wording:

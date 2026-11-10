@@ -19,7 +19,8 @@ overridable per repo in .sdlc.toml (see Placeholders).
 
 A plan's Descopes section lists what it leaves undone, untested or checked only by hand, each with
 a person's approval (.claude/skills/scope.md). It is required only in a plan.md the branch adds or
-edits, so plans merged before it existed stay valid (NEW_SECTIONS).
+edits, so plans merged before it existed stay valid (NEW_SECTIONS). Such a plan also names, under
+Verification, the kinds of work from the definition of done that apply (DefinitionOfDone).
 """
 
 from __future__ import annotations
@@ -61,6 +62,14 @@ NEW_SECTIONS: dict[str, frozenset[str]] = {"plan.md": frozenset({"Descopes"})}
 
 # A Descopes entry: `- Descope: <what> because <reason>. Approved: <name>, <date>.`, or a check a
 # person must try by hand: `- Human check: <what, and how> because <reason>. Approved: …`.
+# The definition of done: what done means for each kind of work. The framework's rows are in
+# templates/definition-of-done.md (synced); a repo's docs/definition-of-done.md (never synced) adds
+# kinds and replaces the framework's row of the same kind.
+DOD_DEFAULTS = Path("templates") / "definition-of-done.md"
+DOD_PROJECT = Path("docs") / "definition-of-done.md"
+DOD_FIELD = "Definition of done"
+TABLE_ROW_RE = re.compile(r"^\s*\|(.+)\|\s*$")
+
 DESCOPE_KINDS = ("Descope", "Human check")
 DESCOPE_RE = re.compile(rf"^(?:\*\*)?({'|'.join(DESCOPE_KINDS)}):(?:\*\*)?\s*", re.I)
 APPROVED_RE = re.compile(r"\bApproved:(?:\*\*)?\s*(.*)$", re.I)
@@ -163,6 +172,91 @@ class Build:
     def progress(self) -> str:
         done = sum(1 for s in self.milestones.values() if (s or "").startswith("done"))
         return f"{self.status or 'no status'}, {done}/{len(self.milestones)} milestones done"
+
+
+@dataclass(frozen=True)
+class DefinitionOfDone:
+    """The kinds of work and what done means for each, the framework's rows merged with the repo's.
+
+    rows: kind, lowercased, to (the kind as written, what done means). problems: what was wrong
+    with either table."""
+
+    rows: dict[str, tuple[str, str]]
+    problems: tuple[Problem, ...] = ()
+
+    @property
+    def kinds(self) -> list[str]:
+        return [kind for kind, _ in self.rows.values()]
+
+
+def table_rows(text: str) -> list[tuple[str, str]]:
+    """The (first, second) cells of each row of a Markdown table, without its header row."""
+    rows: list[tuple[str, str]] = []
+    for line in COMMENT_RE.sub("", text).splitlines():
+        m = TABLE_ROW_RE.match(line)
+        if not m:
+            continue
+        cells = [c.strip() for c in m.group(1).split("|")]
+        if len(cells) < 2 or not cells[0].strip("-: "):
+            continue  # the |---|---| line
+        kind = cells[0].strip("* ")
+        if kind.lower() != "kind of work":
+            rows.append((kind, cells[1]))
+    return rows
+
+
+def definition_of_done(root: Path) -> DefinitionOfDone:
+    """The framework's table, then the repo's on top: same kind replaces, a new kind is added."""
+    rows: dict[str, tuple[str, str]] = {}
+    problems: list[Problem] = []
+    for path in (root / DOD_DEFAULTS, root / DOD_PROJECT):
+        if not path.exists():
+            continue
+        found = table_rows(path.read_text(encoding="utf-8"))
+        if not found:
+            problems.append(
+                Problem(path, "has no rows: expected a '| Kind of work | Done means |' table")
+            )
+        seen: set[str] = set()
+        for kind, done in found:
+            key = kind.lower()
+            if key in seen:
+                problems.append(Problem(path, f"lists the kind '{kind}' twice"))
+            if "," in kind:
+                problems.append(
+                    Problem(path, f"kind '{kind}' has a comma; plans separate kinds with commas")
+                )
+            if not done:
+                problems.append(Problem(path, f"kind '{kind}' doesn't say what done means"))
+            seen.add(key)
+            rows[key] = (kind, done)
+    return DefinitionOfDone(rows=rows, problems=tuple(problems))
+
+
+def check_dod(path: Path, dod: DefinitionOfDone) -> list[Problem]:
+    """A plan names, under Verification, the kinds of work from the definition of done it meets."""
+    value = field(section(path.read_text(encoding="utf-8"), "Verification"), DOD_FIELD)
+    known = f"known kinds: {', '.join(dod.kinds)}" if dod.rows else "no definition of done found"
+    line = f"'- **{DOD_FIELD}:** <kinds>'"
+    if value is None:
+        return [
+            Problem(
+                path,
+                f"Verification has no {line} line naming the kinds of work that apply ({known})",
+            )
+        ]
+    names = [n.strip().rstrip(".") for n in value.split(",") if n.strip()]
+    if not names or value.startswith("<"):
+        return [Problem(path, f"{DOD_FIELD} names no kind of work ({known})")]
+    unknown = [n for n in names if n.lower() not in dod.rows]
+    if unknown and dod.rows:
+        return [
+            Problem(
+                path,
+                f"{DOD_FIELD} names {', '.join(unknown)}, not in the definition of done ({known})",
+            )
+        ]
+    return []
 
 
 @dataclass(frozen=True)
@@ -400,11 +494,15 @@ def check_descopes(path: Path, words: Placeholders) -> list[Problem]:
 
 
 def check_change(
-    change_dir: Path, words: Placeholders | None = None, changed: Collection[Path] | None = None
+    change_dir: Path,
+    words: Placeholders | None = None,
+    changed: Collection[Path] | None = None,
+    dod: DefinitionOfDone | None = None,
 ) -> list[Problem]:
     """Problems with one change folder. `changed` holds the files the branch adds or edits
-    (resolved paths); NEW_SECTIONS and the Descopes rules apply only to those. None means it isn't
-    known (no git, or no main to compare with), and those rules are skipped."""
+    (resolved paths); NEW_SECTIONS, the Descopes rules and the definition of done line apply only
+    to those. None means it isn't known (no git, or no main to compare with), and those rules are
+    skipped."""
     problems: list[Problem] = []
     words = words or placeholders(change_dir.parents[1])
     edited = {p.resolve() for p in changed or ()}
@@ -430,6 +528,7 @@ def check_change(
             problems.append(Problem(path, f"missing sections: {', '.join(missing)}"))
         if name == "plan.md" and is_edited:
             problems.extend(check_descopes(path, words))
+            problems.extend(check_dod(path, dod or definition_of_done(change_dir.parents[1])))
     spec = change_dir / "spec.md"
     if spec.exists() and not (change_dir / "plan.md").exists():
         problems.extend(check_criteria(spec))

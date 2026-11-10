@@ -16,6 +16,7 @@ from sdlc.artifacts import (
     check_adrs,
     check_change,
     check_config,
+    definition_of_done,
     next_slug,
     placeholders,
     stage,
@@ -132,7 +133,11 @@ def check_commits(root: Path) -> list[str]:
 def cmd_check(root: Path) -> int:
     words = placeholders(root)
     changed = branch_changes(root)
-    problems: list[object] = [p for d in change_dirs(root) for p in check_change(d, words, changed)]
+    dod = definition_of_done(root)
+    problems: list[object] = [
+        p for d in change_dirs(root) for p in check_change(d, words, changed, dod)
+    ]
+    problems += dod.problems
     problems += check_adrs(root, words)
     problems += check_config(root)
     problems += check_commits(root)

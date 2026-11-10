@@ -19,6 +19,12 @@ Ordered, small steps. Each names the files it touches.
 
 ## Verification
 
+- **Definition of done:** <the kinds of work that apply, e.g. Any code, UI>
+
+<!-- The kinds come from templates/definition-of-done.md and the repo's docs/definition-of-done.md.
+Name every kind this change is, then show below how each named row is met. A row is a minimum:
+anything it asks for that this plan won't do is a descope, under Descopes. -->
+
 Exact commands (normally `make check`) and the expected result for each acceptance criterion,
 each driving the criterion at the level it describes (a UI behaviour through the UI).
 For bugs: the failing test written and committed first.
