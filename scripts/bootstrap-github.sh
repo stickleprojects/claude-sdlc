@@ -125,7 +125,15 @@ for tool in gh git jq; do command -v "$tool" >/dev/null || { echo "missing: $too
 gh auth status >/dev/null 2>&1 || { echo "run: gh auth login" >&2; exit 1; }
 repo="${repo:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
 owner="${repo%%/*}"
-((auto_merge_given)) || auto_merge="$(gh variable get SDLC_AUTO_MERGE -R "$repo" 2>/dev/null | tr '[:upper:]' '[:lower:]' || true)"
+# The variables are read the way scripts/auto-merge.sh reads them (repo, then organization;
+# only "not found" means unset). Not `gh variable get`: gh before 2.48 (Ubuntu's packaged
+# 2.46) has no `get`, and its error was swallowed as "not set" (spellbound3d, #89).
+read_setting() { GITHUB_REPOSITORY="$repo" bash scripts/auto-merge.sh --setting "$1"; }
+if ((auto_merge_given == 0)) && ! auto_merge="$(read_setting SDLC_AUTO_MERGE)"; then
+  todo "can't read the SDLC_AUTO_MERGE variable, so auto-merge is treated as off; re-run with --auto-merge <method> to set it up"
+  auto_merge=""
+fi
+auto_merge="$(tr '[:upper:]' '[:lower:]' <<<"$auto_merge")"
 [[ "$auto_merge" == off ]] && auto_merge=""
 
 
@@ -238,7 +246,8 @@ elif [[ -n "$auto_merge" ]]; then
   if [[ "$(gh api "repos/$repo" -q .allow_auto_merge)" == true ]]; then ok "repo allows auto-merge"
   else run gh api -X PATCH "repos/$repo" -F allow_auto_merge=true --silent; ((dry)) || ok "allowed auto-merge on the repo"
   fi
-  confirmed="$(gh variable get SDLC_AUTO_MERGE_CONFIRMED -R "$repo" 2>/dev/null || true)"
+  # Unreadable counts as possibly set: it's written if main qualifies, deleted if not.
+  confirmed="$(read_setting SDLC_AUTO_MERGE_CONFIRMED)" || confirmed="unknown"
   if ((dry)); then
     echo "    would confirm main's protection for auto-merge (variable SDLC_AUTO_MERGE_CONFIRMED)"
   elif gh api "repos/$repo/branches/main/protection" | jq -e '
@@ -248,7 +257,9 @@ elif [[ -n "$auto_merge" ]]; then
     [[ "$confirmed" == true ]] || gh variable set SDLC_AUTO_MERGE_CONFIRMED -R "$repo" --body true
     ok "auto-merge ($auto_merge) confirmed: approval required, stale approvals dismissed, review required"
   else
-    [[ -z "$confirmed" ]] || gh variable delete SDLC_AUTO_MERGE_CONFIRMED -R "$repo"
+    if [[ -n "$confirmed" ]] && ! out="$(gh variable delete SDLC_AUTO_MERGE_CONFIRMED -R "$repo" 2>&1)"; then
+      grep -q '404' <<<"$out" || todo "couldn't delete the SDLC_AUTO_MERGE_CONFIRMED variable; delete it by hand, or auto-merge.sh will still trust it"
+    fi
     todo "main doesn't qualify for auto-merge yet (approval, stale-approval dismissal and the review check), so the pipeline won't enable it"
   fi
 fi
