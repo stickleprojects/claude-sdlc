@@ -11,8 +11,10 @@ Numbered, testable requirements (R1, R2, ...): the correct behaviour, one per sy
 
 ## Acceptance criteria
 
-One check per symptom, each a test that fails today and passes once fixed, e.g. "the test
-`test_export_shows_finished` fails before the fix and passes after".
+One check per symptom, each a test that fails today and passes once fixed, one `- AC<n> (R…):`
+bullet each (`- A<n>` also reads), not a numbered list:
+
+- AC1 (R1): the test `test_export_shows_finished` fails before the fix and passes after.
 
 <!-- Add "## Policy concerns" if a policy skill applies to the fix (e.g. it touches user data
 or credentials), and "## Out of scope" if the fix deliberately leaves something alone. -->

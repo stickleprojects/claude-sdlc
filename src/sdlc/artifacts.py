@@ -101,6 +101,9 @@ SLUG_RE = re.compile(r"^[0-9]{4}-[a-z0-9]+(-[a-z0-9]+)*$")
 HEADING_RE = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
 MILESTONE_RE = re.compile(r"^###\s+(M\d+)\b.*$", re.MULTILINE)
 COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
+# An acceptance criterion: `- AC1 (R1): ...` (or `- A1 ...`), the form coverage checks read.
+CRITERION_RE = re.compile(r"^\s*[-*]\s+(?:\*\*)?AC?\d+\b", re.MULTILINE)
+NUMBERED_RE = re.compile(r"^\s*\d+[.)]\s", re.MULTILINE)
 
 
 def field(text: str, name: str) -> str | None:
@@ -295,6 +298,24 @@ def stage(change_dir: Path) -> str:
     return present[-1].removesuffix(".md") if present else "empty"
 
 
+def check_criteria(path: Path) -> list[Problem]:
+    """A spec's acceptance criteria are `- AC<n>` bullets, not a numbered list (#90).
+
+    Checked while the spec is the latest artifact, so the spec PR fails rather than the plan PR
+    after it; specs that already have a plan stay as they were merged.
+    """
+    text = path.read_text(encoding="utf-8")
+    if "Acceptance criteria" not in headings(text):
+        return []  # reported as a missing section
+    body = section(text, "Acceptance criteria")
+    expected = "expected '- AC<n> (R<n>): ...' bullets"
+    if NUMBERED_RE.search(body):
+        return [Problem(path, f"Acceptance criteria are a numbered list; {expected}")]
+    if not CRITERION_RE.search(body):
+        return [Problem(path, f"Acceptance criteria has no criterion that can be read; {expected}")]
+    return []
+
+
 def check_change(change_dir: Path, words: Placeholders | None = None) -> list[Problem]:
     problems: list[Problem] = []
     if not SLUG_RE.match(change_dir.name):
@@ -314,6 +335,9 @@ def check_change(change_dir: Path, words: Placeholders | None = None) -> list[Pr
         missing = [h for h in required if h not in headings(path.read_text(encoding="utf-8"))]
         if missing:
             problems.append(Problem(path, f"missing sections: {', '.join(missing)}"))
+    spec = change_dir / "spec.md"
+    if spec.exists() and not (change_dir / "plan.md").exists():
+        problems.extend(check_criteria(spec))
     if not any((change_dir / first).exists() for first in ("intent.md", "bug.md")):
         problems.append(Problem(change_dir, "has no intent.md (or bug.md for a bug)"))
     build = change_dir / BUILD

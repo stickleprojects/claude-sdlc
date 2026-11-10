@@ -24,7 +24,11 @@ REPO = Path(__file__).resolve().parents[1]
 
 def write(path: Path, sections: list[str]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("# Title\n\n" + "".join(f"## {s}\n\ntext\n\n" for s in sections))
+
+    def body(s: str) -> str:
+        return "- AC1 (R1): text" if s == "Acceptance criteria" else "text"
+
+    path.write_text("# Title\n\n" + "".join(f"## {s}\n\n{body(s)}\n\n" for s in sections))
 
 
 @pytest.fixture
@@ -478,3 +482,83 @@ def test_bad_repo_config_is_reported_and_ignored(
     assert expected in problem.message
     assert placeholders(tmp_path).explicit_none == {"None", "None."}
     assert main(["--root", str(tmp_path), "check"]) == 1
+
+
+# --- acceptance criteria format (#90) -----------------------------------------------------
+
+
+def spec_with_criteria(change: Path, criteria: str) -> Path:
+    write(change / "intent.md", CHAIN["intent.md"])
+    spec = change / "spec.md"
+    write(spec, [s for s in CHAIN["spec.md"] if s != "Acceptance criteria"])
+    spec.write_text(spec.read_text() + f"## Acceptance criteria\n\n{criteria}\n")
+    return spec
+
+
+@pytest.mark.parametrize(
+    "criteria",
+    [
+        "- AC1 (R1): `make check` exits 0.\n- AC2 (R2): prints X.",
+        "- A1 (R1). Starting the app exits non-zero.\n  It names the setting.",
+        "Each is a test that fails before the change.\n\n- AC1: a test shows it.",
+    ],
+)
+def test_readable_criteria_are_valid(change: Path, criteria: str) -> None:
+    spec_with_criteria(change, criteria)
+    assert check_change(change) == []
+
+
+@pytest.mark.parametrize(
+    ("criteria", "says"),
+    [
+        ("1. `make check` exits 0.\n2. prints X.", "numbered list"),
+        ("- `make check` exits 0.", "no criterion"),
+        ("Quantifiable checks.", "no criterion"),
+    ],
+)
+def test_unreadable_criteria_fail_on_the_spec_pr(change: Path, criteria: str, says: str) -> None:
+    spec_with_criteria(change, criteria)
+    [problem] = check_change(change)
+    assert says in problem.message and "AC<n>" in problem.message
+
+
+def test_criteria_of_a_planned_spec_are_left_as_merged(change: Path) -> None:
+    spec_with_criteria(change, "1. `make check` exits 0.")
+    write(change / "plan.md", CHAIN["plan.md"])
+    assert check_change(change) == []
+
+
+def test_spec_templates_show_a_readable_criterion() -> None:
+    for name in ("spec.md", "bug-spec.md"):
+        text = (REPO / "templates" / name).read_text()
+        assert "\n- AC1 (R1): " in text
+
+
+# --- descopes and test level (#95) ----------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        ".claude/agents/verifier.md",
+        ".claude/skills/plan/SKILL.md",
+        ".claude/skills/build/SKILL.md",
+        ".claude/skills/spec/SKILL.md",
+        ".claude/skills/review-findings/SKILL.md",
+        "REVIEW.md",
+    ],
+)
+def test_guardrails_read_the_scope_rules(path: str) -> None:
+    assert "scope.md" in (REPO / path).read_text()
+
+
+def test_worker_blocks_on_an_unapproved_descope() -> None:
+    build = (REPO / ".claude/skills/build/SKILL.md").read_text()
+    worker = build[build.index("## Worker mode") :]
+    assert "**A descope nobody approved:**" in worker and "return `BLOCKED`" in worker
+    assert "Descopes:" in worker  # the report carries them back to the orchestrator
+
+
+def test_plan_template_says_how_a_descope_is_approved() -> None:
+    text = (REPO / "templates/plan.md").read_text()
+    assert "Descope: <what> because <reason>. Approved: <name>, <date>." in text

@@ -579,3 +579,18 @@ def test_sync_says_when_it_cant_check_auto_merge(consumer, framework_snapshot, t
         consumer, framework_snapshot, tmp_path, variables=f"{APP_VARS} SDLC_AUTO_MERGE", **ALL_SET
     ).stdout
     assert "not checked: SDLC_AUTO_MERGE is set, but can't read main's branch protection" in out
+
+
+def test_numbered_criteria_fail_on_the_consumer_spec_pr(consumer):
+    """#90: a generated spec with a numbered list of criteria fails at the spec stage, and the
+    scope rules (#95) reach the consumer with the skills that read them."""
+    assert make(consumer, "new-change", "NAME=menus").returncode == 0
+    folder = consumer / "changes" / "0001-menus"
+    spec = (consumer / "templates" / "spec.md").read_text()
+    (folder / "spec.md").write_text(spec.replace("- AC1 (R1): ", "1. "))
+    broken = make(consumer, "validate")
+    assert broken.returncode != 0
+    assert "numbered list" in broken.stderr
+    (folder / "spec.md").write_text(spec)
+    assert make(consumer, "validate").returncode == 0
+    assert (consumer / ".claude" / "skills" / "scope.md").exists()

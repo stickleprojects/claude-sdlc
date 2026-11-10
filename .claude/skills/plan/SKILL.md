@@ -18,6 +18,15 @@ Follow `.claude/skills/routing.md`. The candidates are the changes whose next st
 
 Planning happens in plan mode, with the change's `intent.md` (or `bug.md`) and `spec.md`. If this session isn't in plan mode, enter it (or ask the person to press Shift+Tab until it says plan mode). Read CLAUDE.md, the intent or bug, the spec, the code involved and every architecture decision record in `docs/adr/` (if there are any), then propose the plan. The engineer iterates with you until it can be implemented, then approves it.
 
+### Scope check
+
+Follow `.claude/skills/scope.md`: silence is not permission, and a rule's scope is a minimum. Before proposing, and again before saving:
+
+- **Test every criterion at the level it describes.** Each Verification row names a test or command that drives the criterion the way the criterion is written: a UI behaviour through the UI, an editor plugin inside the editor, a data format with a schema and fixtures. A project rule that covers only part of the code ("every class in `core/` has a test") is a floor for that part, not a reason to leave the rest untested.
+- **Find every descope**: anything the plan leaves undone, untested or unchecked, manual steps a test could do, and new code under a tool's exclusion list. Look at your own wording too ("thin", "not unit-tested", "manual", "the rule only covers …").
+- **Ask about each descope on its own** with AskUserQuestion, recommending one: cover it (the plan grows), or approve the descope with its reason. Never fold descopes into approving the plan.
+- **When asking for approval, lead with the descopes and risks**, quoted, then the open questions, then the steps.
+
 ### Architecture check
 
 A single change rarely looks like an architecture decision. Several changes that each hand-build a piece a framework would provide do, and only the plan stage sees how a change is built. So before proposing, check the plan against the ADRs:
@@ -38,10 +47,11 @@ Either way, record it under **Risks** as `Architecture decision needed: <questio
 Once the plan is approved:
 
 1. Copy `templates/plan.md` to `changes/<slug>/plan.md`. Fill it with the approved plan; don't add new scope.
-2. Keep the architecture check's outcome: the build-or-adopt reason in **Approach**, and any `Architecture decision needed:` line, with the engineer's decision, in **Risks**.
-3. Under **Verification**, map each acceptance criterion from `spec.md` to an exact command and its expected result.
-4. For a bug fix (a change that starts from `bug.md`, or any fix), the first step is a failing test committed on its own, one per acceptance criterion in the short spec, with the message `test(<slug>): failing test for <symptom>`. Once that commit is on the branch, the files it touched lock automatically for a change with `bug.md` (`scripts/tests-locked.sh`), so the failing test can't be edited; new tests in other files still can. Nobody needs to set `SDLC_LOCK_TESTS=1`.
-5. Size the steps to the change. A small change (a message, a one-line fix) needs one to three steps, not a breakdown: `/build` builds a plan that small in one session.
-6. Run `make validate`, then commit `plan.md` alone on `plan/<slug>` (by explicit path, never `git add -A`), push, and open its PR titled `plan(<slug>): <summary>`. No code is written before it merges. Follow the `agent-identity` skill for the commit trailer and PR signature.
+2. Record each approved descope under **Risks** as `Descope: <what isn't done, tested or checked> because <reason>. Approved: <name>, <date>.` A plan with a descope the engineer hasn't approved isn't approved.
+3. Keep the architecture check's outcome: the build-or-adopt reason in **Approach**, and any `Architecture decision needed:` line, with the engineer's decision, in **Risks**.
+4. Under **Verification**, map each acceptance criterion from `spec.md` to an exact command and its expected result.
+5. For a bug fix (a change that starts from `bug.md`, or any fix), the first step is a failing test committed on its own, one per acceptance criterion in the short spec, with the message `test(<slug>): failing test for <symptom>`. Once that commit is on the branch, the files it touched lock automatically for a change with `bug.md` (`scripts/tests-locked.sh`), so the failing test can't be edited; new tests in other files still can. Nobody needs to set `SDLC_LOCK_TESTS=1`.
+6. Size the steps to the change. A small change (a message, a one-line fix) needs one to three steps, not a breakdown: `/build` builds a plan that small in one session.
+7. Run `make validate`, then commit `plan.md` alone on `plan/<slug>` (by explicit path, never `git add -A`), push, and open its PR titled `plan(<slug>): <summary>`. No code is written before it merges. Follow the `agent-identity` skill for the commit trailer and PR signature.
 
 Then tell the engineer: once the plan PR merges, run `/build` (`/pr` handles its review first). `/build` builds it in its own worktree (`claude --worktree <slug>`): in one session for a small plan, or milestone by milestone from an approved `build.md` for a larger one. It finishes with `make check` and the `verifier` subagent before opening a PR.
