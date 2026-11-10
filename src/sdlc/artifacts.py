@@ -235,8 +235,10 @@ def definition_of_done(root: Path) -> DefinitionOfDone:
 
 def check_dod(path: Path, dod: DefinitionOfDone) -> list[Problem]:
     """A plan names, under Verification, the kinds of work from the definition of done it meets."""
+    if not dod.rows:  # fail safe: with no table, no name could be checked
+        return [Problem(path, f"no definition of done found: expected {DOD_DEFAULTS}")]
     value = field(section(path.read_text(encoding="utf-8"), "Verification"), DOD_FIELD)
-    known = f"known kinds: {', '.join(dod.kinds)}" if dod.rows else "no definition of done found"
+    known = f"known kinds: {', '.join(dod.kinds)}"
     line = f"'- **{DOD_FIELD}:** <kinds>'"
     if value is None:
         return [
@@ -249,7 +251,7 @@ def check_dod(path: Path, dod: DefinitionOfDone) -> list[Problem]:
     if not names or value.startswith("<"):
         return [Problem(path, f"{DOD_FIELD} names no kind of work ({known})")]
     unknown = [n for n in names if n.lower() not in dod.rows]
-    if unknown and dod.rows:
+    if unknown:
         return [
             Problem(
                 path,

@@ -597,6 +597,14 @@ def test_plan_template_says_how_a_descope_is_approved() -> None:
 # --- plan descopes (#95, #32) --------------------------------------------------------------
 
 
+def with_dod(root: Path) -> None:
+    """The framework's definition of done, where the repo's sync would put it."""
+    target = root / "templates" / "definition-of-done.md"
+    if not target.exists():
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text((REPO / "templates/definition-of-done.md").read_text())
+
+
 def plan_with(descopes: str | None, risks: str = "text") -> str:
     """A complete plan.md; `descopes` is the Descopes body, or None to leave the section out."""
     head = "".join(f"## {s}\n\ntext\n\n" for s in ("Approach", "Steps"))
@@ -607,6 +615,7 @@ def plan_with(descopes: str | None, risks: str = "text") -> str:
 
 def edited_plan(change: Path, text: str) -> list[str]:
     """Problems with a plan the branch edits, from a change that is otherwise complete."""
+    with_dod(change.parents[1])
     write(change / "intent.md", CHAIN["intent.md"])
     write(change / "spec.md", CHAIN["spec.md"])
     (change / "plan.md").write_text(text)
@@ -683,6 +692,7 @@ def test_a_descope_left_in_risks_is_reported(change: Path) -> None:
 
 
 def test_bug_plan_needs_descopes_too(change: Path) -> None:
+    with_dod(change.parents[1])
     write(change / "bug.md", BUG_CHAIN["bug.md"])
     write(change / "spec.md", BUG_CHAIN["spec.md"])
     (change / "plan.md").write_text(plan_with(None))
@@ -705,6 +715,7 @@ def test_validate_requires_descopes_only_in_plans_the_branch_edits(branch_repo: 
     sections = {n: "# T\n\n" + "".join(f"## {s}\n\ntext\n\n" for s in CHAIN[n]) for n in CHAIN}
     old_plan = plan_with(None)
     git(branch_repo, "switch", "-q", "main")
+    with_dod(branch_repo)
     commit(
         branch_repo,
         "plan: merged before descopes",
@@ -860,3 +871,16 @@ def test_stages_hold_work_to_the_definition_of_done() -> None:
         assert "definition-of-done.md" in text, path
         assert "Definition of done:" in text, path
     assert "- **Definition of done:**" in (REPO / "templates/plan.md").read_text()
+
+
+def test_an_edited_plan_fails_without_a_definition_of_done(change: Path) -> None:
+    # Fail safe (PR #100 review): with no table, a plan could name any kind and pass.
+    write(change / "intent.md", CHAIN["intent.md"])
+    write(change / "spec.md", CHAIN["spec.md"])
+    plan = change / "plan.md"
+    plan.write_text(plan_with("None.").replace("Any code", "Banana"))
+    [problem] = check_change(change, changed={plan})
+    assert (
+        problem.message == "no definition of done found: expected templates/definition-of-done.md"
+    )
+    assert check_change(change, changed=set()) == []  # a merged plan isn't held to it
