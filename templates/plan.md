@@ -27,13 +27,23 @@ For bugs: the failing test written and committed first.
 
 What could go wrong, and anything needing tech lead or architect approval.
 
-<!-- Descopes (.claude/skills/scope.md): anything this plan leaves undone, untested or unchecked,
-including manual steps a test could do and new code under a tool's exclusion list. One line each,
-approved by the engineer one at a time: "Descope: <what> because <reason>. Approved: <name>, <date>."
-A descope without an Approved: line blocks the build. -->
-
 <!-- Check docs/adr/ first. If the plan meets an accepted ADR's "Revisit when" trigger, or makes an
 architecture choice no ADR covers (a new framework, service or datastore, or a pattern built by
 hand again), add a line: "Architecture decision needed: <question> (ADR NNNN, trigger: <which>)",
 or "(no ADR)", followed by what the engineer decided: keep the current architecture, and why; or
 raised with the tech lead, who writes or updates the ADR before this plan merges. -->
+
+## Descopes
+
+<None., or each descope and human check, as below>
+
+<!-- .claude/skills/scope.md. Anything this plan leaves undone, untested or unchecked: code under a
+tool's exclusion list, a criterion tested below the level it describes, a manual step a test could
+do. And anything a person must try by hand because no test can (feel, timing, hardware, the real
+game or editor). One entry each, approved by the engineer one at a time, or "None." when there are none:
+
+- Descope: <what> because <reason>. Approved: <name>, <date>.
+- Human check: <what to try, and how> because <why a test can't>. Approved: <name>, <date>.
+
+An entry without an Approved: line fails make validate, and the build doesn't start. The verifier
+reports each human check as PENDING, and the PR lists them for the owner to try. -->

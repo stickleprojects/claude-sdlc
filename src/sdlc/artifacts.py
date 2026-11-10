@@ -16,12 +16,17 @@ docs/adr/NNNN-slug.md (template: templates/adr.md). They belong to the repo, and
 
 The words that read as "nothing here" in a section come from placeholders.toml,
 overridable per repo in .sdlc.toml (see Placeholders).
+
+A plan's Descopes section lists what it leaves undone, untested or checked only by hand, each with
+a person's approval (.claude/skills/scope.md). It is required only in a plan.md the branch adds or
+edits, so plans merged before it existed stay valid (NEW_SECTIONS).
 """
 
 from __future__ import annotations
 
 import re
 import tomllib
+from collections.abc import Collection
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -46,8 +51,19 @@ CHAIN: dict[str, list[str]] = {
         "Steps",
         "Verification",
         "Risks",
+        "Descopes",
     ],
 }
+
+# Sections added after changes were already merged without them. They are required only in a file
+# the branch adds or edits against main (#95), so merged artifacts stay valid until they're edited.
+NEW_SECTIONS: dict[str, frozenset[str]] = {"plan.md": frozenset({"Descopes"})}
+
+# A Descopes entry: `- Descope: <what> because <reason>. Approved: <name>, <date>.`, or a check a
+# person must try by hand: `- Human check: <what, and how> because <reason>. Approved: …`.
+DESCOPE_KINDS = ("Descope", "Human check")
+DESCOPE_RE = re.compile(rf"^(?:\*\*)?({'|'.join(DESCOPE_KINDS)}):(?:\*\*)?\s*", re.I)
+APPROVED_RE = re.compile(r"\bApproved:(?:\*\*)?\s*(.*)$", re.I)
 
 # A bug found in testing: a lighter first artifact, and a spec that needs only the
 # requirements and one acceptance test per symptom.
@@ -317,8 +333,81 @@ def check_criteria(path: Path) -> list[Problem]:
     return [Problem(path, f"Acceptance criteria has no criterion that can be read; {expected}")]
 
 
-def check_change(change_dir: Path, words: Placeholders | None = None) -> list[Problem]:
+def descope_items(body: str) -> list[str]:
+    """Each entry in a Descopes section, without the list marker. An indented line straight after an
+    entry is a wrapped part of it; any other line is an entry of its own, so prose after an approved
+    entry is checked as an entry, not read as part of it."""
+    items: list[str] = []
+    wrapping = False  # the line before was part of an entry
+    for line in body.splitlines():
+        if not line.strip():
+            wrapping = False
+            continue
+        text = LIST_MARKER_RE.sub("", line).strip()
+        if wrapping and line[:1].isspace() and not LIST_MARKER_RE.match(line):
+            items[-1] += " " + text
+        else:
+            items.append(text)
+        wrapping = True
+    return items
+
+
+def check_descopes(path: Path, words: Placeholders) -> list[Problem]:
+    """A plan's Descopes: `None.`, or entries that each say what kind they are and who approved
+    them. A descope still written in Risks, the place before this section, is reported too."""
+    text = path.read_text(encoding="utf-8")
     problems: list[Problem] = []
+    for line in section(text, "Risks").splitlines():
+        if DESCOPE_RE.match(LIST_MARKER_RE.sub("", line).strip()):
+            problems.append(
+                Problem(path, "a Descope: or Human check: line is in Risks; move it to Descopes")
+            )
+            break
+    if "Descopes" not in headings(text):
+        return problems  # reported as a missing section
+    body = section(text, "Descopes")
+    if words.is_none(body):
+        return problems
+    form = "'- Descope: <what> because <reason>. Approved: <name>, <date>.' (or '- Human check: …')"
+    items = descope_items(body)
+    if not items:
+        return [
+            *problems,
+            Problem(path, f"Descopes is empty; write 'None.' or list each as {form}"),
+        ]
+    for item in items:
+        quoted = item if len(item) <= 60 else item[:57] + "..."
+        if item.startswith("<"):
+            problems.append(
+                Problem(path, f"Descopes still has the template's text; write 'None.' or {form}")
+            )
+            continue
+        if not DESCOPE_RE.match(item):
+            problems.append(Problem(path, f"Descopes entry isn't in the form {form}: {quoted}"))
+            continue
+        m = APPROVED_RE.search(item)
+        who = (m.group(1) if m else "").strip().rstrip(".")
+        if (
+            not who
+            or who.startswith("<")
+            or who.lower().startswith("not yet")
+            or words.names_nothing(who)
+        ):
+            problems.append(
+                Problem(path, f"Descopes entry has no 'Approved: <name>, <date>': {quoted}")
+            )
+    return problems
+
+
+def check_change(
+    change_dir: Path, words: Placeholders | None = None, changed: Collection[Path] | None = None
+) -> list[Problem]:
+    """Problems with one change folder. `changed` holds the files the branch adds or edits
+    (resolved paths); NEW_SECTIONS and the Descopes rules apply only to those. None means it isn't
+    known (no git, or no main to compare with), and those rules are skipped."""
+    problems: list[Problem] = []
+    words = words or placeholders(change_dir.parents[1])
+    edited = {p.resolve() for p in changed or ()}
     if not SLUG_RE.match(change_dir.name):
         problems.append(Problem(change_dir, "folder name must look like 0001-short-slug"))
 
@@ -333,9 +422,14 @@ def check_change(change_dir: Path, words: Placeholders | None = None) -> list[Pr
             continue
         if not previous_present:
             problems.append(Problem(path, "exists but an earlier artifact in the chain is missing"))
+        is_edited = path.resolve() in edited
+        if not is_edited:
+            required = [h for h in required if h not in NEW_SECTIONS.get(name, ())]
         missing = [h for h in required if h not in headings(path.read_text(encoding="utf-8"))]
         if missing:
             problems.append(Problem(path, f"missing sections: {', '.join(missing)}"))
+        if name == "plan.md" and is_edited:
+            problems.extend(check_descopes(path, words))
     spec = change_dir / "spec.md"
     if spec.exists() and not (change_dir / "plan.md").exists():
         problems.extend(check_criteria(spec))
@@ -345,7 +439,7 @@ def check_change(change_dir: Path, words: Placeholders | None = None) -> list[Pr
     if build.exists():
         if not (change_dir / "plan.md").exists():
             problems.append(Problem(build, "exists but plan.md is missing"))
-        problems.extend(check_build(build, words or placeholders(change_dir.parents[1])))
+        problems.extend(check_build(build, words))
     return problems
 
 

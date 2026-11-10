@@ -25,7 +25,7 @@ Check out the PR's head branch and pull it.
 
 ## 2. Go through each open finding, one at a time
 
-Take descope findings first (`.claude/skills/scope.md`), then the rest by severity. Before the first finding, show the engineer the PR's descopes and the plan's Risks, quoted, so they see what needs a decision before the details.
+Take descope findings first (`.claude/skills/scope.md`), then the rest by severity. Before the first finding, show the engineer the PR's descopes, the plan's Descopes and Risks, and its human checks, quoted, so they see what needs a decision before the details.
 
 Skip a finding that is already resolved: one with a reply saying how it was handled, or one the latest summary marks resolved. Skip one the bot owns (see [One actor per finding](#one-actor-per-finding)).
 

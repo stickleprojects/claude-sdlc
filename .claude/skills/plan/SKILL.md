@@ -47,7 +47,7 @@ Either way, record it under **Risks** as `Architecture decision needed: <questio
 Once the plan is approved:
 
 1. Copy `templates/plan.md` to `changes/<slug>/plan.md`. Fill it with the approved plan; don't add new scope.
-2. Record each approved descope under **Risks** as `Descope: <what isn't done, tested or checked> because <reason>. Approved: <name>, <date>.` A plan with a descope the engineer hasn't approved isn't approved.
+2. Fill **Descopes**: each approved descope as `- Descope: <what isn't done, tested or checked> because <reason>. Approved: <name>, <date>.`, and each check a person must try by hand because no test can as `- Human check: <what to try, and how> because <why a test can't>. Approved: <name>, <date>.` (`scope.md`). With neither, write `None.`, never leave the template's text. A plan with a descope the engineer hasn't approved isn't approved, and `make validate` fails an entry without `Approved:`.
 3. Keep the architecture check's outcome: the build-or-adopt reason in **Approach**, and any `Architecture decision needed:` line, with the engineer's decision, in **Risks**.
 4. Under **Verification**, map each acceptance criterion from `spec.md` to an exact command and its expected result.
 5. For a bug fix (a change that starts from `bug.md`, or any fix), the first step is a failing test committed on its own, one per acceptance criterion in the short spec, with the message `test(<slug>): failing test for <symptom>`. Once that commit is on the branch, the files it touched lock automatically for a change with `bug.md` (`scripts/tests-locked.sh`), so the failing test can't be edited; new tests in other files still can. Nobody needs to set `SDLC_LOCK_TESTS=1`.
