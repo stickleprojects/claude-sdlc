@@ -1209,3 +1209,14 @@ def test_sdlc_skill_matches_what_the_sync_prints():
     contract = re.findall(r'^\s*"([a-z-]+) ', block, re.MULTILINE)
     assert contract, "couldn't read contract_targets from the sync"
     assert f"`{' '.join(contract)}`" in skill, "the stack contract in /sdlc differs from the sync's"
+
+
+def test_agent_allows_the_make_targets_the_skills_run_first():
+    """CI ignores .claude/settings.json's allow list, so agent.sh's own list must cover what the
+    skills run unprompted: the routing check (`make next`) and the scaffold. Without `make next`
+    the intent eval stopped for approval and failed the v0.7.1 release."""
+    allowed = (REPO / "scripts/agent.sh").read_text()
+    routing = (REPO / ".claude/skills/routing.md").read_text()
+    assert "make next" in routing
+    for target in ("make next:*", "make new-change:*", "make validate"):
+        assert f"Bash({target})" in allowed
