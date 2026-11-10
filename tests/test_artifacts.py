@@ -654,6 +654,19 @@ def test_descopes_that_pass(change: Path, descopes: str) -> None:
         ("- Descope: x because y. Approved: TBD", "no 'Approved"),
         ("- Human check: play level 1 because feel. Approved:", "no 'Approved"),
         ("- Not tested: the dock, like the rest of it", "isn't in the form"),
+        # Prose after an approved entry is an entry of its own, not part of the approved one.
+        (
+            "- Descope: a because b. Approved: Sam, 2026-11-10.\n\nThe dock isn't unit-tested.",
+            "isn't in the form",
+        ),
+        (
+            "- Descope: a because b. Approved: Sam, 2026-11-10.\nThe dock isn't unit-tested.",
+            "isn't in the form",
+        ),
+        (
+            "- Descope: a because b. Approved: Sam, 2026-11-10.\n\n  The dock isn't unit-tested.",
+            "isn't in the form",
+        ),
     ],
 )
 def test_descopes_that_fail(change: Path, descopes: str, expected: str) -> None:

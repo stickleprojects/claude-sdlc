@@ -334,16 +334,21 @@ def check_criteria(path: Path) -> list[Problem]:
 
 
 def descope_items(body: str) -> list[str]:
-    """Each entry in a Descopes section, its wrapped lines joined, without the list marker."""
+    """Each entry in a Descopes section, without the list marker. An indented line straight after an
+    entry is a wrapped part of it; any other line is an entry of its own, so prose after an approved
+    entry is checked as an entry, not read as part of it."""
     items: list[str] = []
+    wrapping = False  # the line before was part of an entry
     for line in body.splitlines():
         if not line.strip():
+            wrapping = False
             continue
         text = LIST_MARKER_RE.sub("", line).strip()
-        if LIST_MARKER_RE.match(line) or DESCOPE_RE.match(text) or not items:
-            items.append(text)
+        if wrapping and line[:1].isspace() and not LIST_MARKER_RE.match(line):
+            items[-1] += " " + text
         else:
-            items[-1] += " " + text  # a wrapped line of the entry above
+            items.append(text)
+        wrapping = True
     return items
 
 
