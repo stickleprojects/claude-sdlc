@@ -35,6 +35,7 @@ main() {
     "scripts/auto-merge.sh:scripts/auto-merge.sh"
     "scripts/request-review.sh:scripts/request-review.sh"
     "scripts/review-current.sh:scripts/review-current.sh"
+    "scripts/review-posted.sh:scripts/review-posted.sh"
     "scripts/check-pr-title.sh:scripts/check-pr-title.sh"
     "scripts/agent-identity.sh:scripts/agent-identity.sh"
     "scripts/agent-session.sh:scripts/agent-session.sh"
