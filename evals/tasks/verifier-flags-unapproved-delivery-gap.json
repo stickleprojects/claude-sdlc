@@ -1,0 +1,5 @@
+{
+  "name": "verifier reports a requirement delivered weaker than its wording as needing approval (#106)",
+  "prompt": "Act as the verifier subagent (.claude/agents/verifier.md) for the change folder evals/fixtures/delivery-gap/0001-floor-mode, but do only step 5 (what was delivered, against each requirement), doing the comparison yourself, one requirement at a time: don't run make check, scripts or the plan's commands. The change's code is evals/fixtures/delivery-gap/code/floor_model.py. Write your report to report.md in the repo root, in the order the verifier's instructions give, and don't edit any other file.",
+  "check": "grep -q 'Descope: needs approval' report.md && grep -qi 'generates' report.md && scripts/clause-check.sh --stage build evals/fixtures/delivery-gap/0001-floor-mode | jq -e 'any(.[]; .requirement == \"R1\" and .gap == \"large\" and .approved == null)'"
+}

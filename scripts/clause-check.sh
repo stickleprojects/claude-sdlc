@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Clause coverage (#47): find the clauses of a change's requirements that no acceptance
-# criterion tests (stage spec), or that the plan doesn't design and verify (stage plan).
+# criterion tests (stage spec), that the plan doesn't design and verify (stage plan), or that
+# the code and build.md deliver less of than the requirement says (stage build, #106).
 #
-# Usage: scripts/clause-check.sh --stage spec|plan <change> [--ref REF]
+# Usage: scripts/clause-check.sh --stage spec|plan|build <change> [--ref REF]
 #        scripts/clause-check.sh --changed-since REF
 #   <change>  0002, 0002-name or a folder path
 #   --ref     check only the requirements that are new or differ from REF (an amendment PR)
@@ -14,19 +15,24 @@
 # Splits the spec with `make clauses` (no model), then sends one requirement at a time to a
 # small model through scripts/agent.sh, so no call reads the whole spec. Prints a JSON array:
 #   {"requirement": "R2", "text": "...", "stage": "spec", "clause": "...", "missing": [...]}
-# and, for a requirement whose answer couldn't be read or whose call failed:
+# Stage build reads the code (Read, Grep and Glob), so it uses a larger model and more turns, and
+# its entries hold "delivered", "gap" ("large" when the delivery lacks the clause's main verb or
+# noun, "small" for a modifier; anything else reads as large) and "approved" (a quote or null)
+# in place of "missing".
+# For a requirement whose answer couldn't be read or whose call failed:
 #   {"requirement": "R2", "text": "...", "stage": "spec", "unchecked": "<why>"}
 # A line under ## Requirements that couldn't be read as one is unchecked too, with
 # "requirement": null and the line as its "text".
 # An unchecked requirement is reported, never read as covered.
 #
 # Env:
-#   CLAUSE_MODEL  model for the per-requirement calls (default: haiku)
+#   CLAUSE_MODEL  model for the per-requirement calls at stages spec and plan (default: haiku)
+#   DELIVERY_MODEL, DELIVERY_MAX_TURNS  the same for stage build (default: sonnet, 15)
 #   AGENT         passed through to agent.sh (echo for a dry run)
 set -euo pipefail
 
 usage() {
-  echo "usage: clause-check.sh --stage spec|plan <change> [--ref REF] | --changed-since REF" >&2
+  echo "usage: clause-check.sh --stage spec|plan|build <change> [--ref REF] | --changed-since REF" >&2
   exit 2
 }
 
@@ -43,32 +49,52 @@ done
 if [[ -n "$since" ]]; then
   [[ -z "$stage$change$ref" ]] || usage
 else
-  [[ "$stage" == spec || "$stage" == plan ]] || usage
+  [[ "$stage" == spec || "$stage" == plan || "$stage" == build ]] || usage
   [[ -n "$change" ]] || usage
 fi
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
+
+# The files the branch adds or edits against main, outside changes/, for stage build.
+changed_files() {
+  local base
+  base="$(git -C "$root" merge-base origin/main HEAD 2>/dev/null \
+    || git -C "$root" merge-base main HEAD 2>/dev/null)" || { echo "[]"; return; }
+  { git -C "$root" diff --name-only "$base"; git -C "$root" ls-files --others --exclude-standard; } \
+    | grep -v '^changes/' | sort -u | jq -R . | jq -sc .
+}
+
 # check <stage> <change> <ref>: the JSON array for one change.
 check() {
   local stage="$1" change="$2" ref="$3" blocks count results block rid text base prompt
-  local answer line found entries
+  local answer line found entries prompt_file model turns tools files="[]" shape
   blocks="$(make -s -C "$root" clauses CHANGE="$change" ${ref:+REF="$ref"})" || return 1
+  if [[ "$stage" == build ]]; then
+    prompt_file=delivery-check.md model="${DELIVERY_MODEL:-sonnet}"
+    turns="${DELIVERY_MAX_TURNS:-15}" tools="Read,Grep,Glob" files="$(changed_files)"
+    shape='{clause, delivered: (.delivered // "" | tostring),
+      gap: (if .gap == "small" then "small" else "large" end),
+      approved: (if (.approved | type) == "string" and .approved != "" then .approved else null end)}'
+  else
+    prompt_file=clause-check.md model="${CLAUSE_MODEL:-haiku}" turns=1 tools=Read
+    shape='{clause, missing: (.missing // [] | if type == "array" then . else [.] end)}'
+  fi
   count="$(jq '.requirements | length' <<<"$blocks")"
   results="[]"
   for ((i = 0; i < count; i++)); do
-    block="$(jq -c ".requirements[$i]" <<<"$blocks")"
+    block="$(jq -c --argjson f "$files" ".requirements[$i]"' + if $f == [] then {} else {changed_files: $f} end' <<<"$blocks")"
     rid="$(jq -r .id <<<"$block")"
     text="$(jq -r .text <<<"$block")"
     base="$(jq -nc --arg r "$rid" --arg t "$text" --arg s "$stage" \
       '{requirement: $r, text: $t, stage: $s}')"
-    prompt="$(cat "$root/prompts/clause-check.md"; printf '\nStage: %s\n\nBlock:\n%s\n' "$stage" "$block")"
-    if answer="$(AGENT_MAX_TURNS=1 AGENT_ALLOWED_TOOLS=Read \
-        "$root/scripts/agent.sh" - --model "${CLAUSE_MODEL:-haiku}" <<<"$prompt" 2>/dev/null)"; then
+    prompt="$(cat "$root/prompts/$prompt_file"; printf '\nStage: %s\n\nBlock:\n%s\n' "$stage" "$block")"
+    if answer="$(AGENT_MAX_TURNS="$turns" AGENT_ALLOWED_TOOLS="$tools" \
+        "$root/scripts/agent.sh" - --model "$model" <<<"$prompt" 2>/dev/null)"; then
       line="$(grep '^CLAUSES: ' <<<"$answer" | tail -n 1 || true)"
       if [[ -n "$line" ]] && found="$(jq -ce 'if type == "array" and all(.[]; type == "object" and (.clause | type) == "string")
           then . else error("not a list of clauses") end' <<<"${line#CLAUSES: }" 2>/dev/null)"; then
         entries="$(jq -c --argjson b "$base" \
-          'map($b + {clause, missing: (.missing // [] | if type == "array" then . else [.] end)})' \
+          "map(\$b + $shape)" \
           <<<"$found")"
       else
         entries="$(jq -c '[. + {unchecked: "the clause check gave no CLAUSES line that could be read"}]' <<<"$base")"

@@ -933,10 +933,12 @@ The box filters on each keystroke (R1).
 """
 
 
-def clause_blocks(spec: str = CLAUSE_SPEC, plan: str | None = CLAUSE_PLAN) -> dict:
+def clause_blocks(
+    spec: str = CLAUSE_SPEC, plan: str | None = CLAUSE_PLAN, build: str | None = None
+) -> dict:
     from sdlc.clauses import blocks
 
-    return {b.id: b for b in blocks(spec, plan)}
+    return {b.id: b for b in blocks(spec, plan, build)}
 
 
 def test_clauses_reads_each_requirement_with_its_continuation_lines() -> None:
@@ -1092,6 +1094,74 @@ def test_clauses_with_a_ref_whose_spec_cant_be_read_checks_everything(
     (root / "changes/0001-search/spec.md").write_text(CLAUSE_SPEC)
     assert main(["--root", str(root), "clauses", "0001", "--ref", "HEAD"]) == 0
     assert len(json.loads(capsys.readouterr().out)["requirements"]) == 4
+
+
+# --- delivery against each requirement (#106) -----------------------------------------------
+
+CLAUSE_BUILD = """# Build
+
+- **First demo:** after M1: a list
+
+## Milestones
+
+### M1. Search
+
+- **Goal:** Filter the list as the user types
+- **Acceptance criteria:** AC1, AC2
+- **Demo:** the list filters
+
+### M2. Export
+
+- **Goal:** Export the list
+- **Demo:** nothing, backend only
+
+## Deviations from the plan
+
+- R4 writes TSV, not CSV. Engineer decides: yes
+"""
+
+
+def test_clauses_bring_each_milestones_goal_and_demo_with_its_criteria() -> None:
+    found = clause_blocks(plan=None, build=CLAUSE_BUILD)
+    assert [(p.section, p.text) for p in found["R1"].build] == [
+        ("M1. Search", "- **Goal:** Filter the list as the user types"),
+        ("M1. Search", "- **Acceptance criteria:** AC1, AC2"),
+        ("M1. Search", "- **Demo:** the list filters"),
+    ]
+    assert [p.text for p in found["R2"].build] == [p.text for p in found["R1"].build]
+    # M2 cites nothing, so its Goal and Demo reach no requirement; a deviation citing R4 does.
+    assert [p.text for p in found["R4"].build] == [
+        "- R4 writes TSV, not CSV. Engineer decides: yes"
+    ]
+    assert found["R3"].build == []
+
+
+def test_clauses_with_a_ref_notices_a_changed_build_plan(tmp_path: Path, capsys) -> None:
+    import json
+
+    root = clause_repo(tmp_path)
+    commit(root, "build plan", {"changes/0001-search/build.md": CLAUSE_BUILD})
+    (root / "changes/0001-search/build.md").write_text(
+        CLAUSE_BUILD.replace("the list filters", "a diagram of the list")
+    )
+    assert main(["--root", str(root), "clauses", "0001", "--ref", "HEAD"]) == 0
+    assert [b["id"] for b in json.loads(capsys.readouterr().out)["requirements"]] == ["R1", "R2"]
+
+
+def test_delivery_gaps_reach_every_stage_and_escalate_only_when_unapproved() -> None:
+    for path in (
+        ".claude/agents/verifier.md",
+        ".claude/skills/build/SKILL.md",
+        ".claude/skills/scope.md",
+        "REVIEW.md",
+    ):
+        assert "Descope: needs approval" in (REPO / path).read_text(), path
+    verifier = (REPO / ".claude/agents/verifier.md").read_text()
+    assert "scripts/clause-check.sh --stage build" in verifier
+    assert "Wording drift" in verifier and "main verb or noun" in verifier
+    assert "no routine human sign-off" in (REPO / ".claude/skills/scope.md").read_text()
+    build = (REPO / ".claude/skills/build/SKILL.md").read_text()
+    assert "check each milestone's Goal and Demo against the requirements" in build
 
 
 def test_clauses_list_requirement_lines_they_cant_read() -> None:

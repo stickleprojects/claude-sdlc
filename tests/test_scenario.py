@@ -727,3 +727,26 @@ def test_clause_check_finds_the_changed_specs_and_plans_in_consumer(consumer):
     broken = json.loads(result.stdout)[-1]
     assert "no requirements could be read" in broken["unchecked"]
     assert not list(consumer.glob(".clause-check*")), "nothing left in the repo"
+
+
+def test_delivery_check_in_consumer(consumer):
+    """Stage build (#106) arrives with the sync and reads the consumer's build.md."""
+    assert (consumer / "prompts" / "delivery-check.md").exists()
+    fixture = REPO / "evals" / "fixtures" / "delivery-gap" / "0001-floor-mode"
+    shutil.copytree(fixture, consumer / "changes" / "0001-floor-mode")
+    out = make(consumer, "clauses", "CHANGE=0001")
+    assert out.returncode == 0, out.stderr
+    [r1, _] = json.loads(out.stdout)["requirements"]
+    assert "- **Goal:** Show a whole floor as the game places it" in [
+        b["text"] for b in r1["build"]
+    ]
+    dry = run(
+        ["scripts/clause-check.sh", "--stage", "build", "0001"],
+        cwd=consumer,
+        env={"AGENT": "echo"},
+    )
+    assert dry.returncode == 0, dry.stderr
+    assert [(f["stage"], f["requirement"]) for f in json.loads(dry.stdout)] == [
+        ("build", "R1"),
+        ("build", "R2"),
+    ]

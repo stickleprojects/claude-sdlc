@@ -121,7 +121,7 @@ If it turns out bigger than it looked, stop at the end of a finished, passing st
    - the acceptance criteria whose Verification rows it makes pass, marking partial ones;
    - **Done when:** `make check`, then `make coverage`, plus the exact commands from those Verification rows (and the locked-test diff for a bug fix). `make check` runs every test so far, so a milestone that breaks earlier work fails its own check.
 4. **Set up coverage.** If there's no `make coverage` target, the first milestone adds it, and `make coverage` joins each Done when from then on. Record the thresholds in the **Coverage** line.
-5. **Check criteria coverage.** Every acceptance criterion in spec.md must be fully passed by some milestone. The last milestone always includes `make check`, `make coverage`, the `verifier` subagent and the PR.
+5. **Check criteria coverage.** Every acceptance criterion in spec.md must be fully passed by some milestone. Then **check each milestone's Goal and Demo against the requirements its criteria cite** (`make clauses CHANGE=<slug>` lists each requirement with its criteria): a Goal or Demo that delivers less than a requirement's wording ("shows a diagram" for "generates a scene") narrows the requirement. Raise each one as a question now (deliver the whole requirement, or record a descope for the engineer to approve), not at the end (#106). The last milestone always includes `make check`, `make coverage`, the `verifier` subagent and the PR.
 6. **Collect everything the person must decide** in **Questions before approval**, each with its options and your recommendation:
    - a plan gap, or a plan that's contradictory or not buildable as written (options: pause for a plan PR, or record a deviation);
    - any reading you had to take of an ambiguous plan;
@@ -161,9 +161,10 @@ For a small build after its steps, and for a large build as part of its last mil
 
 1. **Run `make check` and `make coverage`.** Both must exit 0.
 2. **Run the `verifier` subagent** on `changes/<slug>`. `VERDICT: PENDING` (only human checks left) is a clean result: the PR lists them. Fix any FAIL that's within the plan. If a fix would change the plan or the spec, stop and ask.
+   - **Descope: needs approval** (a large gap between a requirement and what was built, with no approval): build what the requirement says if the plan covers it. If it doesn't, don't stop for a sign-off. Open the PR with each such gap first in its body under **Descope: needs approval**, quoting the requirement and what was delivered instead; the review raises it for the product owner. A worker in `/build all` returns it in its report rather than opening the PR itself.
 3. **Open the PR** with `gh api` (see the rules above), then run `scripts/auto-merge.sh <N>` on it (the `agent-identity` skill).
    - Title: `feat(<slug>): <summary>` (a change with `bug.md`: `fix(<slug>): <summary>`).
-   - Body, in this order, so the reviewer sees what needs a decision first: the descopes, each quoted with who approved it; the deviations; a **To check by hand** list with each of the plan's human checks (`Human check:` entries), for the owner to try before merging, or "None"; then what was built; the verifier's per-criterion results; the coverage per suite against its threshold. End it with the attribution line the session asks for.
+   - Body, in this order, so the reviewer sees what needs a decision first: **Descope: needs approval** with each of the verifier's unapproved large gaps, or "None"; the descopes, each quoted with who approved it; the deviations; a **To check by hand** list with each of the plan's human checks (`Human check:` entries), for the owner to try before merging, or "None"; then what was built; the verifier's per-criterion results; the coverage per suite against its threshold. End it with the attribution line the session asks for.
    - Don't add the `review` label. The review already runs when the PR opens.
 4. **Large build:** record the PR in build.md (`Status: PR open (#N)`), commit and push.
 5. **Never approve or merge.** A person merges.
