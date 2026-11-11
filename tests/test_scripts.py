@@ -483,6 +483,8 @@ case "$1 $2" in
     [[ -f "$D/protection.json" ]] || { echo "Not accessible (HTTP 403)" >&2; exit 1; }
     out < "$D/protection.json" ;;
   "api repos/o/r/rules/branches/main") cat "$D/rules.json" 2>/dev/null || echo '[]' ;;
+  "api repos/o/r/pulls/7/files")
+    [[ -f "$D/pr-files.json" ]] || echo '[]' > "$D/pr-files.json"; out < "$D/pr-files.json" ;;
   *) exit 1 ;;
 esac
 """
@@ -506,7 +508,7 @@ def auto_merge(tmp_path):
     files = {
         "repo.json": {"allow_auto_merge": True, "allow_merge_commit": True},
         "branch.json": {
-            "protection": {"required_status_checks": {"contexts": ["check", "review"]}}
+            "protection": {"required_status_checks": {"contexts": ["check", "claude-review"]}}
         },
         "protection.json": {
             "required_pull_request_reviews": {
@@ -622,7 +624,7 @@ def _write(name, data):
     ("setup", "reason"),
     [
         (lambda s: (s / "pr.json").write_text(_pr(None)), "solo mode"),
-        (_write("branch.json", {"protection": {}}), "isn't a required check"),
+        (_write("branch.json", {"protection": {}}), "claude-review status isn't required"),
         (
             _write(
                 "protection.json",
@@ -664,7 +666,7 @@ def test_auto_merge_reads_rulesets_too(auto_merge):
     state, go = auto_merge
     (state / "protection.json").unlink()
     (state / "branch.json").write_text("{}")
-    checks = {"required_status_checks": [{"context": "review"}]}
+    checks = {"required_status_checks": [{"context": "claude-review"}]}
     rules = [
         {"type": "required_status_checks", "parameters": checks},
         {"type": "pull_request", "parameters": {"dismiss_stale_reviews_on_push": True}},
@@ -700,7 +702,11 @@ def test_bootstrap_hard_gates_the_review_only_with_auto_merge_in_team_mode():
         assert result.returncode == 0, result.stderr
         return sorted(json.loads(result.stdout)["required_status_checks"]["contexts"])
 
-    assert contexts("--mode", "team", "--auto-merge", "merge") == ["check", "pr-title", "review"]
+    assert contexts("--mode", "team", "--auto-merge", "merge") == [
+        "check",
+        "claude-review",
+        "pr-title",
+    ]
     assert contexts("--mode", "team", "--auto-merge", "off") == ["check", "pr-title"]
     assert contexts("--mode", "solo", "--auto-merge", "merge") == ["check", "pr-title"]
 
@@ -1815,7 +1821,7 @@ def test_every_reader_of_sdlc_auto_merge_follows_the_same_rule(request_review, v
         ]
     )
     contexts = json.loads(protection.stdout)["required_status_checks"]["contexts"]
-    assert ("review" in contexts) == on, "bootstrap requires the review check only when on"
+    assert ("claude-review" in contexts) == on, "bootstrap requires the status only when on"
 
     # request-review: with the push's review running, it labels only when auto-merge is off.
     _, labelled, _ = request_review(variable=value, runs=[review_run()])
@@ -1853,7 +1859,7 @@ def _rulesets_only(state, dismiss):
     rule = {"type": "pull_request", "parameters": {"dismiss_stale_reviews_on_push": dismiss}}
     checks = {
         "type": "required_status_checks",
-        "parameters": {"required_status_checks": [{"context": "review"}]},
+        "parameters": {"required_status_checks": [{"context": "claude-review"}]},
     }
     (state / "rules.json").write_text(json.dumps([rule, checks]))
 
@@ -1935,7 +1941,7 @@ def test_bootstrap_with_auto_merge_off_drops_review_and_the_stale_confirmation(b
     result, out, calls, sent = bootstrap_run()
     assert result.returncode == 0, out
     assert sent["required_status_checks"]["contexts"] == ["check", "pr-title"]
-    assert "the review check is no longer required (auto-merge is off" in out
+    assert "the old review check is no longer required" in out
     assert "variable delete SDLC_AUTO_MERGE_CONFIRMED -R o/r" in calls
     assert "deleted SDLC_AUTO_MERGE_CONFIRMED (auto-merge is off)" in out
 
@@ -1955,6 +1961,90 @@ def test_bootstrap_dry_run_says_it_would_delete_the_confirmation(bootstrap_run):
 def test_bootstrap_keeps_review_only_while_auto_merge_is_on(bootstrap_run, value):
     _, out, calls, sent = bootstrap_run("--auto-merge", value)
     on = value != "off"
-    assert ("review" in sent["required_status_checks"]["contexts"]) == on
+    assert ("claude-review" in sent["required_status_checks"]["contexts"]) == on
+    assert "review" not in sent["required_status_checks"]["contexts"], "the old gate is dropped"
     if not on:  # (when on, it's deleted only if main doesn't qualify, as before)
         assert "deleted SDLC_AUTO_MERGE_CONFIRMED (auto-merge is off)" in out
+
+
+def test_bootstrap_drops_the_claude_review_status_too_when_auto_merge_is_off(
+    bootstrap_run, tmp_path
+):
+    (tmp_path / "protection.json").write_text(
+        json.dumps({"required_status_checks": {"contexts": ["check", "pr-title", "claude-review"]}})
+    )
+    _, out, _, sent = bootstrap_run()
+    assert sent["required_status_checks"]["contexts"] == ["check", "pr-title"]
+    assert "the claude-review status is no longer required (auto-merge is off" in out
+
+
+def test_auto_merge_refuses_the_old_review_check_as_the_gate(auto_merge):
+    # #101 finding 4: a job skipped by another label satisfies the job's own `review` check.
+    state, go = auto_merge
+    (state / "branch.json").write_text(
+        json.dumps({"protection": {"required_status_checks": {"contexts": ["check", "review"]}}})
+    )
+    result, mutated, _ = go(SDLC_AUTO_MERGE="merge")
+    assert not mutated
+    assert "requires the old 'review' check, which a skipped review job satisfies" in result.stderr
+
+
+def test_auto_merge_never_merges_a_pr_that_changes_a_claude_workflow(auto_merge):
+    # The AI review can't run on such a PR (#14), so a person merges it.
+    state, go = auto_merge
+    files = [{"filename": "README.md"}, {"filename": ".github/workflows/claude-review.yml"}]
+    (state / "pr-files.json").write_text(json.dumps(files))
+    result, mutated, calls = go(SDLC_AUTO_MERGE="merge")
+    assert not mutated and "claude-*.yml" in result.stderr
+    assert "pulls/7/files --paginate" in calls
+    (state / "pr-files.json").write_text(json.dumps([{"filename": "README.md"}]))
+    _, mutated, _ = go(SDLC_AUTO_MERGE="merge")
+    assert mutated
+
+
+def test_review_posts_its_own_claude_review_status():
+    # #101 finding 4: a skipped job posts no status, so it can't satisfy the required gate.
+    workflow = (REPO / ".github/workflows/claude-review.yml").read_text()
+    assert "\n  statuses: write\n" in workflow
+    steps = workflow.split("\n      - ")
+    names = [s.split("\n", 1)[0] for s in steps]
+    action = next(i for i, n in enumerate(names) if "claude-code-action" in n)
+    running = next(i for i, n in enumerate(names) if "Mark the review as running" in n)
+    done = next(i for i, n in enumerate(names) if "Mark the review as done" in n)
+    failed = next(i for i, n in enumerate(names) if "Mark the review as failed" in n)
+    assert running < action < done < failed
+    for i, state, when in (
+        (running, "pending", None),
+        (done, "success", "success()"),
+        (failed, "failure", "failure()"),
+    ):
+        assert f"-f state={state}" in steps[i] and "-f context=claude-review" in steps[i]
+        assert "statuses/$HEAD_SHA" in steps[i]
+        if when:
+            assert f"if: {when}" in steps[i]
+    assert "HEAD_SHA: ${{ github.event.pull_request.head.sha }}" in workflow
+    assert "No AI review: the PR changes a claude-*.yml workflow" in steps[done]
+
+
+def test_review_notes_a_workflow_change_on_the_push_that_makes_it():
+    # #101 finding 3: the note was posted only when the PR opened.
+    workflow = (REPO / ".github/workflows/claude-review.yml").read_text()
+    note = workflow[workflow.index("- name: Note when the AI review can't run") :]
+    note = note[: note.index("\n      - ", 1)]
+    assert "if: github.event.action == 'opened'" not in note, "runs on every event"
+    assert 'git diff --name-only "$BEFORE" HEAD' in note and "synchronize)" in note
+    assert 'echo "skipped=true" >> "$GITHUB_OUTPUT"' in note
+
+
+def test_v0_10_0_upgrade_steps_match_the_scripts():
+    notes = (REPO / "docs/release-notes/v0.10.0.md").read_text()
+    assert "## Upgrade steps" in notes
+    bootstrap = (REPO / "scripts/bootstrap-github.sh").read_text()
+    for quoted in (
+        "the claude-review status (auto-merge is on)",
+        "the old review check is no longer required",
+    ):
+        assert quoted in notes and quoted in bootstrap, quoted
+    assert "scripts/auto-merge.sh --method" in notes
+    assert '"${1:-}" == --method' in (REPO / "scripts/auto-merge.sh").read_text()
+    assert "your own scripts that aren't executable in git" in notes

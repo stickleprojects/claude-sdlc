@@ -21,7 +21,10 @@
 #      auto-merge and that merge method.
 #   2. An approving review is required: the PR's reviewDecision isn't null. In solo mode
 #      (0 approvals) the merge click is the only human gate, so it's never automated.
-#   3. The Claude review (`review`) is a required status check on the PR's base branch.
+#   3. The Claude review's `claude-review` status is required on the PR's base branch. The review
+#      job posts it itself, so a skipped job can't satisfy it; the job's own `review` check
+#      could, and doesn't count (#101). And the PR doesn't change a claude-*.yml workflow: the
+#      AI review can't run on such a PR, so it's merged by hand.
 #   4. Stale approvals are dismissed on push, so an approval covers every commit that merges.
 #      Read from branch protection or rulesets. A token that can't read protection (an App
 #      without Administration: read) relies on SDLC_AUTO_MERGE_CONFIRMED=true, which only
@@ -133,8 +136,20 @@ checks="$(gh api "repos/$repo/branches/$base" \
 rules="$(gh api "repos/$repo/rules/branches/$base" 2>/dev/null || echo '[]')"
 checks+=$'\n'"$(jq -r '.[] | select(.type == "required_status_checks")
   | .parameters.required_status_checks[]?.context' <<<"$rules" 2>/dev/null)"
-grep -qxF review <<<"$checks" \
-  || skip "the Claude review ('review') isn't a required check on $base (re-run scripts/bootstrap-github.sh --mode team)"
+if ! grep -qxF claude-review <<<"$checks"; then
+  grep -qxF review <<<"$checks" \
+    && skip "$base requires the old 'review' check, which a skipped review job satisfies; re-run" \
+      "scripts/bootstrap-github.sh --mode team so it requires the claude-review status instead"
+fi
+grep -qxF claude-review <<<"$checks" \
+  || skip "the Claude review's claude-review status isn't required on $base (re-run scripts/bootstrap-github.sh --mode team)"
+
+# A PR that changes a claude-*.yml workflow isn't AI-reviewed (the action won't run until the file
+# matches the base branch), so it's never auto-merged: a person merges it after reviewing it.
+files="$(gh api "repos/$repo/pulls/$pr/files" --paginate --jq '.[].filename' 2>/dev/null)" \
+  || skip "can't list the PR's files"
+grep -q '^\.github/workflows/claude-' <<<"$files" \
+  && skip "it changes a .github/workflows/claude-*.yml file, which the AI review can't review"
 
 # 4. Stale approvals are dismissed on push. "Branch not protected" means there's no classic
 #    protection at all (rulesets only), so the rulesets alone decide: a stale CONFIRMED left over
