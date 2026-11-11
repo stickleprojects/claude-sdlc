@@ -7,6 +7,8 @@
 node_modules/
 dist/
 build/
+# ...but not the framework's /build skill, or a file a sync adds there is never staged (#103).
+!.claude/skills/build/
 coverage/
 .expo/
 .next/
