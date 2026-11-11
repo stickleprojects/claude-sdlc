@@ -468,6 +468,9 @@ case "$1 $2" in
       forbidden) echo "gh: Resource not accessible (HTTP 403)" >&2; exit 1 ;;
     esac
     printf '%s\\n' $org ;;
+  "api repos/o/r/actions/variables/SDLC_AUTO_MERGE")
+    value="${FAKE_GH_AUTO_MERGE-merge}"
+    [[ "$value" != unreadable ]] || exit 1; echo "$value" ;;
   "api repos/o/r/branches/main/protection")
     [[ -n "${FAKE_GH_PROTECTION:-}" ]] || exit 1; echo "$FAKE_GH_PROTECTION" ;;
   *) exit 1 ;;
@@ -824,3 +827,35 @@ def test_request_review_arrives_with_the_sync(consumer):
     assert "scripts/request-review.sh" in (consumer / ".sdlc-files").read_text()
     skill = (consumer / ".claude" / "skills" / "review-findings" / "SKILL.md").read_text()
     assert "scripts/request-review.sh <N>" in skill
+
+
+@pytest.mark.parametrize("value", ["off", "OFF", ""])
+def test_sync_says_nothing_about_auto_merge_when_it_is_off(
+    consumer, framework_snapshot, tmp_path, value
+):
+    # #101 finding 7: `off` is off (THE RULE in scripts/auto-merge.sh), so no warnings.
+    out = sync_with_gh(
+        consumer,
+        framework_snapshot,
+        tmp_path,
+        variables=f"{APP_VARS} SDLC_AUTO_MERGE SDLC_AUTO_MERGE_CONFIRMED",
+        FAKE_GH_PROTECTION=_protection(False),
+        FAKE_GH_AUTO_MERGE=value,
+        **ALL_SET,
+    ).stdout
+    assert "SDLC_AUTO_MERGE is set" not in out and "SDLC_AUTO_MERGE_CONFIRMED is set" not in out
+
+
+def test_sync_still_checks_auto_merge_when_its_value_cant_be_read(
+    consumer, framework_snapshot, tmp_path
+):
+    out = sync_with_gh(
+        consumer,
+        framework_snapshot,
+        tmp_path,
+        variables=f"{APP_VARS} SDLC_AUTO_MERGE",
+        FAKE_GH_PROTECTION=_protection(False),
+        FAKE_GH_AUTO_MERGE="unreadable",
+        **ALL_SET,
+    ).stdout
+    assert "WARNING: SDLC_AUTO_MERGE is set, but main doesn't qualify" in out

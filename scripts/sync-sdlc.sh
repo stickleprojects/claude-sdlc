@@ -237,8 +237,14 @@ main() {
     # Opt-in auto-merge: with this person's login (usually an admin), check main still qualifies.
     # The pipeline re-checks approvals and the review check live on each PR; the stale-approval
     # setting is the one an App token may not see, which SDLC_AUTO_MERGE_CONFIRMED stands in for.
-    local prot problems
+    # By THE RULE in scripts/auto-merge.sh (#101): `off` is off, so it gets no warnings. A value
+    # that can't be read still gets the check, as when only the name was known.
+    local prot problems method=""
     if set_in variable SDLC_AUTO_MERGE; then
+      method="$(GITHUB_REPOSITORY="$gh_repo" bash scripts/auto-merge.sh --method 2>/dev/null)" \
+        || method="unknown"
+    fi
+    if [[ -n "$method" ]]; then
       if prot="$(gh api "repos/$gh_repo/branches/main/protection" 2>/dev/null)"; then
         problems="$(jq -r '[
           (if (.required_pull_request_reviews.required_approving_review_count // 0) < 1
