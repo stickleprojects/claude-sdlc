@@ -252,7 +252,11 @@ def test_bootstrap_protection_modes(mode, approvals, code_owners):
     assert result.returncode == 0, result.stderr
     protection = json.loads(result.stdout)
     assert protection["enforce_admins"] is True, "nobody bypasses required checks"
-    assert sorted(protection["required_status_checks"]["contexts"]) == ["check", "pr-title"]
+    assert sorted(protection["required_status_checks"]["contexts"]) == [
+        "check",
+        "claude-review",
+        "pr-title",
+    ], "every repo requires the review of the latest commit (#46)"
     assert protection["required_status_checks"]["strict"] is True, "PRs must be up to date"
     reviews = protection["required_pull_request_reviews"]
     assert reviews["required_approving_review_count"] == approvals
@@ -342,8 +346,10 @@ def test_review_findings_resolves_threads_and_checks_for_bot_commits():
 
 
 def test_pr_title_accepts_bug_artifact_prs():
+    script = (REPO / "scripts/check-pr-title.sh").read_text()
+    assert "|intent|bug|spec|plan'" in script
     workflow = (REPO / ".github/workflows/pr-title.yml").read_text()
-    assert "|intent|bug|spec|plan'" in workflow
+    assert 'scripts/check-pr-title.sh "$TITLE"' in workflow and "pulls/$PR/files" in workflow
 
 
 # --- spec-pr: one spec PR per change --------------------------------------------------------
@@ -696,7 +702,7 @@ def test_spec_pr_open_offers_each_new_pr_to_auto_merge(spec_repo):
     assert "SDLC_AUTO_MERGE: ${{ vars.SDLC_AUTO_MERGE }}" in workflow
 
 
-def test_bootstrap_hard_gates_the_review_only_with_auto_merge_in_team_mode():
+def test_bootstrap_requires_the_review_status_in_every_mode():
     def contexts(*args):
         result = run(["scripts/bootstrap-github.sh", *args, "--print-protection"])
         assert result.returncode == 0, result.stderr
@@ -707,8 +713,10 @@ def test_bootstrap_hard_gates_the_review_only_with_auto_merge_in_team_mode():
         "claude-review",
         "pr-title",
     ]
-    assert contexts("--mode", "team", "--auto-merge", "off") == ["check", "pr-title"]
-    assert contexts("--mode", "solo", "--auto-merge", "merge") == ["check", "pr-title"]
+    # #46: every push after a review needs a new one, whatever the mode or auto-merge.
+    every = ["check", "claude-review", "pr-title"]
+    assert contexts("--mode", "team", "--auto-merge", "off") == every
+    assert contexts("--mode", "solo", "--auto-merge", "merge") == every
 
 
 def test_bootstrap_requires_resolved_conversations_and_compares_every_setting():
@@ -740,7 +748,7 @@ def test_bootstrap_keeps_protection_added_by_hand():
     protection = json.loads(result.stdout)
     contexts = sorted(protection["required_status_checks"]["contexts"])
     # A hand-added `e2e` is kept; `review` only while auto-merge is on (#101 finding 2).
-    assert contexts == ["check", "e2e", "pr-title"]
+    assert contexts == ["check", "claude-review", "e2e", "pr-title"]
     assert protection["required_linear_history"] is True
     assert protection["required_pull_request_reviews"]["require_last_push_approval"] is True
 
@@ -1810,18 +1818,8 @@ def test_every_reader_of_sdlc_auto_merge_follows_the_same_rule(request_review, v
     assert method.returncode == 0
     assert method.stdout == (value.lower() if on else "")
 
-    protection = run(
-        [
-            "scripts/bootstrap-github.sh",
-            "--mode",
-            "team",
-            "--auto-merge",
-            value,
-            "--print-protection",
-        ]
-    )
-    contexts = json.loads(protection.stdout)["required_status_checks"]["contexts"]
-    assert ("claude-review" in contexts) == on, "bootstrap requires the status only when on"
+    # (bootstrap's reading of the rule is tested end to end below: it deletes a leftover
+    # SDLC_AUTO_MERGE_CONFIRMED only when auto-merge is off)
 
     # request-review: with the push's review running, it labels only when auto-merge is off.
     _, labelled, _ = request_review(variable=value, runs=[review_run()])
@@ -1940,7 +1938,7 @@ def test_bootstrap_with_auto_merge_off_drops_review_and_the_stale_confirmation(b
     # from when auto-merge was on would be trusted if it's turned on again.
     result, out, calls, sent = bootstrap_run()
     assert result.returncode == 0, out
-    assert sent["required_status_checks"]["contexts"] == ["check", "pr-title"]
+    assert sent["required_status_checks"]["contexts"] == ["check", "claude-review", "pr-title"]
     assert "the old review check is no longer required" in out
     assert "variable delete SDLC_AUTO_MERGE_CONFIRMED -R o/r" in calls
     assert "deleted SDLC_AUTO_MERGE_CONFIRMED (auto-merge is off)" in out
@@ -1958,24 +1956,23 @@ def test_bootstrap_dry_run_says_it_would_delete_the_confirmation(bootstrap_run):
 
 
 @pytest.mark.parametrize("value", ["merge", "off"])
-def test_bootstrap_keeps_review_only_while_auto_merge_is_on(bootstrap_run, value):
+def test_bootstrap_requires_claude_review_and_drops_the_old_gate(bootstrap_run, value):
     _, out, calls, sent = bootstrap_run("--auto-merge", value)
     on = value != "off"
-    assert ("claude-review" in sent["required_status_checks"]["contexts"]) == on
+    assert "claude-review" in sent["required_status_checks"]["contexts"], "whatever auto-merge"
     assert "review" not in sent["required_status_checks"]["contexts"], "the old gate is dropped"
     if not on:  # (when on, it's deleted only if main doesn't qualify, as before)
         assert "deleted SDLC_AUTO_MERGE_CONFIRMED (auto-merge is off)" in out
 
 
-def test_bootstrap_drops_the_claude_review_status_too_when_auto_merge_is_off(
-    bootstrap_run, tmp_path
-):
+def test_bootstrap_keeps_the_claude_review_status_when_auto_merge_is_off(bootstrap_run, tmp_path):
+    # #46 reversed #101's "drop it when off": unreviewed pushes are now marked, not left Expected.
     (tmp_path / "protection.json").write_text(
         json.dumps({"required_status_checks": {"contexts": ["check", "pr-title", "claude-review"]}})
     )
     _, out, _, sent = bootstrap_run()
-    assert sent["required_status_checks"]["contexts"] == ["check", "pr-title"]
-    assert "the claude-review status is no longer required (auto-merge is off" in out
+    assert sent["required_status_checks"]["contexts"] == ["check", "claude-review", "pr-title"]
+    assert "no longer required (auto-merge is off" not in out
 
 
 def test_auto_merge_refuses_the_old_review_check_as_the_gate(auto_merge):
@@ -2041,10 +2038,168 @@ def test_v0_10_0_upgrade_steps_match_the_scripts():
     assert "## Upgrade steps" in notes
     bootstrap = (REPO / "scripts/bootstrap-github.sh").read_text()
     for quoted in (
-        "the claude-review status (auto-merge is on)",
+        "'check', 'pr-title' and 'claude-review'",
         "the old review check is no longer required",
     ):
         assert quoted in notes and quoted in bootstrap, quoted
-    assert "scripts/auto-merge.sh --method" in notes
+    assert "scripts/request-review.sh <N>" in notes and "unreviewed-push" in notes
     assert '"${1:-}" == --method' in (REPO / "scripts/auto-merge.sh").read_text()
     assert "your own scripts that aren't executable in git" in notes
+
+
+# --- a stale review blocks the merge (#46) --------------------------------------------------
+
+FAKE_GH_REVIEW_CURRENT = r"""#!/usr/bin/env bash
+# PR #7's commits from $D/commits (oldest first), each commit's statuses from $D/status-<sha>.
+echo "$*" >> "$D/calls"
+args=("$@") jqf=""
+for ((i = 0; i < ${#args[@]}; i++)); do [[ "${args[i]}" == --jq ]] && jqf="${args[i+1]}"; done
+case "$2" in
+  repos/o/r/pulls/7/commits)
+    jq -Rn '[inputs | {sha: .}]' < "$D/commits" | jq -r "$jqf" ;;
+  repos/o/r/commits/*/statuses)
+    sha="${2#repos/o/r/commits/}"; sha="${sha%/statuses}"
+    f="$D/status-$sha"; [[ -f "$f" ]] || echo '[]' > "$f"
+    jq -r "$jqf" < "$f" ;;
+  repos/o/r/statuses/*)
+    [[ -f "$D/post-fails" ]] && exit 1
+    printf '%s\n' "$*" > "$D/posted" ;;
+  *) exit 1 ;;
+esac
+"""
+
+
+def sha(n: int) -> str:
+    return f"{n:040x}"
+
+
+@pytest.fixture
+def review_current(tmp_path):
+    fake = tmp_path / "bin"
+    fake.mkdir()
+    (fake / "gh").write_text(FAKE_GH_REVIEW_CURRENT)
+    (fake / "gh").chmod(0o755)
+
+    def go(commits, statuses, post_fails=False):
+        for f in tmp_path.glob("status-*"):
+            f.unlink()
+        for name in ("posted", "post-fails", "calls"):
+            (tmp_path / name).unlink(missing_ok=True)
+        (tmp_path / "commits").write_text("".join(f"{sha(c)}\n" for c in commits))
+        for c, states in statuses.items():
+            entries = [{"context": ctx, "state": st} for ctx, st in states]
+            (tmp_path / f"status-{sha(c)}").write_text(json.dumps(entries))
+        if post_fails:
+            (tmp_path / "post-fails").write_text("")
+        result = run(
+            ["bash", str(REPO / "scripts/review-current.sh"), "7", sha(commits[-1])],
+            env={
+                "PATH": f"{fake}:{os.environ['PATH']}",
+                "D": str(tmp_path),
+                "GITHUB_REPOSITORY": "o/r",
+            },
+        )
+        posted = tmp_path / "posted"
+        return result, posted.read_text() if posted.exists() else None
+
+    return go
+
+
+def test_review_current_marks_commits_after_the_review_as_not_reviewed(review_current):
+    # jobhunt-app#7: requirements pushed after the review merged unreviewed.
+    result, posted = review_current([1, 2, 3, 4], {2: [("claude-review", "success")]})
+    assert result.returncode == 0, result.stderr
+    assert f"repos/o/r/statuses/{sha(4)}" in posted
+    assert "-f state=failure" in posted and "-f context=claude-review" in posted
+    assert "Not reviewed: 2 commits since the review of 0000000. Add the review label" in posted
+
+
+def test_review_current_counts_one_commit_without_a_plural(review_current):
+    _, posted = review_current([1, 2], {1: [("claude-review", "success")]})
+    assert "Not reviewed: 1 commit since the review of" in posted
+
+
+def test_review_current_uses_the_newest_review_status_of_each_commit(review_current):
+    # Statuses come newest first: a later failure on a commit replaces an earlier success.
+    _, posted = review_current(
+        [1, 2, 3],
+        {
+            1: [("claude-review", "success")],
+            2: [("claude-review", "failure"), ("claude-review", "success")],
+        },
+    )
+    assert "2 commits since the review of" in posted
+
+
+def test_review_current_says_when_nothing_was_reviewed(review_current):
+    _, posted = review_current([1, 2], {1: [("check", "success")]})
+    assert "Not reviewed yet: add the review label" in posted
+
+
+@pytest.mark.parametrize("state", ["pending", "success", "failure"])
+def test_review_current_leaves_a_commit_that_has_a_review_status(review_current, state):
+    # A review running on the push (auto-merge on, or the label added already) owns it.
+    result, posted = review_current([1, 2], {2: [("claude-review", state)]})
+    assert result.returncode == 0 and posted is None
+    assert "already has a claude-review status" in result.stdout
+
+
+def test_review_current_fails_when_it_cant_post(review_current):
+    result, _ = review_current([1, 2], {}, post_fails=True)
+    assert result.returncode == 1 and "can't post" in result.stderr
+
+
+def test_review_current_usage():
+    assert run(["bash", "scripts/review-current.sh", "7"]).returncode == 2
+    assert run(["bash", "scripts/review-current.sh", "x", sha(1)]).returncode == 2
+
+
+def test_unreviewed_pushes_are_marked_when_the_review_doesnt_run():
+    workflow = (REPO / ".github/workflows/claude-review.yml").read_text()
+    job = workflow[workflow.index("\n  unreviewed-push:") :]
+    # The exact complement of the review job's push condition: off means the review skips it.
+    assert "github.event.action == 'synchronize'" in job
+    assert "(vars.SDLC_AUTO_MERGE == '' || vars.SDLC_AUTO_MERGE == 'off')" in job
+    assert "github.event.pull_request.head.repo.full_name == github.repository" in job
+    assert 'scripts/review-current.sh "$PR" "$HEAD_SHA"' in job
+    assert "claude-code-action" not in job and "secrets." not in job, "no model, no secrets"
+    sync = (REPO / "scripts/sync-sdlc.sh").read_text()
+    for script in ("review-current.sh", "check-pr-title.sh"):
+        assert f'"scripts/{script}:scripts/{script}"' in sync
+
+
+# --- the PR title says which gate artifact it changes (#46) ----------------------------------
+
+
+@pytest.mark.parametrize(
+    ("title", "files", "ok"),
+    [
+        ("spec(0007): add R33", ["changes/0007-x/spec.md"], True),
+        ("docs(0007): add sketches", ["changes/0007-x/spec.md", "changes/0007-x/s.png"], False),
+        ("feat(0007): build it", ["changes/0007-x/plan.md", "src/a.py"], False),
+        ("plan(0007): amend", ["changes/0007-x/spec.md", "changes/0007-x/plan.md"], True),
+        ("spec(0007): amend", ["changes/0007-x/spec.md", "changes/0007-x/plan.md"], True),
+        ("intent: new idea", ["changes/0009-y/intent.md"], True),
+        ("bug(0010): export hangs", ["changes/0010-z/bug.md"], True),
+        ("feat(0007): build it", ["changes/0007-x/build.md", "src/a.py"], True),  # not a gate
+        ("docs: readme", ["readme.md", "docs/changes/spec.md"], True),  # not a change folder
+        ("chore: sync", [], True),
+        ("Update spec", ["changes/0007-x/spec.md"], False),  # not conventional at all
+    ],
+)
+def test_pr_title_type_matches_the_gate_artifacts_it_changes(title, files, ok):
+    result = run(
+        ["bash", "scripts/check-pr-title.sh", title], input="".join(f"{f}\n" for f in files)
+    )
+    assert (result.returncode == 0) == ok, result.stdout
+    assert ("::error::" in result.stdout) == (not ok)
+
+
+def test_pr_title_error_names_the_types_to_use():
+    result = run(
+        ["bash", "scripts/check-pr-title.sh", "docs: tidy"],
+        input="changes/0007-x/spec.md\nchanges/0007-x/plan.md\n",
+    )
+    assert (
+        "gate artifact (plan.md, spec.md)" in result.stdout and "use plan or spec" in result.stdout
+    )

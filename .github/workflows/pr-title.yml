@@ -1,5 +1,6 @@
 # PR titles become the commit messages that drive semantic versioning
-# (scripts/next-version.sh) and the release notes, so they must follow the convention.
+# (scripts/next-version.sh) and the release notes, so they must follow the convention. A PR that
+# changes a gate artifact (intent, bug, spec or plan) must also say so in its type (#46).
 name: PR title
 
 on:
@@ -8,20 +9,18 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
   pr-title:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - env:
+          GH_TOKEN: ${{ github.token }}
           TITLE: ${{ github.event.pull_request.title }}
+          PR: ${{ github.event.pull_request.number }}
         run: |
-          types='feat|fix|docs|chore|ci|refactor|test|perf|build|revert|intent|bug|spec|plan'
-          if [[ "$TITLE" =~ ^($types)(\([a-z0-9-]+\))?!?:\ .+ ]]; then
-            echo "ok: $TITLE"
-          else
-            echo "::error::PR title must look like 'type: summary' or 'type!: summary' (breaking)."
-            echo "Types: ${types//|/, }. feat bumps the minor version, ! marks a breaking change."
-            echo "Got: $TITLE"
-            exit 1
-          fi
+          gh api "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --paginate --jq '.[].filename' \
+            > "$RUNNER_TEMP/files.txt"
+          scripts/check-pr-title.sh "$TITLE" < "$RUNNER_TEMP/files.txt"
