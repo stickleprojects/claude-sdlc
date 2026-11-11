@@ -1416,3 +1416,17 @@ def test_delivery_prompt_example_is_not_an_answer():
     prompt = (REPO / "prompts/delivery-check.md").read_text()
     assert not re.search(r"^CLAUSES: ", prompt, re.M)
     assert "main verb or noun" in prompt
+
+
+def test_clause_check_reports_unreadable_requirement_lines_as_unchecked(fake_claude, tmp_path):
+    change = tmp_path / "0001-search"
+    shutil.copytree(REPO / CLAUSE_FIXTURE, change)
+    spec = change / "spec.md"
+    spec.write_text(spec.read_text().replace("- R2. When", "- Requirement 2: When"))
+    result, calls = fake_claude("CLAUSES: []", "--stage", "spec", str(change))
+    assert result.returncode == 0, result.stderr
+    assert len(calls) == 1, "R1 is still checked"
+    [entry] = json.loads(result.stdout)
+    assert entry["requirement"] is None and entry["stage"] == "spec"
+    assert entry["text"].startswith("- Requirement 2: When no roles match")
+    assert "could not be read as a requirement" in entry["unchecked"]
