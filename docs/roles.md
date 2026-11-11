@@ -80,7 +80,7 @@ You don't need to comment on GitHub yourself.
    ```
    Claude goes through the items one at a time: it quotes the spec text, explains the problem, suggests a fix and asks what you want. Then it edits the artifact, records your decisions, pushes, replies on every thread (signed `(posted from Claude Code)`, since the reply appears under your account) and resolves it. If it can't resolve a thread, it tells you which ones to resolve on GitHub.
    If you prefer, you can edit the file directly in the GitHub UI or your editor instead. Avoid tagging `@claude` on a thread you've also discussed with Claude Code: that starts a second agent on the same finding.
-3. **Wait for the fresh review**, which `/pr` asks for after it pushes. Check that its summary shows no open findings for you. If you edited the file yourself, add the `review` label to the PR to get one.
+3. **Wait for the fresh review**, which `/pr` asks for after it pushes. Check that its summary shows no open findings for you. If you edited the file yourself, add the `review` label to the PR to get one. Until a review covers the latest commit, the PR's `claude-review` check says "Not reviewed" and the merge is blocked.
 4. **Accept** by merging the PR, once its checks are green. In solo mode the merge *is* the approval. In team mode, a code owner approves first. Claude never merges for you: a hook blocks it. A team-mode repo can opt into auto-merge (`SDLC_AUTO_MERGE`, see the readme), and then the approval is the last step: the PR merges by itself once the checks pass.
 
 What you check at each gate:
@@ -127,7 +127,7 @@ To regenerate a spec by hand, run `claude`, then `/next NNNN`: when the spec is 
    > /pr <N>
    ```
    Claude goes through the findings one at a time and asks what you want. Then it fixes the code, pushes, replies on every thread and resolves it. Tagging `@claude` on a GitHub comment is an optional alternative, where the bot pushes the fix. Use one or the other for a finding, never both: before it pushes, Claude Code checks the branch for bot commits.
-   The review runs when the PR opens, not on every push. To review the latest push, add the `review` label; it removes itself so you can add it again.
+   The review runs when the PR opens, not on every push. A push after the review marks the PR's `claude-review` check "Not reviewed", which blocks the merge until you add the `review` label; it removes itself so you can add it again.
 
 **Stays with you:** Approving the plan and the build plan, and deciding the work is done. When Claude makes the same mistake twice, add the correction to `CLAUDE.md`.
 
@@ -154,7 +154,7 @@ To regenerate a spec by hand, run `claude`, then `/next NNNN`: when the spec is 
 
 **What you do**
 
-1. Read the Claude review summary and its inline findings. Every *Important* finding is either fixed or dismissed with a reason, in a reply on its thread. If the PR changed since the review, add the `review` label to review it again.
+1. Read the Claude review summary and its inline findings. Every *Important* finding is either fixed or dismissed with a reason, in a reply on its thread. If the PR changed since the review, its `claude-review` check says "Not reviewed: N commits since the review", and it can't merge until you add the `review` label to review it again.
    - **A PR that changes `.github/workflows/claude-*.yml` gets no AI review**, though its check is green. A comment on the PR says so. Review those by hand, with extra care: they control what the agent may do.
 2. Check that the diff matches `spec.md` and `plan.md` for its change.
 3. **Solo mode:** merge it. The required checks must be green, and nobody can bypass them. If GitHub says the branch is out of date with `main`, click *Update branch* and wait for the checks again: branch protection requires PRs to be up to date, so you see when one is behind. The branch is deleted when it merges. **Team mode:** approve it, then merge. Branch protection requires your approval, and Claude's review never counts as one.

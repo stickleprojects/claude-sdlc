@@ -908,3 +908,21 @@ def test_next_shows_a_merged_small_build_as_done_in_consumer(consumer):
         "build/0001-tidy",
     )
     assert "0001-tidy\tplan\tdone\tbuilt and merged (#3)" in make(consumer, "next").stdout
+
+
+def test_stale_review_and_title_checks_arrive_with_the_sync(consumer):
+    """#46: the workflows call these scripts, so the sync installs them runnable."""
+    for name in ("review-current.sh", "check-pr-title.sh"):
+        assert os.access(consumer / "scripts" / name, os.X_OK), name
+    bad = run(
+        ["scripts/check-pr-title.sh", "docs: tidy"], cwd=consumer, input="changes/0001-x/spec.md\n"
+    )
+    assert bad.returncode == 1 and "use spec" in bad.stdout
+    assert (
+        run(
+            ["scripts/check-pr-title.sh", "spec(0001-x): amend"],
+            cwd=consumer,
+            input="changes/0001-x/spec.md\n",
+        ).returncode
+        == 0
+    )

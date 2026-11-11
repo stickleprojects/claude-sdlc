@@ -11,7 +11,9 @@
 #   3. CODEOWNERS         names the repo owner; team mode requires a code owner's review
 #   4. Claude token       CLAUDE_CODE_OAUTH_TOKEN secret (from `claude setup-token`; Pro/Max plan)
 #   5. Actions → PRs      Spec from intent opens PRs; GitHub blocks that by default
-#   6. branch protection  PR + `check` and `pr-title` statuses, no admin bypass, branches must be
+#   6. branch protection  PR + `check`, `pr-title` and `claude-review` statuses (the review job posts
+#                         `claude-review` on each commit it reviews, so nobody merges on a stale
+#                         review, #46), no admin bypass, branches must be
 #                         up to date with main before merging (otherwise nobody is told that an
 #                         open PR is behind main), stale approvals dismissed on push, review
 #                         threads resolved before merging (#92). Required checks and strictness
@@ -22,8 +24,7 @@
 #        --mode team            1 code-owner approval: several people, or Claude under its own bot
 #                               account, so authors and approvers are different GitHub users.
 #        auto-merge (opt-in)    with the SDLC_AUTO_MERGE variable set (merge|squash|rebase; this
-#                               script only reads it), team mode also requires the `claude-review`
-#                               status, which the review job posts itself (#101),
+#                               script only reads it), team mode also
 #                               turns on the repo's allow_auto_merge, and confirms the protection
 #                               for scripts/auto-merge.sh (variable SDLC_AUTO_MERGE_CONFIRMED).
 #                               Solo mode never auto-merges: the merge click is the human gate.
@@ -49,7 +50,7 @@ while [[ $# -gt 0 ]]; do
     --print-protection) print_protection=1; shift ;;  # print the step 6 JSON and exit (tests)
     --gitignore-only) gitignore_only=1; shift ;;       # run only step 9, no GitHub calls
     --update-agent-key) update_agent_key=1; shift ;;   # step 8: re-store the App key secret (after rekey)
-    -h|--help) sed -n '2,38p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,39p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -60,11 +61,8 @@ auto_merge_sh="$(dirname "$0")/auto-merge.sh"
 if ((auto_merge_given)); then auto_merge="$(SDLC_AUTO_MERGE="$auto_merge" bash "$auto_merge_sh" --method)"; fi
 
 protection_json() {
-  local approvals=0 code_owners=false checks='["check", "pr-title"]'
+  local approvals=0 code_owners=false checks='["check", "pr-title", "claude-review"]'
   [[ "$mode" == team ]] && approvals=1 code_owners=true
-  # With auto-merge on, nothing merges without a person in the loop except through the Claude
-  # review, so it becomes a hard gate.
-  [[ "$mode" == team && -n "$auto_merge" ]] && checks='["check", "pr-title", "claude-review"]'
   jq -n --argjson n "$approvals" --argjson co "$code_owners" --argjson checks "$checks" '{
     required_status_checks: { strict: true, contexts: $checks },
     enforce_admins: true,
@@ -83,17 +81,14 @@ protection_json() {
 # checks and strictness settings someone added by hand), so a re-run never removes them. A PUT
 # replaces the whole protection, so anything not carried over here is reset.
 merged_protection() {  # <current protection JSON, or empty>
-  protection_json | jq --argjson have "${1:-null}" --arg auto_merge "$auto_merge" '
+  protection_json | jq --argjson have "${1:-null}" '
     def on(x): if (x | type) == "object" then x.enabled else x end;
     if $have == null then . else
       .required_status_checks.contexts =
         (.required_status_checks.contexts + [$have.required_status_checks.contexts[]?] | unique
          # `review` (the check run of the review job) was the gate before the `claude-review`
-         # status: a skipped job satisfied it (#101), so it is never carried over. And
-         # `claude-review` passes only when pushes are reviewed, which is auto-merge: kept as a
-         # hand-added check with auto-merge off, it would hold every PR at "Expected".
-         | map(select(. != "review"))
-         | if $auto_merge == "" then map(select(. != "claude-review")) else . end)
+         # status: a skipped job satisfied it (#101), so it is never carried over.
+         | map(select(. != "review")))
       | .required_linear_history = (on($have.required_linear_history) // false)
       | .required_pull_request_reviews.require_last_push_approval =
           ($have.required_pull_request_reviews.require_last_push_approval // false)
@@ -218,9 +213,8 @@ else
 fi
 
 step "6. Branch protection on main ($mode mode)"
-summary="PR + 'check' and 'pr-title' statuses, up to date with main, no admin bypass"
+summary="PR + 'check', 'pr-title' and 'claude-review' statuses, up to date with main, no admin bypass"
 [[ "$mode" == team ]] && summary+=", 1 code-owner approval" || summary+=", 0 approvals (you merge; the hook stops the agent)"
-[[ "$mode" == team && -n "$auto_merge" ]] && summary+=", the claude-review status (auto-merge is on)"
 # Compare the settings that matter, normalised, with what this mode wants (#91: every setting
 # protection_json sets is compared, so a later change by hand shows up and is put back).
 shape='def on(x): if (x | type) == "object" then x.enabled else x end;
@@ -234,10 +228,6 @@ shape='def on(x): if (x | type) == "object" then x.enabled else x end;
 have_raw="$(gh api "repos/$repo/branches/main/protection" 2>/dev/null || true)"
 if jq -e '[.required_status_checks.contexts[]?] | index("review")' <<<"$have_raw" >/dev/null 2>&1; then
   summary+="; the old review check is no longer required (a skipped review job satisfied it)"
-fi
-if [[ -z "$auto_merge" ]] && jq -e '[.required_status_checks.contexts[]?] | index("claude-review")' \
-    <<<"$have_raw" >/dev/null 2>&1; then
-  summary+="; the claude-review status is no longer required (auto-merge is off, so pushes aren't reviewed)"
 fi
 want="$(merged_protection "$have_raw" | jq -c "$shape")"
 have="$(jq -c "$shape" <<<"$have_raw" 2>/dev/null || true)"
@@ -336,4 +326,4 @@ step "11. Claude Code workspace trust (manual)"
 todo "run 'claude' in this folder once and accept the trust prompt"
 
 echo
-echo "Done. Verify: open a test PR and check that 'check' and 'review' pass (and, with auto-merge, the claude-review status) and Claude posts a review summary."
+echo "Done. Verify: open a test PR and check that 'check', 'pr-title' and 'claude-review' pass and Claude posts a review summary."

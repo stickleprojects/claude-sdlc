@@ -182,7 +182,7 @@ The script checks and fixes each item below. Every one of them broke the first t
 | 3 | `.github/CODEOWNERS` names the repo owner | Branch protection requires a code owner's review | No one counts as owner, so the review rule has no effect |
 | 4 | `CLAUDE_CODE_OAUTH_TOKEN` secret | Every Claude workflow logs in with it | The review fails instantly with no model usage. The script tests the token before saving it, and copes with line-wrapped pastes. |
 | 5 | Actions may create PRs | *Spec from intent* opens the spec PR | *"GitHub Actions is not permitted to create or approve pull requests"* |
-| 6 | Branch protection on `main` | Requires a PR and green `check` and `pr-title` statuses, with **no admin bypass**, branches up to date with main, stale approvals dismissed on push, and review threads resolved before merging. `--mode solo` (default) needs 0 approvals; `--mode team` needs a code owner's approval (see below). Required checks and settings you add by hand are kept on re-runs | Anyone, including the agent, could push straight to `main` or merge a red PR |
+| 6 | Branch protection on `main` | Requires a PR and green `check`, `pr-title` and `claude-review` statuses (the Claude review of the latest commit), with **no admin bypass**, branches up to date with main, stale approvals dismissed on push, and review threads resolved before merging. `--mode solo` (default) needs 0 approvals; `--mode team` needs a code owner's approval (see below). Required checks and settings you add by hand are kept on re-runs | Anyone, including the agent, could push straight to `main` or merge a red PR |
 | 7 | Merged branches deleted | `delete_branch_on_merge` | Old PR branches pile up |
 | 8 | The agent's GitHub App, if you made one | Claude can work under its own identity ([docs/agent-identity.md](docs/agent-identity.md)) | — |
 | 9 | Baseline `.gitignore` lines | A stray `git add -A` once committed ~82,000 dependency and build files | `make validate` fails the branch |
@@ -218,7 +218,7 @@ gh variable set SDLC_AUTO_MERGE --body merge   # use merge if you use /build: bu
 scripts/bootstrap-github.sh --mode team
 ```
 
-Bootstrap then also requires the Claude review's `claude-review` status, which the review job posts itself when the review is done, so a skipped job can't satisfy it. It also allows auto-merge on the repo, and confirms the protection (variable `SDLC_AUTO_MERGE_CONFIRMED`). The review then runs on every push, not only when the PR opens, because a required check belongs to the latest commit. That uses more of the Claude subscription.
+Bootstrap then allows auto-merge on the repo, and confirms the protection (variable `SDLC_AUTO_MERGE_CONFIRMED`). The review then runs on every push, not only when the PR opens, because a required check belongs to the latest commit. That uses more of the Claude subscription.
 
 A PR still merges only after a person approves it and every check passes. `scripts/auto-merge.sh` checks this on each PR and skips, with a warning, unless an approval is required, stale approvals are dismissed and the `claude-review` status is required. It never auto-merges a PR that changes a `claude-*.yml` workflow, because the AI review can't run on it. So **solo mode never auto-merges**: there the merge click is the only human gate. The variable is yours: syncing and bootstrap never change it. Delete it, or set it to `off`, to turn the feature off. Without the agent App, the spec PR's auto-merge is enabled by the workflow token, and GitHub doesn't run workflows for pushes made with that token, so workflows triggered by pushes to `main` won't run for that merge.
 
@@ -226,10 +226,11 @@ A PR still merges only after a person approves it and every check passes. `scrip
 
 ### 4. Check it works
 
-Open any small PR. **check**, **pr-title** and **review** should pass, and Claude should post a single *Review summary* comment. Then merge it yourself; in solo mode no approval is needed, and no bypass either. Two things to expect:
+Open any small PR. **check**, **pr-title**, **review** and **claude-review** should pass, and Claude should post a single *Review summary* comment. Then merge it yourself; in solo mode no approval is needed, and no bypass either. Two things to expect:
 
 - **A PR that changes `.github/workflows/claude-*.yml` gets no AI review.** The action skips itself on purpose until the file matches `main`, and a comment on the PR says so. Review those PRs by hand.
-- **The review runs when a PR opens, not on every push**, to save subscription usage. Add the `review` label to review the latest push; the label removes itself, so you can add it again. The skills do this for you after they push a fix.
+- **The review runs when a PR opens, not on every push**, to save subscription usage. But nobody merges on a stale review: a push after the review marks `claude-review` as "Not reviewed: N commits since the review", which blocks the merge. Add the `review` label to review the latest push; the label removes itself, so you can add it again. The skills do this for you after they push a fix.
+- **A PR's title says which gate artifact it changes.** A PR that changes a spec must be titled `spec(...)`, and likewise for `intent`, `bug` and `plan`, or the *PR title* check fails.
 
 ### 5. Daily use
 
@@ -254,6 +255,7 @@ Rules that must always hold are enforced by hooks and CI, not left to the model'
 | Edited files are formatted through `make fmt` | `format.sh` (PostToolUse) |
 | A bug's failing test can't be edited once committed | `scripts/tests-locked.sh` |
 | Artifacts have their required sections, approved descopes, a definition of done and readable requirements | `make validate`, in every `make check` and in CI |
+| Nobody merges on a stale review | the required `claude-review` status: the review posts it on the commit it reviewed, and a later push marks it "Not reviewed" |
 | Nobody merges without the checks, and in team mode without a code owner | branch protection from bootstrap |
 
 ## Updating the framework in a project

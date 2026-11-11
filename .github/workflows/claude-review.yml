@@ -8,6 +8,9 @@
 # The job posts that status itself, pending at the start and success once the review is posted.
 # A job skipped by its `if` (another label, say) posts nothing, so it can't satisfy the
 # requirement the way the job's own `review` check run could (#101).
+# Every repo requires `claude-review`, so nobody merges on a stale review (#46): without
+# auto-merge, a push isn't reviewed, and the `unreviewed-push` job marks its commit as not
+# reviewed, with what to do. The `review` label then reviews it.
 name: Claude review
 
 on:
@@ -152,3 +155,20 @@ jobs:
         run: >-
           gh api "repos/$GITHUB_REPOSITORY/statuses/$HEAD_SHA" --silent -f state=failure
           -f context=claude-review -f description="The Claude review failed: add the review label to run it again"
+
+  # A push the review doesn't cover (auto-merge off): mark its commit as not reviewed, so the
+  # required `claude-review` status says why and what to do instead of "Expected" (#46). No
+  # model call; scripts/review-current.sh leaves a commit that already has a status alone.
+  unreviewed-push:
+    if: >-
+      github.event.action == 'synchronize' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (vars.SDLC_AUTO_MERGE == '' || vars.SDLC_AUTO_MERGE == 'off')
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR: ${{ github.event.pull_request.number }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: scripts/review-current.sh "$PR" "$HEAD_SHA"
