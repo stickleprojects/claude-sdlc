@@ -2318,3 +2318,17 @@ def test_pr_title_error_names_the_types_to_use():
     assert (
         "gate artifact (plan.md, spec.md)" in result.stdout and "use plan or spec" in result.stdout
     )
+
+
+def test_project_review_rules_live_outside_review_md():
+    # spellbound3d added a pass to REVIEW.md, which then clashed with every framework update.
+    review = (REPO / "REVIEW.md").read_text()
+    passes = re.findall(r"^(\d)\. \*\*([^*]+):\*\*", review, re.M)
+    assert [n for n, _ in passes] == ["1", "2", "3", "4", "5", "6"]
+    assert passes[-1][1] == "Project rules", "last, so the earlier passes keep their numbers"
+    assert "`docs/review-rules.md`" in review and "the sync never touches it" in review
+    sync = (REPO / "scripts/sync-sdlc.sh").read_text()
+    assert "review-rules" not in sync, "the project's file is never synced"
+    assert '"templates:templates"' in sync, "the starting point arrives with the templates"
+    template = (REPO / "templates/review-rules.md").read_text()
+    assert "Copy this file to docs/review-rules.md" in template
