@@ -5,6 +5,14 @@
 # Usage: scripts/auto-merge.sh <pr-number>
 #        scripts/auto-merge.sh --setting <NAME>   print a variable as this script reads it:
 #          empty when it isn't set anywhere; exit 1 when it can't be read (bootstrap uses this)
+#        scripts/auto-merge.sh --method           print SDLC_AUTO_MERGE by THE RULE below: the
+#          method in lower case, or empty when auto-merge is off; exit 1 when it can't be read
+#
+# THE RULE for SDLC_AUTO_MERGE (#101): case doesn't matter, and unset, empty or `off` means
+# auto-merge is off. Anything else is the merge method. Every script reads it through
+# `--method`; claude-review.yml can't run a script in its `if`, so it spells the same rule as
+# `vars.SDLC_AUTO_MERGE != '' && vars.SDLC_AUTO_MERGE != 'off'` (expression comparisons ignore
+# case). tests/test_scripts.py holds them all to the same answers.
 #
 # Run it straight after opening the PR: GitHub refuses once a PR is approved and green
 # ("clean status"). It enables auto-merge only when all of these hold, and otherwise says why
@@ -28,13 +36,27 @@
 set -uo pipefail
 
 get_setting=""
-if [[ "${1:-}" == --setting ]]; then
+if [[ "${1:-}" == --method ]]; then
+  get_setting=SDLC_AUTO_MERGE want_method=1
+  pr=""
+elif [[ "${1:-}" == --setting ]]; then
   get_setting="${2:-}"
   [[ "$get_setting" =~ ^[A-Z_][A-Z0-9_]*$ ]] || { echo "usage: $0 --setting <NAME>" >&2; exit 2; }
   pr=""
 else
   pr="${1:-}"
-  [[ "$pr" =~ ^[0-9]+$ ]] || { sed -n '2,27p' "$0" >&2; exit 2; }
+  [[ "$pr" =~ ^[0-9]+$ ]] || { sed -n '2,35p' "$0" >&2; exit 2; }
+fi
+# THE RULE (see the header): the method in lower case, or empty when auto-merge is off.
+method_of() {
+  local value
+  value="$(tr '[:upper:]' '[:lower:]' <<<"$1")"
+  [[ "$value" == off ]] || printf '%s' "$value"
+}
+# A setting given in the environment needs no repo to read it.
+if [[ -n "$get_setting" && -n "${!get_setting+set}" ]]; then
+  if [[ -n "${want_method:-}" ]]; then method_of "${!get_setting}"; else printf '%s' "${!get_setting}"; fi
+  exit 0
 fi
 repo="${GITHUB_REPOSITORY:-$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)}"
 if [[ -z "$repo" ]]; then
@@ -59,19 +81,24 @@ setting() {
   grep -q 'HTTP 404' "$err" || return 1
   # Not a repo variable; an organization one shared with the repo still counts. A personal
   # account's repo has none (404 or 422 here).
-  if out="$(gh api "repos/$repo/actions/organization-variables" \
+  if out="$(gh api "repos/$repo/actions/organization-variables" --paginate \
     --jq ".variables[] | select(.name == \"$1\") | .value" 2>"$err")"; then
     printf '%s' "$out"; return 0
   fi
   grep -Eq 'HTTP (404|422)' "$err"
 }
+if [[ -n "${want_method:-}" ]]; then
+  value="$(setting SDLC_AUTO_MERGE)" || exit 1
+  method_of "$value"
+  exit 0
+fi
 if [[ -n "$get_setting" ]]; then setting "$get_setting"; exit; fi
 unreadable="can't read the repo variable SDLC_AUTO_MERGE (the token needs Variables: read)"
 
-method="$(setting SDLC_AUTO_MERGE)" || skip "$unreadable"
-method="$(tr '[:upper:]' '[:lower:]' <<<"$method")"
+value="$(setting SDLC_AUTO_MERGE)" || skip "$unreadable"
+method="$(method_of "$value")"
 case "$method" in
-  "" | off) exit 0 ;;  # not opted in: today's behaviour, say nothing
+  "") exit 0 ;;  # not opted in: today's behaviour, say nothing
   merge) allow_field=allow_merge_commit ;;
   squash) allow_field=allow_squash_merge ;;
   rebase) allow_field=allow_rebase_merge ;;
@@ -109,10 +136,15 @@ checks+=$'\n'"$(jq -r '.[] | select(.type == "required_status_checks")
 grep -qxF review <<<"$checks" \
   || skip "the Claude review ('review') isn't a required check on $base (re-run scripts/bootstrap-github.sh --mode team)"
 
-# 4. Stale approvals are dismissed on push.
+# 4. Stale approvals are dismissed on push. "Branch not protected" means there's no classic
+#    protection at all (rulesets only), so the rulesets alone decide: a stale CONFIRMED left over
+#    from a classic setup must not stand in for them (#101). Any other failure is a token that
+#    can't read protection, and only then does bootstrap's confirmation count.
 if dismiss="$(gh api "repos/$repo/branches/$base/protection" \
-  --jq '.required_pull_request_reviews.dismiss_stale_reviews // false' 2>/dev/null)"; then
+  --jq '.required_pull_request_reviews.dismiss_stale_reviews // false' 2>"$err")"; then
   :
+elif grep -q 'Branch not protected' "$err"; then
+  dismiss=false
 else
   dismiss=unknown
 fi
