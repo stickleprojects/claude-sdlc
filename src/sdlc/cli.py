@@ -183,11 +183,18 @@ def cmd_clauses(root: Path, name: str, ref: str | None) -> int:
         print(f"no change matching {name!r}", file=sys.stderr)
         return 1
     try:
-        found = change_blocks(root, change_dir, ref)
+        found, lost = change_blocks(root, change_dir, ref)
     except ClauseError as e:
         print(f"{change_dir}: {e}", file=sys.stderr)
         return 1
-    print(json.dumps({"change": change_dir.name, "requirements": found}, indent=2))
+    for line in lost:
+        print(
+            f"{change_dir}: warning: can't read this as a requirement "
+            f"(expected '- R<n>. <requirement>'): {line}",
+            file=sys.stderr,
+        )
+    output = {"change": change_dir.name, "requirements": found, "unreadable": lost}
+    print(json.dumps(output, indent=2))
     return 0
 
 

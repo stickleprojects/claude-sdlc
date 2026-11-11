@@ -11,6 +11,8 @@
 #   {"requirement": "R2", "text": "...", "stage": "spec", "clause": "...", "missing": [...]}
 # and, for a requirement whose answer couldn't be read or whose call failed:
 #   {"requirement": "R2", "text": "...", "stage": "spec", "unchecked": "<why>"}
+# A line under ## Requirements that couldn't be read as one is unchecked too, with
+# "requirement": null and the line as its "text".
 # An unchecked requirement is reported, never read as covered.
 #
 # Env:
@@ -61,4 +63,9 @@ for ((i = 0; i < count; i++)); do
   fi
   results="$(jq -c --argjson e "$entries" '. + $e' <<<"$results")"
 done
+# Lines under ## Requirements that couldn't be read as a requirement: nothing checked them.
+results="$(jq -c --argjson b "$blocks" --arg s "$stage" '. + ($b.unreadable // [] | map(
+  {requirement: null, text: ., stage: $s,
+   unchecked: "this line under ## Requirements could not be read as a requirement (expected \"- R<n>. <requirement>\"), so nothing checked it"}))' \
+  <<<"$results")"
 jq . <<<"$results"

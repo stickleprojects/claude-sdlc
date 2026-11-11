@@ -15,9 +15,9 @@ from pathlib import Path
 
 from sdlc.artifacts import COMMENT_RE, HEADING_RE, LIST_MARKER_RE, section
 
-# `- R1. text`, `R1: text`, `1. **R1** text` and the like, at the start of a line.
+# `- R1. text`, `R1: text`, `1. **R1** text`, `- **R14a.** text` and the like, at line start.
 REQUIREMENT_RE = re.compile(
-    r"^(?:[-*+]|\d+[.)])?\s*(?:\*\*)?(R\d+)\b(?:\*\*)?[.:)]?(?:\*\*)?\s*(.*)$"
+    r"^(?:[-*+]|\d+[.)])?\s*(?:\*\*)?(R\d+[a-z]?)\b(?:\*\*)?[.:)]?(?:\*\*)?\s*(.*)$"
 )
 # `- AC1 (R1): text`, `- A1 (R1). text`, or an untestable clause: `- Untestable (R3): ...`.
 CRITERION_LINE_RE = re.compile(
@@ -25,8 +25,10 @@ CRITERION_LINE_RE = re.compile(
 )
 # A group label between requirements, such as `**Tests**`, ends the requirement above it.
 GROUP_LABEL_RE = re.compile(r"^\*\*[^*]+\*\*:?$")
+# A top-level list entry: a marker then a space, so a group label like `**Search**` isn't one.
+LIST_ENTRY_RE = re.compile(r"^(?:[-*+]|\d+[.)])\s+\S")
 RANGE_RE = re.compile(r"\b(R|AC|A)(\d+)\s*(?:–|—|-|to)\s*(?:\1)?(\d+)\b")
-ID_RE = re.compile(r"\b(R|AC|A)(\d+)\b")
+ID_RE = re.compile(r"\b(R|AC|A)(\d+[a-z]?)\b")
 
 
 class ClauseError(Exception):
@@ -99,11 +101,27 @@ def _plan_lines(plan: str) -> list[tuple[str, str, set[str]]]:
     return out
 
 
+def unreadable(spec: str) -> list[str]:
+    """Lines under ## Requirements that look like a requirement but can't be read as one: a
+    top-level list entry that isn't `R<n>`, or an `R<n>` with no text. Reported so they read as
+    unchecked, never as having nothing to check (PR #107 review). Indented lines continue the
+    entry above them, and prose that isn't a list entry is left alone."""
+    out = []
+    for line in COMMENT_RE.sub("", section(spec, "Requirements")).splitlines():
+        if line[:1].isspace() or not line.strip():
+            continue
+        m = REQUIREMENT_RE.match(line)
+        if (m and not m.group(2).strip()) or (not m and LIST_ENTRY_RE.match(line)):
+            out.append(line.strip())
+    return out
+
+
 def blocks(spec: str, plan: str | None = None) -> list[Block]:
     """One block per requirement in the spec's Requirements section.
 
     Raises ClauseError when no requirement can be read, so a spec in a form this doesn't
-    recognise fails the check instead of reading as "nothing to check".
+    recognise fails the check instead of reading as "nothing to check". Lines that can't be
+    read when others can are listed by `unreadable`.
     """
     found = [
         Block(rid, text)
@@ -145,22 +163,27 @@ def _git_show(root: Path, ref: str, path: Path) -> str | None:
     return result.stdout if result.returncode == 0 else None
 
 
-def change_blocks(root: Path, change_dir: Path, ref: str | None = None) -> list[dict]:
-    """The change's blocks as plain dicts. With `ref`, only the blocks that are new or differ from
-    the ones at that ref (the requirement's text, its criteria or its plan lines), so an
-    amendment PR checks only what it touched."""
+def change_blocks(
+    root: Path, change_dir: Path, ref: str | None = None
+) -> tuple[list[dict], list[str]]:
+    """The change's blocks as plain dicts, and its unreadable requirement lines. With `ref`, only
+    the blocks that are new or differ from the ones at that ref (the requirement's text, its
+    criteria or its plan lines), so an amendment PR checks only what it touched. Unreadable lines
+    are always listed: nothing has checked them, whatever the ref."""
     spec_path, plan_path = change_dir / "spec.md", change_dir / "plan.md"
     if not spec_path.exists():
         raise ClauseError(f"{spec_path} doesn't exist")
     plan = plan_path.read_text(encoding="utf-8") if plan_path.exists() else None
-    current = [asdict(b) for b in blocks(spec_path.read_text(encoding="utf-8"), plan)]
+    spec = spec_path.read_text(encoding="utf-8")
+    current = [asdict(b) for b in blocks(spec, plan)]
+    lost = unreadable(spec)
     if ref is None:
-        return current
+        return current, lost
     old_spec = _git_show(root, ref, spec_path)
     if old_spec is None:
-        return current
+        return current, lost
     try:
         old = {b.id: asdict(b) for b in blocks(old_spec, _git_show(root, ref, plan_path))}
     except ClauseError:
-        return current
-    return [b for b in current if old.get(b["id"]) != b]
+        return current, lost
+    return [b for b in current if old.get(b["id"]) != b], lost
