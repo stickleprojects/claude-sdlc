@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   evals:
-    runs-on: ${{ vars.SDLC_RUNNER && (github.event.pull_request.head.repo.full_name || github.repository) == github.repository && vars.SDLC_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ vars.SDLC_RUNNER && !github.event.issue.pull_request && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && vars.SDLC_RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-stack
