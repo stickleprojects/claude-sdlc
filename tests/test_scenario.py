@@ -681,3 +681,46 @@ def test_clause_check_in_consumer(consumer, framework_snapshot):
     commit(consumer, "chore: drop clauses target", {"Makefile": makefile})
     commit(framework_snapshot, "fix: change", {"REVIEW.md": "changed\n"})
     assert "make clauses  (optional" in sync(consumer, framework_snapshot, "main").stdout
+
+
+def test_clause_check_finds_the_changed_specs_and_plans_in_consumer(consumer):
+    """The review's mode: each change whose spec or plan the branch changed, at the right stage,
+    with only its changed requirements; an unreadable spec doesn't stop the others."""
+    fixture = REPO / "evals" / "fixtures" / "clause-coverage" / "0001-role-search"
+    spec, plan = (fixture / "spec.md").read_text(), (fixture / "plan.md").read_text()
+    commit(
+        consumer,
+        "spec and plan",
+        {"changes/0001-search/spec.md": spec, "changes/0001-search/plan.md": plan},
+    )
+    git(consumer, "checkout", "-q", "-b", "amend")
+    commit(
+        consumer,
+        "amend",
+        {
+            # 0001: the plan changes R2's row only, so it's checked at stage plan, R2 only.
+            "changes/0001-search/plan.md": plan.replace("box holds", "box still holds"),
+            "changes/0002-export/spec.md": spec.replace("search box", "export button"),
+            "changes/0003-broken/spec.md": "# Spec\n\n## Requirements\n\nTBD\n",
+        },
+    )
+    git(consumer, "checkout", "-q", "main")
+    commit(consumer, "later on main", {"changes/0004-later/spec.md": spec})
+    git(consumer, "checkout", "-q", "amend")
+
+    result = run(
+        ["scripts/clause-check.sh", "--changed-since", "main"],
+        cwd=consumer,
+        env={"AGENT": "echo"},
+    )
+    assert result.returncode == 0, result.stderr
+    found = [(f["change"], f["stage"], f.get("requirement")) for f in json.loads(result.stdout)]
+    assert found == [
+        ("0001-search", "plan", "R2"),
+        ("0002-export", "spec", "R1"),
+        ("0002-export", "spec", "R2"),
+        ("0003-broken", "spec", None),
+    ]
+    broken = json.loads(result.stdout)[-1]
+    assert "no requirements could be read" in broken["unchecked"]
+    assert not list(consumer.glob(".clause-check*")), "nothing left in the repo"

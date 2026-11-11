@@ -51,6 +51,36 @@ jobs:
           if git diff --name-only "$base"...HEAD | grep -q '^\.github/workflows/claude-'; then
             gh pr comment "$PR" -R "$GITHUB_REPOSITORY" --body "AI review skipped: this PR changes a \`.github/workflows/claude-*.yml\` file, and the review action won't run until that file matches \`main\`. A code owner needs to review it by hand."
           fi
+      # Clause coverage (#47): when the PR changes a spec.md or plan.md, check each changed
+      # requirement's clauses with one small-model call each (scripts/clause-check.sh), and
+      # hand the list to the review. Never fails the job: if it can't run, the review is told
+      # so and splits the clauses itself (REVIEW.md, "Where the clauses come from").
+      - name: Find the changed specs and plans
+        id: artifacts
+        run: |
+          base="$(git merge-base "${{ github.event.pull_request.base.sha }}" HEAD)"
+          if git diff --name-only "$base" -- 'changes/*/spec.md' 'changes/*/plan.md' | grep -q .; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: ./.github/actions/setup-stack
+        if: steps.artifacts.outputs.changed == 'true'
+        continue-on-error: true  # a consumer's stack failing here mustn't stop the review
+      - name: Clause check
+        if: steps.artifacts.outputs.changed == 'true'
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          out="$RUNNER_TEMP/clause-check.json"
+          if npm install -g @anthropic-ai/claude-code >/dev/null 2>&1 \
+              && scripts/clause-check.sh --changed-since "$BASE" > "$out" 2> "$RUNNER_TEMP/clause-check.err"; then
+            :
+          else
+            jq -n --arg e "$(tail -n 5 "$RUNNER_TEMP/clause-check.err" 2>/dev/null)" \
+              '[{unchecked: ("the clause check could not run: " + $e)}]' > "$out"
+          fi
+          cp "$out" .clause-check.json
+          echo "Clause check: $(jq length .clause-check.json) entries"
       - uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -63,6 +93,11 @@ jobs:
             Review PR #${{ github.event.pull_request.number }} in ${{ github.repository }}.
             Follow REVIEW.md exactly. Check the diff against the spec.md and plan.md
             of the change it implements (under changes/).
+
+            If the file .clause-check.json exists in the workspace, it is the clause check's
+            output for the specs and plans this PR changes: start clause coverage from it, as
+            REVIEW.md's "Where the clauses come from" says. If it doesn't exist, the PR changes
+            no spec.md or plan.md.
 
             This PR may have been reviewed before. First read the existing inline comments:
               gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments

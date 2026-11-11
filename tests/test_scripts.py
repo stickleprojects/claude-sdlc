@@ -1313,7 +1313,15 @@ def test_clause_check_dry_run_reads_as_unchecked():
 
 @pytest.mark.parametrize(
     "args",
-    [[], ["--stage", "spec"], ["--stage", "code", "0001"], ["--stage", "spec", "a", "b"], ["-x"]],
+    [
+        [],
+        ["--stage", "spec"],
+        ["--stage", "code", "0001"],
+        ["--stage", "spec", "a", "b"],
+        ["-x"],
+        ["--changed-since", "main", "--stage", "spec"],
+        ["--changed-since", "main", "0001"],
+    ],
 )
 def test_clause_check_usage(args):
     result = run(["scripts/clause-check.sh", *args], env={"AGENT": "echo"})
@@ -1326,3 +1334,25 @@ def test_clause_check_fails_when_the_spec_cant_be_split(tmp_path):
     )
     assert result.returncode != 0
     assert "spec.md doesn't exist" in result.stderr
+
+
+def test_review_runs_the_clause_check_before_the_review_and_never_fails_on_it():
+    workflow = (REPO / ".github/workflows/claude-review.yml").read_text()
+    check = workflow.index("- name: Clause check")
+    assert workflow.index("- name: Find the changed specs and plans") < check
+    assert check < workflow.index("- uses: anthropics/claude-code-action@v1")
+    step = workflow[check : workflow.index("- uses: anthropics/claude-code-action@v1")]
+    # AI only through the adapter (CLAUDE.md): the script calls agent.sh, the step never claude -p.
+    assert 'scripts/clause-check.sh --changed-since "$BASE"' in step
+    assert "claude -p" not in workflow
+    assert "BASE: ${{ github.event.pull_request.base.sha }}" in step
+    assert "could not run" in step, "a failed check is reported to the review, not dropped"
+    assert "if: steps.artifacts.outputs.changed == 'true'" in step
+    setup = workflow[workflow.index("- uses: ./.github/actions/setup-stack") : check]
+    assert "continue-on-error: true" in setup
+    assert (
+        ".clause-check.json" in step
+        and ".clause-check.json" in workflow[check:].split("prompt: |", 1)[1]
+    )
+    assert "Where the clauses come from" in workflow
+    assert "Where the clauses come from" in (REPO / "REVIEW.md").read_text()
