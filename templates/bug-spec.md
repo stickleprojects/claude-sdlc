@@ -7,7 +7,10 @@ Bug: ./bug.md
 
 ## Requirements
 
-Numbered, testable requirements (R1, R2, ...): the correct behaviour, one per symptom in bug.md.
+Numbered, testable requirements, one `- R<n>.` bullet each: the correct behaviour, one per
+symptom in bug.md. The checks read only this form:
+
+- R1. <the correct behaviour>.
 
 ## Acceptance criteria
 

@@ -429,6 +429,26 @@ def check_criteria(path: Path) -> list[Problem]:
     return [Problem(path, f"Acceptance criteria has no criterion that can be read; {expected}")]
 
 
+def check_requirements(path: Path) -> list[Problem]:
+    """Every line under a spec's ## Requirements reads as a requirement (`- R<n>. ...`), so the
+    clause check can split it (#47). Checked only in specs the branch adds or edits: specs merged
+    before this rule stay valid until someone edits them."""
+    from sdlc.clauses import ClauseError, blocks, unreadable  # clauses imports this module
+
+    text = path.read_text(encoding="utf-8")
+    if "Requirements" not in headings(text):
+        return []  # reported as a missing section
+    expected = "expected '- R<n>. <requirement>'"
+    try:
+        blocks(text)
+    except ClauseError:
+        return [Problem(path, f"no requirement under ## Requirements can be read; {expected}")]
+    return [
+        Problem(path, f"can't read this as a requirement ({expected}): {line}")
+        for line in unreadable(text)
+    ]
+
+
 def descope_items(body: str) -> list[str]:
     """Each entry in a Descopes section, without the list marker. An indented line straight after an
     entry is a wrapped part of it; any other line is an entry of its own, so prose after an approved
@@ -502,9 +522,9 @@ def check_change(
     dod: DefinitionOfDone | None = None,
 ) -> list[Problem]:
     """Problems with one change folder. `changed` holds the files the branch adds or edits
-    (resolved paths); NEW_SECTIONS, the Descopes rules and the definition of done line apply only
-    to those. None means it isn't known (no git, or no main to compare with), and those rules are
-    skipped."""
+    (resolved paths); NEW_SECTIONS, the Descopes rules, the definition of done line and the
+    readable-requirements rule apply only to those. None means it isn't known (no git, or no main
+    to compare with), and those rules are skipped."""
     problems: list[Problem] = []
     words = words or placeholders(change_dir.parents[1])
     edited = {p.resolve() for p in changed or ()}
@@ -528,6 +548,8 @@ def check_change(
         missing = [h for h in required if h not in headings(path.read_text(encoding="utf-8"))]
         if missing:
             problems.append(Problem(path, f"missing sections: {', '.join(missing)}"))
+        if name == "spec.md" and is_edited:
+            problems.extend(check_requirements(path))
         if name == "plan.md" and is_edited:
             problems.extend(check_descopes(path, words))
             problems.extend(check_dod(path, dod or definition_of_done(change_dir.parents[1])))
