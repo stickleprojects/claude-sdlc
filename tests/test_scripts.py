@@ -1476,3 +1476,74 @@ def test_release_notes_give_the_clauses_recipe_the_makefile_uses():
     assert "## Upgrade steps" in notes and "## Optional: the `clauses` make target" in notes
     skill = (REPO / ".claude/skills/sdlc/SKILL.md").read_text()
     assert "`Upgrade steps`" in skill and "never in the sync PR" in skill
+
+
+@pytest.fixture
+def eval_check(tmp_path):
+    """Run an eval task's check in a copy of the repo with report.md and a fake `claude`."""
+    work = tmp_path / "work"
+    shutil.copytree(REPO, work, ignore=shutil.ignore_patterns(".git", ".venv", "__pycache__"))
+    init_repo(work)
+    commit(work, "base")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+
+    def check(task, report, entries):
+        (work / "report.md").write_text(report)
+        (tmp_path / "answer.txt").write_text("CLAUSES: " + json.dumps(entries) + "\n")
+        (bin_dir / "claude").write_text(f"#!/usr/bin/env bash\ncat '{tmp_path / 'answer.txt'}'\n")
+        (bin_dir / "claude").chmod(0o755)
+        command = json.loads((REPO / "evals/tasks" / task).read_text())["check"]
+        return run(
+            ["bash", "-c", command], cwd=work, env={"PATH": f"{bin_dir}:{os.environ['PATH']}"}
+        )
+
+    return check
+
+
+APPROVED_TASK = "verifier-passes-an-approved-delivery-gap.json"
+FLAGGED_TASK = "verifier-flags-unapproved-delivery-gap.json"
+REAL_QUOTE = "Descope: R1's 3D scene opened in the editor"
+
+
+@pytest.mark.parametrize(
+    ("report", "passes"),
+    [
+        # The release run's report (v0.9.0): right, but it says "needs approval" in prose.
+        ("Nothing needs approval, so there is no heading. Approved: Sam, 2026-11-01.", True),
+        ("## Descope: needs approval\n\n- R1. Approved: Sam, 2026-11-01.", False),
+        ("**Descope: needs approval**\n\nApproved: Sam", False),
+        ("R1's gap is covered.", False),  # doesn't quote the approval
+    ],
+)
+def test_approved_gap_eval_reads_the_heading_not_the_phrase(eval_check, report, passes):
+    entry = {"clause": "a 3D scene", "delivered": "x", "gap": "large", "approved": REAL_QUOTE}
+    result = eval_check(APPROVED_TASK, report, [entry])
+    assert (result.returncode == 0) == passes, result.stdout + result.stderr
+    if not passes:
+        assert result.stdout.startswith("check: "), "a failure says which part failed"
+
+
+def test_approved_gap_eval_shows_the_script_output_when_it_fails(eval_check):
+    made_up = {
+        "clause": "a 3D scene",
+        "delivered": "x",
+        "gap": "large",
+        "approved": "Approved: Lee",
+    }
+    result = eval_check(APPROVED_TASK, "Approved: Sam, 2026-11-01.", [made_up])
+    assert result.returncode != 0
+    assert "left a large gap unapproved" in result.stdout and "approval_not_found" in result.stdout
+
+
+@pytest.mark.parametrize(
+    ("report", "passes"),
+    [
+        ("## Descope: needs approval\n\n- R1 generates a 3D scene: only a diagram.", True),
+        ("R1 generates a 3D scene, which needs approval.", False),  # no heading
+    ],
+)
+def test_unapproved_gap_eval_needs_the_heading(eval_check, report, passes):
+    entry = {"clause": "generates a 3D scene", "delivered": "x", "gap": "large", "approved": None}
+    result = eval_check(FLAGGED_TASK, report, [entry])
+    assert (result.returncode == 0) == passes, result.stdout + result.stderr
