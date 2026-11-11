@@ -1430,3 +1430,29 @@ def test_clause_check_reports_unreadable_requirement_lines_as_unchecked(fake_cla
     assert entry["requirement"] is None and entry["stage"] == "spec"
     assert entry["text"].startswith("- Requirement 2: When no roles match")
     assert "could not be read as a requirement" in entry["unchecked"]
+
+
+@pytest.mark.parametrize(
+    ("quote", "kept"),
+    [
+        # The fixture plan has no Descopes entry, but its spec has an Out of scope line.
+        ("Editing doorways by hand.", True),
+        ("  Editing   doorways  by hand. ", True),  # whitespace differs
+        ("and snaps moved rooms to the grid", True),  # wraps across lines in plan.md
+        ("**Editing doorways** by `hand`.", True),  # markdown differs
+        ("Descope: the 3D scene. Approved: Sam, 2026-11-01.", False),  # made up
+        ("**", False),  # nothing left once markdown is stripped
+    ],
+)
+def test_delivery_check_keeps_an_approval_only_if_its_quote_is_there(fake_claude, quote, kept):
+    # PR #109 review: a made-up approval quote turned a large gap into an approved one.
+    answer = "CLAUSES: " + json.dumps(
+        [{"clause": "generates a 3D scene", "delivered": "x", "gap": "large", "approved": quote}]
+    )
+    result, _ = fake_claude(answer, "--stage", "build", DELIVERY_FIXTURE)
+    assert result.returncode == 0, result.stderr
+    entry = json.loads(result.stdout)[0]
+    if kept:
+        assert entry["approved"] == quote and "approval_not_found" not in entry
+    else:
+        assert entry["approved"] is None and entry["approval_not_found"] == quote
