@@ -74,11 +74,16 @@ actions/checkout@*, actions/create-github-app-token@*, anthropics/claude-code-ac
 
 **Everywhere:**
 
-3. **Make the machine cheap to lose:**
+3. **The strongest option: a job-start hook on the runner.** Everything above lives in files or settings that someone else could change. A hook lives on your machine. Set `ACTIONS_RUNNER_HOOK_JOB_STARTED` in the runner's `.env` file to the path of a script. The runner runs it before every job, and if the script exits non-zero, the job fails at "Set up job" without running anything. The script can:
+   - refuse any `GITHUB_ACTOR` that isn't on your allowlist (you, and your own Apps' `[bot]` accounts);
+   - refuse a PR whose head repo, `.pull_request.head.repo.full_name` in `$GITHUB_EVENT_PATH`, isn't this repo.
+
+   Then a fork PR that edits `runs-on` still can't use your runner. Keep the script and the allowlist where the runner's user can read them but not change them. When a new App or account starts running jobs, add it to the allowlist and re-run the refused job.
+4. **Make the machine cheap to lose:**
    - run the runner as its own user, not yours, with no SSH keys, cloud credentials or browser profile;
    - better, use a VM or container, and start the runner with `--ephemeral` so each job gets a clean one;
    - keep no secrets on the machine beyond what the workflows are given.
-4. **Turn off "Allow GitHub Actions to create and approve pull requests"** (Settings → Actions → General → Workflow permissions) when the repo has the agent App. With it on, a workflow's own token can approve a PR, which gets around the rule that a person approves. Spec-from-intent needs it only when there's no App.
-5. **Remove a runner you no longer use.** A registered runner on a public repo is always a target.
+5. **Turn off "Allow GitHub Actions to create and approve pull requests"** (Settings → Actions → General → Workflow permissions) when the repo has the agent App. With it on, a workflow's own token can approve a PR, which gets around the rule that a person approves. Spec-from-intent needs it only when there's no App.
+6. **Remove a runner you no longer use.** A registered runner on a public repo is always a target.
 
 Organizations on GitHub Team or Enterprise can also put the runner in a runner group and limit that group to chosen repositories and workflows.
