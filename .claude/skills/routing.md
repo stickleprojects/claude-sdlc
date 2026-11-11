@@ -27,7 +27,7 @@ Then check what isn't on main yet:
 
 - **Open PRs:** `gh api 'repos/{owner}/{repo}/pulls?state=open&per_page=100' --jq '.[] | "\(.number)\t\(.head.ref)\t\(.title)"'`. A PR belongs to a change when its branch or title carries the slug (`spec/0002-breadcrumbs`, `plan(0002-breadcrumbs): …`, `build/0002-breadcrumbs`).
 - **A build under way:** a branch `origin/build/<slug>`. On it, `make next CHANGE=<slug>` (without `REF`) reads its build.md.
-- **A merged build without build.md** (a small build): `gh api 'repos/{owner}/{repo}/pulls?state=closed&head={owner}:build/<slug>'` with `merged_at` set means it's done.
+- **A merged build without build.md** (a small build): `make next` reads it from main's history, as the merge commit `Merge pull request #N from <owner>/build/<slug>`, or the squashed PR title `feat(<slug>): … (#N)`, and shows it `done` (#122). In a repo that rebase-merges neither exists. There, `gh api 'repos/{owner}/{repo}/pulls?state=closed&head={owner}:build/<slug>'` with `merged_at` set means it's done.
 
 ## 2. Pick the change
 

@@ -885,3 +885,26 @@ def test_sync_still_checks_auto_merge_when_its_value_cant_be_read(
         **ALL_SET,
     ).stdout
     assert "WARNING: SDLC_AUTO_MERGE is set, but main doesn't qualify" in out
+
+
+def test_next_shows_a_merged_small_build_as_done_in_consumer(consumer):
+    """#122: a small build has no build.md, so `make next` reads its PR's merge from history."""
+    folder = consumer / "changes" / "0001-tidy"
+    for name in CHAIN:
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / name).write_text("# T\n\n" + artifact(CHAIN[name]))
+    commit(consumer, "plan(0001-tidy): plan it")
+    assert "0001-tidy\tplan\tbuild\tbuild it" in make(consumer, "next").stdout
+    git(consumer, "checkout", "-q", "-b", "build/0001-tidy")
+    commit(consumer, "feat(0001-tidy): tidy", {"src.txt": "tidy\n"})
+    git(consumer, "checkout", "-q", "main")
+    git(
+        consumer,
+        "merge",
+        "-q",
+        "--no-ff",
+        "-m",
+        "Merge pull request #3 from o/build/0001-tidy",
+        "build/0001-tidy",
+    )
+    assert "0001-tidy\tplan\tdone\tbuilt and merged (#3)" in make(consumer, "next").stdout
