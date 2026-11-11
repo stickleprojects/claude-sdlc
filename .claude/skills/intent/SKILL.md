@@ -12,8 +12,14 @@ description: Stage 1 (Plan), and the place to start anything new. Brainstorm a p
 1. Act as a business analyst. Ask short questions until you understand: the problem and who has it, the outcome that would count as success, the users and systems affected, constraints, and what is still unknown. Ask one round at a time; don't invent answers.
 2. Pick a short kebab-case name and run `make new-change NAME=<name>`. It prints the new `intent.md` path.
 3. Fill in every section of that file from the conversation. Put anything unresolved under **Open questions** rather than guessing.
-4. Run `make validate`.
-5. Show the originator the file and ask for corrections. Remind them that the product owner accepts it by approving the PR. Merging that PR triggers spec generation.
+4. **If the repo has a roadmap** (`docs/roadmap.md`), place the change on it. Read the roadmap and agree with the originator which milestone this delivers: usually the first one that isn't done and whose scope covers it. Then, in the same PR:
+   - add `Milestone: M<n>` to the intent, under `Product owner:`;
+   - add the change's row to that milestone's `### Changes` table as `| [<slug>](../changes/<slug>/) | <summary> | planned |`;
+   - if the change doesn't fit the milestone's agreed scope, or its scope isn't agreed yet (it's `draft`), or it moves a milestone's goal, exit criteria or order, add an adjustment record from `templates/roadmap-adjustment.md` at `docs/roadmap/adjustments/NNNN-<slug>.md` (the next free number, `Status: accepted`: merging the PR is the acceptance), an `Adjustment: NNNN-<slug>` line in the intent, and a citation of the record in the milestone's scope text. Never edit an old record away: a new one supersedes it.
+
+   If it fits no milestone, ask the originator whether to add it to one (an adjustment) or to a new milestone; the order is the product owner's, so never reorder milestones yourself. The PR body gets a **Roadmap** section: the milestone by name (not just its number), whether the change delivers the whole milestone or part of it, what it knowingly leaves out, and any adjustment. Without a roadmap, skip this step.
+5. Run `make validate`. With a roadmap, it fails until the row, the `Milestone:` line and any record agree.
+6. Show the originator the file and ask for corrections. Remind them that the product owner accepts it by approving the PR. Merging that PR triggers spec generation.
 
 Do not write a spec, a plan or any code at this stage.
 
@@ -26,4 +32,4 @@ Do not write a spec, a plan or any code at this stage.
 
 ## Committing
 
-When you commit, add the change's files by explicit path (`git add changes/<slug>/intent.md` or `…/bug.md`), never `git add -A` or `git add .`. Follow the `agent-identity` skill for the commit trailer and PR signature.
+When you commit, add the change's files by explicit path (`git add changes/<slug>/intent.md` or `…/bug.md`, plus `docs/roadmap.md` and any adjustment record), never `git add -A` or `git add .`. Follow the `agent-identity` skill for the commit trailer and PR signature.

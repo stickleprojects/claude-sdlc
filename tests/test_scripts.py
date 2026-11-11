@@ -2332,3 +2332,16 @@ def test_project_review_rules_live_outside_review_md():
     assert '"templates:templates"' in sync, "the starting point arrives with the templates"
     template = (REPO / "templates/review-rules.md").read_text()
     assert "Copy this file to docs/review-rules.md" in template
+
+
+def test_the_roadmap_is_the_projects_and_its_format_is_synced():
+    # #81: the framework ships the format and the templates; docs/roadmap.md is the project's.
+    sync = (REPO / "scripts/sync-sdlc.sh").read_text()
+    assert '"docs/roadmap-format.md:docs/roadmap-format.md"' in sync
+    assert '"docs/roadmap.md:' not in sync and "docs/roadmap/adjustments" not in sync
+    for name in ("roadmap.md", "roadmap-adjustment.md"):
+        assert "docs/roadmap" in (REPO / "templates" / name).read_text(), name
+    intent = (REPO / "templates/intent.md").read_text()
+    assert "Milestone: M<n>" in intent and "Adjustment: NNNN-<slug>" in intent
+    # Only in a comment: a repo with no roadmap gets no Milestone: line in its intents.
+    assert "\nMilestone:" not in re.sub(r"<!--.*?-->", "", intent, flags=re.S)

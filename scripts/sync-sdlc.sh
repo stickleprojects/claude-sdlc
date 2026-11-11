@@ -50,6 +50,7 @@ main() {
     "docs/agent-identity.md:docs/agent-identity.md"
     "docs/setup-agent-apps.md:docs/setup-agent-apps.md"
     "docs/self-hosted-runner.md:docs/self-hosted-runner.md"
+    "docs/roadmap-format.md:docs/roadmap-format.md"
     "src/sdlc:tools/sdlc/src/sdlc"
   )
   # Framework-only workflows that consumers must not run.

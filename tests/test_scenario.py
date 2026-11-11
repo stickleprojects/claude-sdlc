@@ -1007,3 +1007,38 @@ def test_a_consumers_review_rules_survive_the_sync(consumer, framework_snapshot)
     assert result.returncode == 0, result.stdout + result.stderr
     assert (consumer / "docs" / "review-rules.md").read_text() == rules
     assert "docs/review-rules.md" not in (consumer / ".sdlc-files").read_text()
+
+
+def test_a_consumer_adopts_a_roadmap_and_validate_checks_it(consumer, framework_snapshot):
+    """#81: no roadmap, no check; once docs/roadmap.md exists, intents and rows must agree,
+    and the sync leaves the project's roadmap alone."""
+    assert (consumer / "docs" / "roadmap-format.md").is_file()
+    assert make(consumer, "new-change", "NAME=phone-access").returncode == 0
+    intent = consumer / "changes" / "0001-phone-access" / "intent.md"
+    intent.write_text(intent.read_text().replace("<name>", "Sam"))
+    assert make(consumer, "validate").returncode == 0, "no roadmap: nothing to check"
+
+    roadmap = (consumer / "templates" / "roadmap.md").read_text()
+    (consumer / "docs" / "roadmap.md").write_text(roadmap)
+    result = make(consumer, "validate")
+    assert result.returncode != 0
+    assert "changes/0001-phone-access: intent.md has no Milestone: line" in result.stderr
+    assert "no row in docs/roadmap.md" in result.stderr
+
+    intent.write_text(
+        intent.read_text().replace("Product owner: Sam\n", "Product owner: Sam\nMilestone: M1\n")
+    )
+    row = "| [0001-phone-access](../changes/0001-phone-access/) | Phone access | planned |\n"
+    (consumer / "docs" / "roadmap.md").write_text(
+        roadmap.replace("|---|---|---|\n", "|---|---|---|\n" + row)
+    )
+    result = make(consumer, "validate")
+    assert result.returncode == 0, result.stdout + result.stderr
+
+    commit(consumer, "intent(0001-phone-access): phone access")
+    kept = (consumer / "docs" / "roadmap.md").read_text()
+    commit(framework_snapshot, "fix: roadmap template", {"templates/roadmap.md": "changed\n"})
+    result = sync(consumer, framework_snapshot, "main")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (consumer / "docs" / "roadmap.md").read_text() == kept
+    assert "docs/roadmap.md\n" not in (consumer / ".sdlc-files").read_text()

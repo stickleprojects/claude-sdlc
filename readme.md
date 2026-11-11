@@ -91,7 +91,7 @@ sequenceDiagram
 
 | Stage | Artifact | Automation |
 |---|---|---|
-| **Plan** | `changes/NNNN-*/intent.md` (or `bug.md`) | `/intent` |
+| **Plan** | `changes/NNNN-*/intent.md` (or `bug.md`) | `/intent`; an optional roadmap (`docs/roadmap.md`, [format](docs/roadmap-format.md)) that `/intent` places each change on and `make validate` checks |
 | **Design** | `spec.md` | *Spec from intent* opens the spec PR when an intent merges; `spec` skill; policy skills such as `security-policy` |
 | **Build** | `plan.md`, optional `build.md`, code | plan mode, `/plan`, `/build` with worktrees and milestones; format-on-edit and protected-path hooks |
 | **Architecture** | `docs/adr/NNNN-*.md` (optional) | `/plan` checks each accepted ADR's *Revisit when* triggers; `make validate` checks the ADRs' sections |

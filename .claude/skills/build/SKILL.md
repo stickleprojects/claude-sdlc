@@ -159,15 +159,16 @@ If it turns out bigger than it looked, stop at the end of a finished, passing st
 
 For a small build after its steps, and for a large build as part of its last milestone:
 
-1. **Run `make check` and `make coverage`.** Both must exit 0.
-2. **Run the `verifier` subagent** on `changes/<slug>`. `VERDICT: PENDING` (only human checks left) is a clean result: the PR lists them. Fix any FAIL that's within the plan. If a fix would change the plan or the spec, stop and ask.
+1. **If the repo has a roadmap** (`docs/roadmap.md`), mark the change's row `✅ done` in this PR. If that finishes its milestone (every row done or withdrawn) and every exit criterion is met, ask the person whether to mark the milestone ``· ✅ `done` `` too, ticking each criterion with how it was met; don't tick one on your own judgement. `make check` fails while the row disagrees with the build.
+2. **Run `make check` and `make coverage`.** Both must exit 0.
+3. **Run the `verifier` subagent** on `changes/<slug>`. `VERDICT: PENDING` (only human checks left) is a clean result: the PR lists them. Fix any FAIL that's within the plan. If a fix would change the plan or the spec, stop and ask.
    - **Descope: needs approval** (a large gap between a requirement and what was built, with no approval): build what the requirement says if the plan covers it. If it doesn't, don't stop for a sign-off. Open the PR with each such gap first in its body under **Descope: needs approval**, quoting the requirement and what was delivered instead; the review raises it for the product owner. A worker in `/build all` returns it in its report rather than opening the PR itself.
-3. **Open the PR** with `gh api` (see the rules above), then run `scripts/auto-merge.sh <N>` on it (the `agent-identity` skill).
+4. **Open the PR** with `gh api` (see the rules above), then run `scripts/auto-merge.sh <N>` on it (the `agent-identity` skill).
    - Title: `feat(<slug>): <summary>` (a change with `bug.md`: `fix(<slug>): <summary>`).
    - Body, in this order, so the reviewer sees what needs a decision first: **Descope: needs approval** with each of the verifier's unapproved large gaps, or "None"; the descopes, each quoted with who approved it; the deviations; a **To check by hand** list with each of the plan's human checks (`Human check:` entries), for the owner to try before merging, or "None"; then what was built; the verifier's per-criterion results; the coverage per suite against its threshold. End it with the attribution line the session asks for.
    - Don't add the `review` label. The review already runs when the PR opens.
-4. **Large build:** record the PR in build.md (`Status: PR open (#N)`), commit and push.
-5. **Never approve or merge.** A person merges.
+5. **Large build:** record the PR in build.md (`Status: PR open (#N)`), commit and push.
+6. **Never approve or merge.** A person merges.
 
 ## When build.md says PR open
 
@@ -209,7 +210,7 @@ A worker follows sections 1, 2, 5 and 6 like a single session, with these differ
 - **Never use AskUserQuestion.** Wherever this skill says to ask: commit and push only what is finished and passing, write the half-made decision into the milestone's notes, commit and push that, and return `BLOCKED`.
 - **A descope nobody approved:** if the milestone would leave something undone, untested or unchecked (`scope.md`) that plan.md's Descopes doesn't approve and no answer in your prompt covers, return `BLOCKED`. Don't take the plan's or an earlier worker's word for it, and don't report `DONE` with it written into the notes. Options: build it to the bar (recommended unless it's far outside the plan), approve the descope, or send the change back to `/plan`.
 - **Uncommitted changes from a previous session:** return `BLOCKED` with keep, stash and discard as options and your recommendation.
-- **The last milestone:** do its own steps and section 6 step 1, then return `READY-FOR-VERIFY`. With the verifier's FAILs in the prompt, fix those within the plan and return `READY-FOR-VERIFY` again. With a clean result, do section 6 steps 3–4 and return `PR-OPEN`.
+- **The last milestone:** do its own steps and section 6 steps 1–2, then return `READY-FOR-VERIFY`. Mark the roadmap row done, but not the milestone: say in Detail if the milestone looks finished, for the person to decide. With the verifier's FAILs in the prompt, fix those within the plan and return `READY-FOR-VERIFY` again. With a clean result, do section 6 steps 4–5 and return `PR-OPEN`.
 - **Return this report**, and nothing after it:
 
   ```
