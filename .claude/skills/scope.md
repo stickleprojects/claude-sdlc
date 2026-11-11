@@ -19,7 +19,8 @@ Anything the change would leave undone, untested or unchecked that someone would
 - a criterion whose test drives it at a lower level than it describes (see below);
 - a step the engineer must do by hand that a test could do;
 - first-party code under a lint, format, type-check or coverage exclusion;
-- a `skip`, `xfail`, `ignore` or `pragma: no cover` added to new code.
+- a `skip`, `xfail`, `ignore` or `pragma: no cover` added to new code;
+- a delivery, or a build.md milestone's Goal or Demo, weaker than the requirement's wording ("generates a scene" built as "draws a diagram"), whether or not the criteria pass (#106).
 
 ## Recording a descope
 
@@ -30,6 +31,10 @@ A descope is valid only when it's written down with its reason and a person's ap
 - **During a build:** a deviation in build.md (or the PR body for a small build) marked `Engineer decides: yes`. Until the person answers, it is a question, not a decision.
 
 A descope with no `Approved:`, one written in Risks rather than Descopes, or one inherited from an earlier milestone or a neighbouring file ("not tested, like the rest of the dock"), is not approved.
+
+## Delivery gaps: who is asked
+
+The AI compares what was delivered with each requirement's wording (the verifier, through `scripts/clause-check.sh --stage build`). There is no routine human sign-off step. A person is pulled in only for a **large** gap nothing has approved: the delivery lacks the requirement's main verb or noun (generates, opens, sends, saves, a scene), not just a modifier. Such a gap goes first in the PR body under **Descope: needs approval**, and the review raises it as an Important thread for the product owner, who approves it (recording it as a descope or under the spec's Out of scope) or sends it back to be built. A small gap is noted as wording drift; an approved or absent one needs nobody.
 
 ## Human checks
 

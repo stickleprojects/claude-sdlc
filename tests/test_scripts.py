@@ -1356,3 +1356,63 @@ def test_review_runs_the_clause_check_before_the_review_and_never_fails_on_it():
     )
     assert "Where the clauses come from" in workflow
     assert "Where the clauses come from" in (REPO / "REVIEW.md").read_text()
+
+
+# --- delivery check, stage build (#106) ---------------------------------------------------
+
+DELIVERY_FIXTURE = "evals/fixtures/delivery-gap/0001-floor-mode"
+
+
+def test_delivery_check_reads_the_code_with_a_larger_model(fake_claude):
+    answer = (
+        'CLAUSES: [{"clause": "generates a 3D scene", "delivered": "draws boxes", '
+        '"gap": "large", "approved": null}, {"clause": "drawn", "gap": "tiny", "approved": ""}, '
+        '{"clause": "snaps", "gap": "small", "approved": "Approved: Sam"}]'
+    )
+    result, calls = fake_claude(answer, "--stage", "build", DELIVERY_FIXTURE)
+    assert result.returncode == 0, result.stderr
+    assert len(calls) == 2
+    assert all("--model sonnet" in c and "--max-turns 15" in c for c in calls)
+    assert all("--allowedTools Read,Grep,Glob" in c for c in calls)
+    assert "You compare what a change delivers" in calls[0]
+    assert "- **Demo:** the dock's floor tab shows a floor with doorway lines" in calls[0]
+    found = [f for f in json.loads(result.stdout) if f["requirement"] == "R1"]
+    assert [(f["stage"], f["clause"], f["gap"], f["approved"]) for f in found] == [
+        ("build", "generates a 3D scene", "large", None),
+        ("build", "drawn", "large", None),  # a gap it can't read counts as large
+        ("build", "snaps", "small", "Approved: Sam"),
+    ]
+    assert found[1]["delivered"] == "" and "missing" not in found[0]
+
+
+def test_delivery_check_names_the_branchs_changed_files(tmp_path):
+    work = tmp_path / "work"
+    shutil.copytree(REPO, work, ignore=shutil.ignore_patterns(".git", ".venv", "__pycache__"))
+    init_repo(work)
+    commit(work, "base")
+    git(work, "checkout", "-q", "-b", "build/x")
+    commit(work, "code", {"src/floor_view.py": "x = 1\n", "changes/0001-x/notes.md": "n\n"})
+    (work / "src/untracked_view.py").write_text("y = 2\n")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    log = tmp_path / "calls.log"
+    (bin_dir / "claude").write_text(
+        '#!/usr/bin/env bash\nprintf "%s" "$*" >> "$FAKE_LOG"\necho "CLAUSES: []"\n'
+    )
+    (bin_dir / "claude").chmod(0o755)
+    result = run(
+        ["scripts/clause-check.sh", "--stage", "build", DELIVERY_FIXTURE],
+        cwd=work,
+        env={"PATH": f"{bin_dir}:{os.environ['PATH']}", "FAKE_LOG": str(log)},
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == []
+    calls = log.read_text()
+    assert '"changed_files":["src/floor_view.py","src/untracked_view.py"]' in calls
+    assert "changes/0001-x/notes.md" not in calls
+
+
+def test_delivery_prompt_example_is_not_an_answer():
+    prompt = (REPO / "prompts/delivery-check.md").read_text()
+    assert not re.search(r"^CLAUSES: ", prompt, re.M)
+    assert "main verb or noun" in prompt

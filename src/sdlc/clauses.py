@@ -1,9 +1,10 @@
-"""`sdlc clauses`: a spec split into one block per requirement (#47).
+"""`sdlc clauses`: a spec split into one block per requirement (#47, #106).
 
 Each block holds a requirement's text, the acceptance criteria that cite it, and the plan.md
-lines that cite it or its criteria. The clause check (`scripts/clause-check.sh`) sends one
-block at a time to a small model, which finds the clauses nothing tests or plans. This module
-does no judgement: it only reads text and IDs, so it is cheap and unit-tested.
+and build.md lines that cite it or its criteria. The clause check (`scripts/clause-check.sh`)
+sends one block at a time to a model, which finds the clauses nothing tests, plans or
+delivers. This module does no judgement: it only reads text and IDs, so it is cheap and
+unit-tested.
 """
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ import subprocess
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-from sdlc.artifacts import COMMENT_RE, HEADING_RE, LIST_MARKER_RE, section
+from sdlc.artifacts import BUILD, COMMENT_RE, LIST_MARKER_RE, section
 
 # `- R1. text`, `R1: text`, `1. **R1** text` and the like, at the start of a line.
 REQUIREMENT_RE = re.compile(
@@ -27,6 +28,8 @@ CRITERION_LINE_RE = re.compile(
 GROUP_LABEL_RE = re.compile(r"^\*\*[^*]+\*\*:?$")
 RANGE_RE = re.compile(r"\b(R|AC|A)(\d+)\s*(?:–|—|-|to)\s*(?:\1)?(\d+)\b")
 ID_RE = re.compile(r"\b(R|AC|A)(\d+)\b")
+# A `##` section or a `###` milestone heading: the section a cited line sits in.
+SECTION_RE = re.compile(r"^#{2,3}\s+(.+?)\s*$")
 
 
 class ClauseError(Exception):
@@ -51,6 +54,7 @@ class Block:
     text: str
     criteria: list[Criterion] = field(default_factory=list)
     plan: list[PlanLine] = field(default_factory=list)
+    build: list[PlanLine] = field(default_factory=list)
 
 
 def cited(text: str) -> set[str]:
@@ -86,12 +90,12 @@ def _entries(body: str, start: re.Pattern[str]) -> list[tuple[str, str]]:
     return entries
 
 
-def _plan_lines(plan: str) -> list[tuple[str, str, set[str]]]:
-    """(section, line, IDs it cites) for each plan.md line that cites an ID."""
+def _cited_lines(text: str) -> list[tuple[str, str, set[str]]]:
+    """(section, line, IDs it cites) for each line of a plan or build plan that cites an ID."""
     out = []
     heading = ""
-    for line in COMMENT_RE.sub("", plan).splitlines():
-        if m := HEADING_RE.match(line):
+    for line in COMMENT_RE.sub("", text).splitlines():
+        if m := SECTION_RE.match(line):
             heading = m.group(1).strip()
             continue
         if ids := cited(line):
@@ -99,7 +103,32 @@ def _plan_lines(plan: str) -> list[tuple[str, str, set[str]]]:
     return out
 
 
-def blocks(spec: str, plan: str | None = None) -> list[Block]:
+# A milestone's Goal and Demo lines in build.md: what it says it delivers.
+DELIVERS_RE = re.compile(r"^\s*-\s+\*\*(Goal|Demo):\*\*")
+
+
+def _build_lines(build: str) -> list[tuple[str, str, set[str]]]:
+    """Like _cited_lines, and a milestone that cites an ID also brings its Goal and Demo lines
+    with those IDs, since they say what the milestone delivers but rarely cite anything."""
+    out = []
+    by_section: dict[str, list[str]] = {}
+    for line in COMMENT_RE.sub("", build).splitlines():
+        if m := SECTION_RE.match(line):
+            heading = m.group(1).strip()
+            by_section.setdefault(heading, [])
+        elif by_section:
+            by_section[heading].append(line.strip())
+    for heading, lines in by_section.items():
+        ids = set().union(*(cited(line) for line in lines)) if lines else set()
+        for line in lines:
+            if own := cited(line):
+                out.append((heading, line, own))
+            elif ids and DELIVERS_RE.match(line):
+                out.append((heading, line, ids))
+    return out
+
+
+def blocks(spec: str, plan: str | None = None, build: str | None = None) -> list[Block]:
     """One block per requirement in the spec's Requirements section.
 
     Raises ClauseError when no requirement can be read, so a spec in a form this doesn't
@@ -123,10 +152,11 @@ def blocks(spec: str, plan: str | None = None) -> list[Block]:
             by_id[rid].criteria.append(Criterion(cid, text))
             if cid != "Untestable":
                 criteria_of[rid].add(cid)
-    for heading, line, ids in _plan_lines(plan or ""):
-        for b in found:
-            if b.id in ids or ids & criteria_of[b.id]:
-                b.plan.append(PlanLine(heading, line))
+    for kind, lines in (("plan", _cited_lines(plan or "")), ("build", _build_lines(build or ""))):
+        for heading, line, ids in lines:
+            for b in found:
+                if b.id in ids or ids & criteria_of[b.id]:
+                    getattr(b, kind).append(PlanLine(heading, line))
     return found
 
 
@@ -150,17 +180,27 @@ def change_blocks(root: Path, change_dir: Path, ref: str | None = None) -> list[
     the ones at that ref (the requirement's text, its criteria or its plan lines), so an
     amendment PR checks only what it touched."""
     spec_path, plan_path = change_dir / "spec.md", change_dir / "plan.md"
+    build_path = change_dir / BUILD
     if not spec_path.exists():
         raise ClauseError(f"{spec_path} doesn't exist")
-    plan = plan_path.read_text(encoding="utf-8") if plan_path.exists() else None
-    current = [asdict(b) for b in blocks(spec_path.read_text(encoding="utf-8"), plan)]
+
+    def read(path: Path) -> str | None:
+        return path.read_text(encoding="utf-8") if path.exists() else None
+
+    current = [
+        asdict(b)
+        for b in blocks(spec_path.read_text(encoding="utf-8"), read(plan_path), read(build_path))
+    ]
     if ref is None:
         return current
     old_spec = _git_show(root, ref, spec_path)
     if old_spec is None:
         return current
     try:
-        old = {b.id: asdict(b) for b in blocks(old_spec, _git_show(root, ref, plan_path))}
+        old_blocks = blocks(
+            old_spec, _git_show(root, ref, plan_path), _git_show(root, ref, build_path)
+        )
+        old = {b.id: asdict(b) for b in old_blocks}
     except ClauseError:
         return current
     return [b for b in current if old.get(b["id"]) != b]
