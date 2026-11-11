@@ -37,7 +37,10 @@ def test_one_app_is_named_after_the_repo_and_may_change_workflows(apps):
 def test_manifest_has_no_webhook_and_comes_back_here(apps):
     agent = apps.new_identity("x")
     m = apps.manifest(agent, "http://127.0.0.1:5000", "stickleprojects")
-    assert m["hook_attributes"]["active"] is False
+    # #102: GitHub refuses the manifest when a hook URL is the local server, even inactive.
+    assert "hook_attributes" not in m and m["default_events"] == []
+    local = {k for k, v in m.items() if "127.0.0.1" in json.dumps(v)}
+    assert local == {"redirect_url", "setup_url"}, "only the URLs GitHub accepts on localhost"
     assert m["redirect_url"] == "http://127.0.0.1:5000/created"
     assert m["setup_url"] == "http://127.0.0.1:5000/installed"
     assert m["public"] is False
