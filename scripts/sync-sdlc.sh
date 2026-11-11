@@ -35,6 +35,7 @@ main() {
     "scripts/auto-merge.sh:scripts/auto-merge.sh"
     "scripts/request-review.sh:scripts/request-review.sh"
     "scripts/review-current.sh:scripts/review-current.sh"
+    "scripts/review-posted.sh:scripts/review-posted.sh"
     "scripts/check-pr-title.sh:scripts/check-pr-title.sh"
     "scripts/agent-identity.sh:scripts/agent-identity.sh"
     "scripts/agent-session.sh:scripts/agent-session.sh"
@@ -50,6 +51,7 @@ main() {
     "docs/agent-identity.md:docs/agent-identity.md"
     "docs/setup-agent-apps.md:docs/setup-agent-apps.md"
     "docs/self-hosted-runner.md:docs/self-hosted-runner.md"
+    "docs/roadmap-format.md:docs/roadmap-format.md"
     "src/sdlc:tools/sdlc/src/sdlc"
   )
   # Framework-only workflows that consumers must not run.

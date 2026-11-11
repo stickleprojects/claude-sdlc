@@ -23,6 +23,7 @@ from sdlc.artifacts import (
     stage,
 )
 from sdlc.clauses import ClauseError, change_blocks
+from sdlc.roadmap import check_roadmap
 from sdlc.routing import steps
 
 # `make new-change NAME=x TYPE=bug`: make exports command-line variables to recipes, so the
@@ -143,6 +144,7 @@ def cmd_check(root: Path) -> int:
     problems += check_adrs(root, words)
     problems += check_config(root)
     problems += check_commits(root)
+    problems += check_roadmap(root)
     for problem in problems:
         print(problem, file=sys.stderr)
     if not problems:

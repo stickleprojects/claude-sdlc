@@ -47,10 +47,15 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      # A minute's margin for clock skew between the runner and GitHub: the summary has to be
+      # posted or edited after this, or the review didn't happen (scripts/review-posted.sh).
       - name: Mark the review as running
-        run: >-
-          gh api "repos/$GITHUB_REPOSITORY/statuses/$HEAD_SHA" --silent -f state=pending
-          -f context=claude-review -f description="The Claude review is running"
+        id: start
+        run: |
+          since="$(date -u -d '-1 minute' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v-1M +%Y-%m-%dT%H:%M:%SZ)"  # GNU, then BSD
+          echo "since=$since" >> "$GITHUB_OUTPUT"
+          gh api "repos/$GITHUB_REPOSITORY/statuses/$HEAD_SHA" --silent -f state=pending \
+            -f context=claude-review -f description="The Claude review is running"
       # Remove the label first, so adding it again asks for another review. Uses the REST API:
       # The gh pr subcommand fails in orgs hit by the Projects (classic) GraphQL deprecation.
       - name: Clear the review label
@@ -141,17 +146,29 @@ jobs:
       # The required `claude-review` status (auto-merge repos, #101). Success says what happened;
       # a PR that changes a claude-*.yml workflow isn't AI-reviewed, so its description says a
       # code owner reviews it by hand, and scripts/auto-merge.sh never auto-merges such a PR.
+      # A green action isn't enough: it can end early (refused tools, the turn limit) having
+      # posted nothing, so success needs the summary posted or edited during this job.
       - name: Mark the review as done
+        id: done
         if: success()
         env:
           SKIPPED: ${{ steps.workflow_change.outputs.skipped }}
+          SINCE: ${{ steps.start.outputs.since }}
         run: |
           description="The Claude review is posted"
-          [[ "$SKIPPED" == true ]] && description="No AI review: the PR changes a claude-*.yml workflow, so a code owner reviews it by hand"
+          if [[ "$SKIPPED" == true ]]; then
+            description="No AI review: the PR changes a claude-*.yml workflow, so a code owner reviews it by hand"
+          elif ! scripts/review-posted.sh "$PR" "$SINCE"; then
+            echo "reported=true" >> "$GITHUB_OUTPUT"
+            gh api "repos/$GITHUB_REPOSITORY/statuses/$HEAD_SHA" --silent -f state=failure \
+              -f context=claude-review \
+              -f description="The review ran but posted no summary: add the review label to run it again"
+            exit 1
+          fi
           gh api "repos/$GITHUB_REPOSITORY/statuses/$HEAD_SHA" --silent -f state=success \
             -f context=claude-review -f description="$description"
       - name: Mark the review as failed
-        if: failure()
+        if: failure() && steps.done.outputs.reported != 'true'
         run: >-
           gh api "repos/$GITHUB_REPOSITORY/statuses/$HEAD_SHA" --silent -f state=failure
           -f context=claude-review -f description="The Claude review failed: add the review label to run it again"

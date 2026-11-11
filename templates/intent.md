@@ -5,6 +5,10 @@ originator, accepted by the product owner. Merging this file triggers spec gener
 
 Originator: <name>
 Product owner: <name>
+<!-- With a roadmap (docs/roadmap.md), add a line naming the milestone this delivers:
+Milestone: M<n>
+If it doesn't fit that milestone's agreed scope, or the scope isn't agreed yet, also add a record
+in docs/roadmap/adjustments/ (templates/roadmap-adjustment.md) and a line: Adjustment: NNNN-<slug> -->
 <!-- To bin this change, add a line: Withdrawn: <who>, <date>: <why> -->
 
 ## Problem
