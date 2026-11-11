@@ -906,6 +906,121 @@ def test_workflows_guard_against_agent_loops():
     assert "actions/create-github-app-token" in spec
 
 
+# #126: SDLC_RUNNER picks the runner. Fork PRs, PRs whose fork was deleted and comments on any
+# PR never get it (they check out code the repo's people didn't write), and unset means GitHub's.
+RUNS_ON = (
+    "runs-on: ${{ vars.SDLC_RUNNER && !github.event.issue.pull_request && "
+    "(!github.event.pull_request || "
+    "github.event.pull_request.head.repo.full_name == github.repository) "
+    "&& vars.SDLC_RUNNER || 'ubuntu-latest' }}"
+)
+
+
+def gh_expr(expr, ctx):
+    """Evaluate a GitHub Actions expression made of what RUNS_ON uses: property paths, 'strings',
+    !, ==, &&, || and parentheses. Like Actions, a missing property is null, && and || return
+    an operand, and null, false, 0 and '' are falsy."""
+    tokens = re.findall(r"'[^']*'|&&|\|\||==|!|\(|\)|[A-Za-z_][\w.-]*", expr)
+    pos = 0
+
+    def peek():
+        return tokens[pos] if pos < len(tokens) else None
+
+    def take():
+        nonlocal pos
+        pos += 1
+        return tokens[pos - 1]
+
+    def operand():
+        tok = take()
+        if tok == "!":
+            return not operand()
+        if tok == "(":
+            value = either()
+            assert take() == ")"
+            return value
+        if tok.startswith("'"):
+            return tok[1:-1]
+        value = ctx
+        for part in tok.split("."):
+            value = value.get(part) if isinstance(value, dict) else None
+        return value
+
+    def equality():
+        left = operand()
+        while peek() == "==":
+            take()
+            left = left == operand()
+        return left
+
+    def both():
+        left = equality()
+        while peek() == "&&":
+            take()
+            right = equality()
+            left = right if left else left
+        return left
+
+    def either():
+        left = both()
+        while peek() == "||":
+            take()
+            right = both()
+            left = left if left else right
+        return left
+
+    value = either()
+    assert pos == len(tokens), tokens[pos:]
+    return value
+
+
+REPO_NAME = "o/r"
+SAME = {"head": {"repo": {"full_name": REPO_NAME}}}
+FORK = {"head": {"repo": {"full_name": "stranger/r"}}}
+DELETED_FORK = {"head": {"repo": None}}
+
+
+@pytest.mark.parametrize(
+    "event, runner",
+    [
+        ({"pull_request": SAME}, "self-hosted"),
+        ({"pull_request": FORK}, "ubuntu-latest"),
+        ({"pull_request": DELETED_FORK}, "ubuntu-latest"),
+        ({"pull_request": FORK, "comment": {}}, "ubuntu-latest"),  # review comment on a fork PR
+        ({"issue": {"pull_request": {"url": "x"}}, "comment": {}}, "ubuntu-latest"),  # on a PR
+        ({"issue": {}, "comment": {}}, "self-hosted"),  # a comment on an issue
+        ({"ref": "refs/heads/main"}, "self-hosted"),  # push, workflow_dispatch
+    ],
+    ids=[
+        "same-repo PR",
+        "fork PR",
+        "deleted fork",
+        "fork review comment",
+        "PR comment",
+        "issue comment",
+        "push",
+    ],
+)
+def test_runs_on_sends_only_the_repo_own_code_to_sdlc_runner(event, runner):
+    expr = RUNS_ON.removeprefix("runs-on: ${{").removesuffix("}}")
+    ctx = {"github": {"repository": REPO_NAME, "event": event}}
+    assert gh_expr(expr, {**ctx, "vars": {"SDLC_RUNNER": "self-hosted"}}) == runner
+    assert gh_expr(expr, {**ctx, "vars": {}}) == "ubuntu-latest"  # unset: GitHub's, always
+
+
+@pytest.mark.parametrize(
+    "workflow", sorted(p.name for p in REPO.glob(".github/workflows/*.yml")), ids=str
+)
+def test_every_job_runs_on_sdlc_runner_with_the_fork_guard(workflow):
+    text = (REPO / ".github/workflows" / workflow).read_text()
+    lines = [line.strip() for line in text.splitlines() if line.strip().startswith("runs-on:")]
+    assert lines, f"{workflow} has no jobs"
+    # A job pinned to a literal runner stays queued in an outage and blocks the merge.
+    assert all(line == RUNS_ON for line in lines), lines
+    jobs = re.findall(r"^  [a-z][a-z0-9_-]*:\n(?:    .*\n|\n)*?    steps:", text, re.M)
+    assert len(lines) == len(jobs), f"{workflow}: a job without runs-on"
+
+
 # --- tests-locked: bug fixes lock their tests automatically -------------------------------------
 
 

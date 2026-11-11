@@ -473,6 +473,9 @@ case "$1 $2" in
     [[ "$value" != unreadable ]] || exit 1; echo "$value" ;;
   "api repos/o/r/branches/main/protection")
     [[ -n "${FAKE_GH_PROTECTION:-}" ]] || exit 1; echo "$FAKE_GH_PROTECTION" ;;
+  "api repos/o/r") echo "${FAKE_GH_PRIVATE-false}" ;;
+  "api repos/o/r/actions/permissions/fork-pr-contributor-approval")
+    [[ -n "${FAKE_GH_FORK_POLICY:-}" ]] || exit 1; echo "$FAKE_GH_FORK_POLICY" ;;
   *) exit 1 ;;
 esac
 """
@@ -587,6 +590,72 @@ def test_sync_says_when_it_cant_read_org_secrets(consumer, framework_snapshot, t
     ).stdout
     assert "not checked: can't read o/r's secret names" in out
     assert "MISSING" not in out
+
+
+# --- SDLC_RUNNER: framework jobs on a self-hosted runner (#126) ------------------------------
+
+
+def runner_sync(consumer, framework_snapshot, tmp_path, runner=True, **env):
+    variables = f"{APP_VARS} SDLC_RUNNER" if runner else APP_VARS
+    return sync_with_gh(
+        consumer, framework_snapshot, tmp_path, variables=variables, **ALL_SET, **env
+    ).stdout
+
+
+@pytest.mark.parametrize(
+    "policy", ["first_time_contributors", "first_time_contributors_new_to_github"]
+)
+def test_sync_warns_when_a_public_repo_runs_fork_prs_on_the_runner_without_approval(
+    consumer, framework_snapshot, tmp_path, policy
+):
+    out = runner_sync(consumer, framework_snapshot, tmp_path, FAKE_GH_FORK_POLICY=policy)
+    assert (
+        "WARNING: SDLC_RUNNER is set on a public repo, but some fork PRs run their workflows "
+        f"without approval ({policy})" in out
+    )
+    assert "Require approval for all external contributors" in out
+    assert (consumer / "docs/self-hosted-runner.md").is_file()
+
+
+def test_sync_is_quiet_when_every_fork_pr_needs_approval(consumer, framework_snapshot, tmp_path):
+    out = runner_sync(
+        consumer, framework_snapshot, tmp_path, FAKE_GH_FORK_POLICY="all_external_contributors"
+    )
+    assert "SDLC_RUNNER" not in out
+
+
+def test_sync_skips_the_fork_check_on_a_private_repo(consumer, framework_snapshot, tmp_path):
+    out = runner_sync(
+        consumer,
+        framework_snapshot,
+        tmp_path,
+        FAKE_GH_PRIVATE="true",
+        FAKE_GH_FORK_POLICY="first_time_contributors",
+    )
+    assert "SDLC_RUNNER" not in out
+
+
+def test_sync_says_when_it_cant_read_the_fork_approval_policy(
+    consumer, framework_snapshot, tmp_path
+):
+    out = runner_sync(consumer, framework_snapshot, tmp_path)  # no policy: the API call fails
+    assert (
+        "not checked: SDLC_RUNNER is set, but can't read whether fork PR workflows need approval"
+        in out
+    )
+
+
+def test_sync_says_nothing_about_the_runner_when_sdlc_runner_is_unset(
+    consumer, framework_snapshot, tmp_path
+):
+    out = runner_sync(
+        consumer,
+        framework_snapshot,
+        tmp_path,
+        runner=False,
+        FAKE_GH_FORK_POLICY="first_time_contributors",
+    )
+    assert "SDLC_RUNNER" not in out
 
 
 # --- opt-in auto-merge (#89) ----------------------------------------------------------------
