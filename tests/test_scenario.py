@@ -926,3 +926,15 @@ def test_stale_review_and_title_checks_arrive_with_the_sync(consumer):
         ).returncode
         == 0
     )
+
+
+def test_a_consumers_review_rules_survive_the_sync(consumer, framework_snapshot):
+    """The project's docs/review-rules.md is its own: a sync that changes REVIEW.md leaves it."""
+    assert (consumer / "templates" / "review-rules.md").exists()
+    rules = "# Review rules\n\n- **Architecture:** core/ never touches scenes. Important.\n"
+    commit(consumer, "docs: our review rules", {"docs/review-rules.md": rules})
+    commit(framework_snapshot, "fix: review", {"REVIEW.md": "changed\n"})
+    result = sync(consumer, framework_snapshot, "main")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (consumer / "docs" / "review-rules.md").read_text() == rules
+    assert "docs/review-rules.md" not in (consumer / ".sdlc-files").read_text()

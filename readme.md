@@ -96,7 +96,7 @@ sequenceDiagram
 | **Build** | `plan.md`, optional `build.md`, code | plan mode, `/plan`, `/build` with worktrees and milestones; format-on-edit and protected-path hooks |
 | **Architecture** | `docs/adr/NNNN-*.md` (optional) | `/plan` checks each accepted ADR's *Revisit when* triggers; `make validate` checks the ADRs' sections |
 | **Test** | tests, evals | `make check`; the `verifier` subagent; agent evals before every release |
-| **Review** | the PR | *Claude review* follows [REVIEW.md](REVIEW.md); `@claude` fixes on request; `/pr` walkthroughs |
+| **Review** | the PR | *Claude review* follows [REVIEW.md](REVIEW.md), plus your project's own `docs/review-rules.md` if it has one; `@claude` fixes on request; `/pr` walkthroughs |
 | **Release** | the merge | the production gate hook; optional auto-merge after a person's approval |
 
 ```mermaid
