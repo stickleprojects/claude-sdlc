@@ -92,9 +92,9 @@ gh variable set SDLC_AUTO_MERGE --body merge   # use merge if you use /build: bu
 scripts/bootstrap-github.sh --mode team
 ```
 
-Bootstrap then also requires the Claude review (`review`) as a status check, allows auto-merge on the repo, and confirms the protection (variable `SDLC_AUTO_MERGE_CONFIRMED`). The review then runs on every push, not only when the PR opens, because a required check belongs to the latest commit. That uses more of the Claude subscription.
+Bootstrap then also requires the Claude review's `claude-review` status, which the review job posts itself when the review is done, so a skipped job can't satisfy it. It also allows auto-merge on the repo, and confirms the protection (variable `SDLC_AUTO_MERGE_CONFIRMED`). The review then runs on every push, not only when the PR opens, because a required check belongs to the latest commit. That uses more of the Claude subscription.
 
-A PR still merges only after a person approves it and every check passes. `scripts/auto-merge.sh` checks this on each PR and skips, with a warning, unless an approval is required, stale approvals are dismissed and the review check is required. So **solo mode never auto-merges**: there the merge click is the only human gate. The variable is yours: syncing and bootstrap never change it. Delete it to turn the feature off. Without the agent App, the spec PR's auto-merge is enabled by the workflow token, and GitHub doesn't run workflows for pushes made with that token, so workflows triggered by pushes to `main` won't run for that merge.
+A PR still merges only after a person approves it and every check passes. `scripts/auto-merge.sh` checks this on each PR and skips, with a warning, unless an approval is required, stale approvals are dismissed and the `claude-review` status is required. It never auto-merges a PR that changes a `claude-*.yml` workflow, because the AI review can't run on it. So **solo mode never auto-merges**: there the merge click is the only human gate. The variable is yours: syncing and bootstrap never change it. Delete it, or set it to `off`, to turn the feature off. Without the agent App, the spec PR's auto-merge is enabled by the workflow token, and GitHub doesn't run workflows for pushes made with that token, so workflows triggered by pushes to `main` won't run for that merge.
 
 ### 4. Check it works
 

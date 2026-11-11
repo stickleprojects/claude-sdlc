@@ -598,7 +598,7 @@ APP_VARS = "SDLC_AGENT_APP_ID SDLC_AGENT_APP_SLUG"
 def _protection(dismiss):
     return json.dumps(
         {
-            "required_status_checks": {"contexts": ["check", "pr-title", "review"]},
+            "required_status_checks": {"contexts": ["check", "pr-title", "claude-review"]},
             "required_pull_request_reviews": {
                 "required_approving_review_count": 1,
                 "dismiss_stale_reviews": dismiss,

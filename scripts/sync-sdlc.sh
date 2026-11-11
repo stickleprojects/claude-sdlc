@@ -251,8 +251,8 @@ main() {
             then "no approving review is required (solo mode)" else empty end),
           (if .required_pull_request_reviews.dismiss_stale_reviews != true
             then "stale approvals are not dismissed on push" else empty end),
-          (if ([.required_status_checks.contexts[]?] | index("review")) == null
-            then "the review check is not required" else empty end)
+          (if ([.required_status_checks.contexts[]?] | index("claude-review")) == null
+            then "the claude-review status is not required" else empty end)
         ] | join("; ")' <<<"$prot" 2>/dev/null)"
         if [[ -n "$problems" ]]; then
           out+="  WARNING: SDLC_AUTO_MERGE is set, but main doesn't qualify: $problems. The pipeline won't enable auto-merge until scripts/bootstrap-github.sh --mode team fixes it."$'\n'
