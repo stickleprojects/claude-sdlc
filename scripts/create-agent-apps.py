@@ -164,7 +164,9 @@ def manifest(identity: Identity, base_url: str, owner: str, repo: str = "") -> d
         "url": f"{GITHUB}/{repo or owner}",
         "description": f"Claude for {repo or owner}, via the claude-sdlc pipeline.",
         "public": False,
-        "hook_attributes": {"url": f"{base_url}/hook", "active": False},
+        # No hook_attributes: the App uses no webhook, and GitHub rejects a hook URL it can't
+        # reach from the internet, even an inactive one (#102). The localhost redirect and
+        # setup URLs are accepted.
         "redirect_url": f"{base_url}/created",
         "setup_url": f"{base_url}/installed",
         "default_permissions": identity.permissions,
