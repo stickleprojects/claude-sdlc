@@ -36,6 +36,11 @@ def consumer(tmp_path, framework_snapshot):
     return repo
 
 
+def artifact(sections):
+    """Each section with a stand-in body; Requirements gets a requirement validate can read."""
+    return "".join(f"## {s}\n\n{'- R1. x' if s == 'Requirements' else 'x'}\n\n" for s in sections)
+
+
 def make(repo, *args):
     return run(["make", "-s", *args], cwd=repo)
 
@@ -234,7 +239,7 @@ def test_build_plan_in_consumer(consumer):
     assert make(consumer, "new-change", "NAME=role-list").returncode == 0
     change = consumer / "changes" / "0001-role-list"
     for name, sections in CHAIN.items():
-        (change / name).write_text("# T\n\n" + "".join(f"## {s}\n\nx\n\n" for s in sections))
+        (change / name).write_text("# T\n\n" + artifact(sections))
     plan = change / "plan.md"
     text = plan.read_text().replace("## Descopes\n\nx", "## Descopes\n\nNone.")
     plan.write_text(
@@ -263,7 +268,7 @@ def test_plan_descopes_in_consumer(consumer):
     assert make(consumer, "new-change", "NAME=dock").returncode == 0
     change = consumer / "changes" / "0001-dock"
     for name in ("intent.md", "spec.md"):
-        (change / name).write_text("# T\n\n" + "".join(f"## {s}\n\nx\n\n" for s in CHAIN[name]))
+        (change / name).write_text("# T\n\n" + artifact(CHAIN[name]))
     template = (consumer / "templates" / "plan.md").read_text()
     plan = change / "plan.md"
     plan.write_text(template)
@@ -296,7 +301,7 @@ def test_definition_of_done_in_consumer(consumer, framework_snapshot):
     assert make(consumer, "new-change", "NAME=scene").returncode == 0
     change = consumer / "changes" / "0001-scene"
     for name, sections in CHAIN.items():
-        (change / name).write_text("# T\n\n" + "".join(f"## {s}\n\nx\n\n" for s in sections))
+        (change / name).write_text("# T\n\n" + artifact(sections))
     plan = change / "plan.md"
     text = plan.read_text().replace("## Descopes\n\nx", "## Descopes\n\nNone.")
     line = "## Verification\n\n- **Definition of done:** {}\n\n"
@@ -779,3 +784,34 @@ def test_delivery_check_reads_approvals_from_a_change_named_by_number(consumer, 
         (real, None),
         (None, "Approved: Lee"),
     ]
+
+
+def test_readable_requirements_hold_new_specs_and_leave_merged_ones(consumer):
+    """v0.9.0's breaking rule: a spec the branch adds or edits needs `- R<n>.` requirements;
+    one already on main stays valid until it's edited."""
+    old_form = (
+        "# Spec\n\n## Summary\n\nx\n\n## Requirements\n\n- R1. Search the list.\n"
+        "- Requirement 2: Export the list.\n\n"
+        "## Acceptance criteria\n\n- AC1 (R1): x\n\n## Policy concerns\n\nNone.\n\n"
+        "## Out of scope\n\nNone.\n"
+    )
+    intent = "# I\n\n" + artifact(CHAIN["intent.md"])
+    commit(
+        consumer,
+        "merged before the rule",
+        {"changes/0001-done/intent.md": intent, "changes/0001-done/spec.md": old_form},
+    )
+    assert make(consumer, "validate").returncode == 0, "done work is left alone"
+    git(consumer, "checkout", "-q", "-b", "spec/0002-new")
+    commit(
+        consumer,
+        "new spec",
+        {"changes/0002-new/intent.md": intent, "changes/0002-new/spec.md": old_form},
+    )
+    broken = make(consumer, "validate")
+    assert broken.returncode != 0
+    assert "0002-new/spec.md: can't read this as a requirement" in broken.stderr
+    assert "0001-done" not in broken.stderr
+    fixed = old_form.replace("- Requirement 2: Export", "- R2. Export")
+    (consumer / "changes/0002-new/spec.md").write_text(fixed)
+    assert make(consumer, "validate").returncode == 0

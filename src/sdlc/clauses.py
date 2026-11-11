@@ -198,8 +198,8 @@ def change_blocks(
 ) -> tuple[list[dict], list[str]]:
     """The change's blocks as plain dicts, and its unreadable requirement lines. With `ref`, only
     the blocks that are new or differ from the ones at that ref (the requirement's text, its
-    criteria or its plan lines), so an amendment PR checks only what it touched. Unreadable lines
-    are always listed: nothing has checked them, whatever the ref."""
+    criteria or its plan lines), so an amendment PR checks only what it touched. Likewise only the
+    unreadable lines that are new since the ref."""
     spec_path, plan_path = change_dir / "spec.md", change_dir / "plan.md"
     build_path = change_dir / BUILD
     if not spec_path.exists():
@@ -216,6 +216,8 @@ def change_blocks(
     old_spec = _git_show(root, ref, spec_path)
     if old_spec is None:
         return current, lost
+    # Only lines the change adds: done work isn't reported again on every amendment.
+    lost = [line for line in lost if line not in unreadable(old_spec)]
     try:
         old_blocks = blocks(
             old_spec, _git_show(root, ref, plan_path), _git_show(root, ref, build_path)

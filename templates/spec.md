@@ -11,7 +11,9 @@ One paragraph restating the outcome in implementable terms.
 
 ## Requirements
 
-Numbered, testable requirements (R1, R2, ...).
+Numbered, testable requirements, one `- R<n>.` bullet each. The checks read only this form:
+
+- R1. <what the change must do>.
 
 ## Acceptance criteria
 

@@ -1456,3 +1456,23 @@ def test_delivery_check_keeps_an_approval_only_if_its_quote_is_there(fake_claude
         assert entry["approved"] == quote and "approval_not_found" not in entry
     else:
         assert entry["approved"] is None and entry["approval_not_found"] == quote
+
+
+def test_review_skips_the_clause_check_quietly_without_a_clauses_target():
+    workflow = (REPO / ".github/workflows/claude-review.yml").read_text()
+    find = workflow[workflow.index("- name: Find the changed specs and plans") :]
+    find = find[: find.index("- uses: ./.github/actions/setup-stack")]
+    assert "make -n clauses CHANGE=probe" in find, "probes the target before any stack setup"
+    assert "could not run" in (REPO / "REVIEW.md").read_text()
+
+
+def test_release_notes_give_the_clauses_recipe_the_makefile_uses():
+    # The upgrade step tells consumers' Claude what to add; keep it in step with ours.
+    notes = (REPO / "docs/release-notes/v0.9.0.md").read_text()
+    makefile = (REPO / "Makefile").read_text()
+    recipe = makefile[makefile.index("\nclauses:\n") + 1 :].split("\n\n", 1)[0]
+    in_notes = {line.lstrip(" ") for line in notes.splitlines()}  # indented inside a list
+    assert all(line in in_notes for line in recipe.splitlines()), recipe
+    assert "## Upgrade steps" in notes and "## Optional: the `clauses` make target" in notes
+    skill = (REPO / ".claude/skills/sdlc/SKILL.md").read_text()
+    assert "`Upgrade steps`" in skill and "never in the sync PR" in skill

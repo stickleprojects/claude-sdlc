@@ -32,7 +32,8 @@ Read the notes of every release after theirs (`gh api repos/<owner/repo>/release
 
 1. **Breaking changes** (the `⚠ Breaking changes` section): what the project must change, for example a renamed `make` target or a new required artifact section. Check this repo for each one (`grep` the Makefile, `changes/`) and say whether it's affected.
 2. **Optional features** (sections titled `Optional: …`): what each one is, that nothing changes until the team adopts it, and how to adopt it. Check whether the repo already uses it, for example whether `docs/adr/` exists for architecture decision records.
-3. **Features and fixes:** one line each, only the ones a user of the pipeline would notice.
+3. **Upgrade steps** (a section titled `Upgrade steps` in a release's notes): work the release asks Claude to do in this repo as part of the update, such as adding a `make` target or bringing in-flight work up to a new rule. Say what each step will touch here; you do them in section 3.
+4. **Features and fixes:** one line each, only the ones a user of the pipeline would notice.
 
 Then ask with AskUserQuestion: update to the latest release (recommended), to a specific release, to `main` (unreleased, for trying a fix early), or stop.
 
@@ -55,7 +56,8 @@ Then ask with AskUserQuestion: update to the latest release (recommended), to a 
      - *ERROR: the agent App is half set up*: spec-from-intent or the Claude review fails at run time. Point at `docs/setup-agent-apps.md` and ask whether to finish setting the App up or remove the parts that are set.
      - *not set (optional)*: one line on what they lose (spec PRs need the *Approve and run workflows* click) and the link. Nothing to do unless they want the App.
      - *not checked*: their `gh` login can't read the names (admin or maintain access is needed). Say it wasn't checked; don't report anything as missing.
-5. **Check:** `make check` must exit 0. If it fails because of the new version (say, a new validation rule that existing artifacts break), explain the failure in plain terms and fix the artifacts with the person. Don't edit framework files to make it pass.
+5. **Upgrade steps:** do each release's `Upgrade steps`, oldest release first, with the person, as the notes say. Each step says where its changes go: files the sync PR itself should carry (a `make` target) go on this branch; changes to a change's artifacts (an in-flight spec or plan) go on that change's own branch or PR, never in the sync PR, so each is reviewed by whoever owns it. Anything a step finds that needs a decision (a new acceptance criterion is the product owner's; a plan or build gap is the engineer's) is listed for them, never decided by you. Leave finished work alone unless a step says otherwise.
+6. **Check:** `make check` must exit 0. If it fails because of the new version (say, a new validation rule that existing artifacts break), explain the failure in plain terms and fix the artifacts with the person. Don't edit framework files to make it pass.
 
 ## 4. Open the sync PR
 
@@ -67,6 +69,7 @@ Commit what the sync staged, plus the files you resolved, by explicit path (`git
   - the breaking changes and what was changed here for each
   - files where local edits were merged, and each conflict with how it was resolved
   - make targets added
+  - each upgrade step: what it changed here, the PRs it opened or pushed to for in-flight work, and what it found that waits on a decision
   - the secrets and variables report: anything required that's missing (and that the PR is a draft until it's set), a half-set-up App, the optional ones not set, an auto-merge warning (main no longer qualifies; the fix is `scripts/bootstrap-github.sh --mode team`), or that it wasn't checked
   - the optional features in these releases, adopted or not, so the team can decide
   - `make check` passing

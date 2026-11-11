@@ -59,7 +59,10 @@ jobs:
         id: artifacts
         run: |
           base="$(git merge-base "${{ github.event.pull_request.base.sha }}" HEAD)"
-          if git diff --name-only "$base" -- 'changes/*/spec.md' 'changes/*/plan.md' | grep -q .; then
+          # A repo without the optional `clauses` target skips the check (and its stack setup)
+          # quietly; the review then splits the clauses itself. `make -n` runs nothing.
+          if git diff --name-only "$base" -- 'changes/*/spec.md' 'changes/*/plan.md' | grep -q . \
+              && make -n clauses CHANGE=probe >/dev/null 2>&1; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
       - uses: ./.github/actions/setup-stack
