@@ -323,6 +323,16 @@ main() {
   report_targets
   report_settings
   local f
+  # The repo's own scripts: the sync sets modes only on framework files, so it reports theirs
+  # rather than changing them (#101). A non-executable hook or script is skipped silently.
+  local not_exec
+  not_exec="$(git ls-files -s -- '*.sh' | awk '$1 != "100755" { print $4 }' \
+    | grep -vxF -f .sdlc-files || true)"
+  if [[ -n "$not_exec" ]]; then
+    echo "your own scripts that aren't executable in git (the sync leaves them alone; fix with"
+    echo "git update-index --chmod=+x <file>, which works on NTFS too, then commit):"
+    while IFS= read -r f; do echo "  $f"; done <<<"$not_exec"
+  fi
   if ((${#merged[@]})); then
     echo "kept your local changes (any framework changes are merged in):"
     for f in "${merged[@]}"; do echo "  $f"; done
