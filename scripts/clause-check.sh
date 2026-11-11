@@ -18,7 +18,9 @@
 # Stage build reads the code (Read, Grep and Glob), so it uses a larger model and more turns, and
 # its entries hold "delivered", "gap" ("large" when the delivery lacks the clause's main verb or
 # noun, "small" for a modifier; anything else reads as large) and "approved" (a quote or null)
-# in place of "missing".
+# in place of "missing". An approval is kept only when its quote is in the change's spec.md,
+# plan.md or build.md (ignoring whitespace, `*` and backticks); otherwise "approved" is null and
+# the quote moves to "approval_not_found", so a made-up approval can't hide a gap.
 # For a requirement whose answer couldn't be read or whose call failed:
 #   {"requirement": "R2", "text": "...", "stage": "spec", "unchecked": "<why>"}
 # A line under ## Requirements that couldn't be read as one is unchecked too, with
@@ -64,14 +66,26 @@ changed_files() {
     | grep -v '^changes/' | sort -u | jq -R . | jq -sc .
 }
 
+# The change's folder, however it was named: a path, or a slug or number under changes/.
+change_dir() {
+  local change="$1" name="$2"
+  if [[ -d "$change" ]]; then echo "$change"
+  elif [[ -d "$root/$change" ]]; then echo "$root/$change"
+  else echo "$root/changes/$name"
+  fi
+}
+
 # check <stage> <change> <ref>: the JSON array for one change.
 check() {
   local stage="$1" change="$2" ref="$3" blocks count results block rid text base prompt
-  local answer line found entries prompt_file model turns tools files="[]" shape
+  local answer line found entries prompt_file model turns tools files="[]" shape docs=""
   blocks="$(make -s -C "$root" clauses CHANGE="$change" ${ref:+REF="$ref"})" || return 1
   if [[ "$stage" == build ]]; then
     prompt_file=delivery-check.md model="${DELIVERY_MODEL:-sonnet}"
     turns="${DELIVERY_MAX_TURNS:-15}" tools="Read,Grep,Glob" files="$(changed_files)"
+    local dir
+    dir="$(change_dir "$change" "$(jq -r .change <<<"$blocks")")"
+    docs="$(cat "$dir"/spec.md "$dir"/plan.md "$dir"/build.md 2>/dev/null || true)"
     shape='{clause, delivered: (.delivered // "" | tostring),
       gap: (if .gap == "small" then "small" else "large" end),
       approved: (if (.approved | type) == "string" and .approved != "" then .approved else null end)}'
@@ -96,6 +110,15 @@ check() {
         entries="$(jq -c --argjson b "$base" \
           "map(\$b + $shape)" \
           <<<"$found")"
+        if [[ "$stage" == build ]]; then
+          # Keep an approval only if its quote is really there (PR #109 review).
+          entries="$(jq -c --arg docs "$docs" '
+            def norm: gsub("[*`]"; "") | gsub("\\s+"; " ") | ltrimstr(" ") | rtrimstr(" ");
+            ($docs | norm) as $d
+            | map((.approved // "" | norm) as $a
+                  | if .approved == null or ($a != "" and ($d | contains($a))) then .
+                  else . + {approved: null, approval_not_found: .approved} end)' <<<"$entries")"
+        fi
       else
         entries="$(jq -c '[. + {unchecked: "the clause check gave no CLAUSES line that could be read"}]' <<<"$base")"
       fi

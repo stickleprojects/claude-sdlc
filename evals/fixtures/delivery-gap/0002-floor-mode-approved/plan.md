@@ -5,7 +5,8 @@ Spec: ./spec.md
 ## Approach
 
 `evals/fixtures/delivery-gap/code/floor_model.py` builds every room on a floor (R1) and snaps
-moved rooms to the grid (R2).
+moved rooms to the grid (R2). `evals/fixtures/delivery-gap/code/dock.py` adds the dock's floor
+mode: choosing a floor shows it in the floor tab, and dragging a room there moves it.
 
 ## Steps
 

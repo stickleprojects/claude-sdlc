@@ -750,3 +750,32 @@ def test_delivery_check_in_consumer(consumer):
         ("build", "R1"),
         ("build", "R2"),
     ]
+
+
+def test_delivery_check_reads_approvals_from_a_change_named_by_number(consumer, tmp_path):
+    """`--stage build 0001` finds changes/0001-* to check approval quotes against (#109 review)."""
+    fixture = REPO / "evals" / "fixtures" / "delivery-gap" / "0002-floor-mode-approved"
+    shutil.copytree(fixture, consumer / "changes" / "0001-floor-mode")
+    real = "Descope: R1's 3D scene opened in the editor"
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    answer = json.dumps(
+        [
+            {"clause": "a 3D scene", "delivered": "x", "gap": "large", "approved": real},
+            {"clause": "opened", "delivered": "x", "gap": "large", "approved": "Approved: Lee"},
+        ]
+    )
+    (tmp_path / "answer.txt").write_text(f"CLAUSES: {answer}\n")
+    (bin_dir / "claude").write_text(f"#!/usr/bin/env bash\ncat '{tmp_path / 'answer.txt'}'\n")
+    (bin_dir / "claude").chmod(0o755)
+    result = run(
+        ["scripts/clause-check.sh", "--stage", "build", "0001"],
+        cwd=consumer,
+        env={"PATH": f"{bin_dir}:{os.environ['PATH']}"},
+    )
+    assert result.returncode == 0, result.stderr
+    r1 = [f for f in json.loads(result.stdout) if f["requirement"] == "R1"]
+    assert [(f["approved"], f.get("approval_not_found")) for f in r1] == [
+        (real, None),
+        (None, "Approved: Lee"),
+    ]
