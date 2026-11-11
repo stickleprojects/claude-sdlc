@@ -53,8 +53,10 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 [[ "$mode" == solo || "$mode" == team ]] || { echo "--mode must be solo or team" >&2; exit 2; }
-auto_merge="$(tr '[:upper:]' '[:lower:]' <<<"$auto_merge")"
-[[ "$auto_merge" == off ]] && auto_merge=""
+# SDLC_AUTO_MERGE is read by THE RULE in scripts/auto-merge.sh (#101): empty when auto-merge is
+# off. A value given with --auto-merge goes through the same rule, before anything uses it.
+auto_merge_sh="$(dirname "$0")/auto-merge.sh"
+if ((auto_merge_given)); then auto_merge="$(SDLC_AUTO_MERGE="$auto_merge" bash "$auto_merge_sh" --method)"; fi
 
 protection_json() {
   local approvals=0 code_owners=false checks='["check", "pr-title"]'
@@ -80,11 +82,14 @@ protection_json() {
 # checks and strictness settings someone added by hand), so a re-run never removes them. A PUT
 # replaces the whole protection, so anything not carried over here is reset.
 merged_protection() {  # <current protection JSON, or empty>
-  protection_json | jq --argjson have "${1:-null}" '
+  protection_json | jq --argjson have "${1:-null}" --arg auto_merge "$auto_merge" '
     def on(x): if (x | type) == "object" then x.enabled else x end;
     if $have == null then . else
       .required_status_checks.contexts =
-        (.required_status_checks.contexts + [$have.required_status_checks.contexts[]?] | unique)
+        (.required_status_checks.contexts + [$have.required_status_checks.contexts[]?] | unique
+         # `review` passes only when pushes are reviewed, which is auto-merge (#101): kept as a
+         # hand-added check it would hold every PR at "Expected — Waiting for status".
+         | if $auto_merge == "" then map(select(. != "review")) else . end)
       | .required_linear_history = (on($have.required_linear_history) // false)
       | .required_pull_request_reviews.require_last_push_approval =
           ($have.required_pull_request_reviews.require_last_push_approval // false)
@@ -128,13 +133,11 @@ owner="${repo%%/*}"
 # The variables are read the way scripts/auto-merge.sh reads them (repo, then organization;
 # only "not found" means unset). Not `gh variable get`: gh before 2.48 (Ubuntu's packaged
 # 2.46) has no `get`, and its error was swallowed as "not set" (spellbound3d, #89).
-read_setting() { GITHUB_REPOSITORY="$repo" bash scripts/auto-merge.sh --setting "$1"; }
-if ((auto_merge_given == 0)) && ! auto_merge="$(read_setting SDLC_AUTO_MERGE)"; then
+read_setting() { GITHUB_REPOSITORY="$repo" bash "$auto_merge_sh" --setting "$1"; }
+if ((auto_merge_given == 0)) && ! auto_merge="$(GITHUB_REPOSITORY="$repo" bash "$auto_merge_sh" --method)"; then
   todo "can't read the SDLC_AUTO_MERGE variable, so auto-merge is treated as off; re-run with --auto-merge <method> to set it up"
   auto_merge=""
 fi
-auto_merge="$(tr '[:upper:]' '[:lower:]' <<<"$auto_merge")"
-[[ "$auto_merge" == off ]] && auto_merge=""
 
 
 echo "Configuring $repo$( ((dry)) && echo ' (dry run)')"
@@ -225,6 +228,10 @@ shape='def on(x): if (x | type) == "object" then x.enabled else x end;
         owners: .required_pull_request_reviews.require_code_owner_reviews,
         dismiss: .required_pull_request_reviews.dismiss_stale_reviews}'
 have_raw="$(gh api "repos/$repo/branches/main/protection" 2>/dev/null || true)"
+if [[ -z "$auto_merge" ]] && jq -e '[.required_status_checks.contexts[]?] | index("review")' \
+    <<<"$have_raw" >/dev/null 2>&1; then
+  summary+="; the review check is no longer required (auto-merge is off, so pushes aren't reviewed)"
+fi
 want="$(merged_protection "$have_raw" | jq -c "$shape")"
 have="$(jq -c "$shape" <<<"$have_raw" 2>/dev/null || true)"
 if [[ "$have" == "$want" ]]; then
@@ -261,6 +268,19 @@ elif [[ -n "$auto_merge" ]]; then
       grep -q '404' <<<"$out" || todo "couldn't delete the SDLC_AUTO_MERGE_CONFIRMED variable; delete it by hand, or auto-merge.sh will still trust it"
     fi
     todo "main doesn't qualify for auto-merge yet (approval, stale-approval dismissal and the review check), so the pipeline won't enable it"
+  fi
+else
+  # Auto-merge is off: a confirmation left from when it was on would be trusted if it's turned
+  # on again later, whatever main's protection is by then (#101). Remove it.
+  confirmed="$(read_setting SDLC_AUTO_MERGE_CONFIRMED 2>/dev/null)" || confirmed=""
+  if [[ -n "$confirmed" ]]; then
+    if ((dry)); then
+      echo "    would delete SDLC_AUTO_MERGE_CONFIRMED (auto-merge is off)"
+    elif out="$(gh variable delete SDLC_AUTO_MERGE_CONFIRMED -R "$repo" 2>&1)" || grep -q '404' <<<"$out"; then
+      ok "deleted SDLC_AUTO_MERGE_CONFIRMED (auto-merge is off)"
+    else
+      todo "couldn't delete the SDLC_AUTO_MERGE_CONFIRMED variable; delete it by hand, or auto-merge.sh will trust it if auto-merge is turned on again"
+    fi
   fi
 fi
 

@@ -2,7 +2,8 @@
 # Findings are comments only. Branch protection still requires a code owner's approval.
 # Reviews run when a PR opens or leaves draft, not on every push: each review uses Claude
 # subscription limits (#11). Add the `review` label to review the latest push again.
-# Exception: a repo that opts into auto-merge (SDLC_AUTO_MERGE, #89) requires `review` as a
+# Exception: a repo that opts into auto-merge (SDLC_AUTO_MERGE, #89; `off` is off, by THE RULE in
+# scripts/auto-merge.sh, and expression comparisons ignore case) requires `review` as a
 # status check, and required checks belong to the head commit, so there it runs on every push.
 name: Claude review
 
@@ -22,7 +23,8 @@ jobs:
       github.event.pull_request.draft == false &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       (github.event.action != 'labeled' || github.event.label.name == 'review') &&
-      (github.event.action != 'synchronize' || vars.SDLC_AUTO_MERGE != '')
+      (github.event.action != 'synchronize' ||
+        (vars.SDLC_AUTO_MERGE != '' && vars.SDLC_AUTO_MERGE != 'off'))
     runs-on: ubuntu-latest
     # One review per PR at a time: a newer push or `review` label replaces a review still
     # running on an older commit. On the job, not the workflow, so a skipped run (another
