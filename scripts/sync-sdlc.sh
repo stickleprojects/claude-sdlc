@@ -37,6 +37,7 @@ main() {
     "scripts/agent-session.sh:scripts/agent-session.sh"
     "scripts/create-agent-apps.py:scripts/create-agent-apps.py"
     "scripts/tests-locked.sh:scripts/tests-locked.sh"
+    "scripts/clause-check.sh:scripts/clause-check.sh"
     "scripts/sync-sdlc.sh:scripts/sync-sdlc.sh"
     "templates:templates"
     "prompts:prompts"
@@ -64,6 +65,7 @@ main() {
   )
   local optional_targets=(
     "coverage optional: /build runs it when present"
+    "clauses optional: the clause check (scripts/clause-check.sh) in the Claude review"
     "evals optional: the agent-evals workflow"
     "sync-sdlc optional: shortcut for this script"
     "deploy-dev optional: deploys to dev"

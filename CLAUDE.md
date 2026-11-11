@@ -15,6 +15,7 @@ uv run pytest tests/test_artifacts.py::test_next_slug_increments   # a single te
 make new-change NAME=<kebab-name>   # start a change
 make status      # stage each change has reached
 make next REF=origin/main   # each change's next step and the skill that owns it
+make clauses CHANGE=0002    # a spec as one JSON block per requirement (the clause check reads it)
 make evals       # agent evals (calls the model; in CI it uses CLAUDE_CODE_OAUTH_TOKEN)
 scripts/next-version.sh --explain   # the version the next release would get
 ```
