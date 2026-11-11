@@ -2356,3 +2356,100 @@ def test_next_and_the_upgrade_steps_know_the_roadmap():
     for case in ("own roadmap check already", "in another shape", "No roadmap"):
         assert case in steps, case
     assert re.findall(r"^(\d)\. ", steps, re.M) == ["1", "2", "3", "4", "5", "6", "7"]
+
+
+# A gh that serves $FAKE_COMMENTS for the comments call, applying --jq with the real jq.
+FAKE_GH_COMMENTS = r"""#!/usr/bin/env bash
+[[ "$1" == api ]] || exit 1
+echo "$2" >> "$FAKE_CALLS"
+[[ -e "$FAKE_COMMENTS" ]] || { echo "gh: HTTP 502" >&2; exit 1; }
+jqx=.
+while (($#)); do [[ "$1" == --jq ]] && jqx="$2"; shift; done
+jq -r "$jqx" "$FAKE_COMMENTS"
+"""
+
+SINCE = "2026-11-12T09:00:00Z"
+
+
+@pytest.fixture
+def review_posted(tmp_path):
+    fake = tmp_path / "fakebin"
+    fake.mkdir()
+    (fake / "gh").write_text(FAKE_GH_COMMENTS)
+    (fake / "gh").chmod(0o755)
+    comments = tmp_path / "comments.json"
+
+    def go(found, *args, bot=None):
+        if found is None:
+            comments.unlink(missing_ok=True)
+        else:
+            comments.write_text(json.dumps(found))
+        env = {
+            "PATH": f"{fake}:{os.environ['PATH']}",
+            "GITHUB_REPOSITORY": "o/r",
+            "FAKE_COMMENTS": str(comments),
+            "FAKE_CALLS": str(tmp_path / "calls"),
+        }
+        if bot:
+            env["REVIEW_BOT"] = bot
+        return run(
+            ["bash", str(REPO / "scripts/review-posted.sh"), *(args or ("7", SINCE))], env=env
+        )
+
+    return go
+
+
+def comment(login="claude[bot]", updated="2026-11-12T09:00:30Z", url="https://x/c/1"):
+    return {"user": {"login": login}, "updated_at": updated, "html_url": url}
+
+
+def test_review_posted_finds_a_summary_posted_or_edited_during_the_job(review_posted, tmp_path):
+    result = review_posted([comment(updated="2026-11-12T08:00:00Z", url="old"), comment()])
+    assert result.returncode == 0 and "https://x/c/1" in result.stdout
+    assert f"repos/o/r/issues/7/comments?since={SINCE}" in (tmp_path / "calls").read_text()
+    assert review_posted([comment(updated=SINCE)]).returncode == 0, "at the start counts"
+
+
+@pytest.mark.parametrize(
+    "found",
+    [
+        [],
+        [comment(updated="2026-11-12T08:59:59Z")],  # an older summary, not edited this time
+        [comment(login="github-actions[bot]")],  # the "AI review skipped" note
+        [comment(login="someone")],
+    ],
+)
+def test_review_posted_fails_with_no_new_summary_from_the_reviewer(review_posted, found):
+    # PR #129: the action ended green after refused tool calls, having posted nothing.
+    result = review_posted(found)
+    assert result.returncode == 1 and "posted no comment on PR #7" in result.stderr
+
+
+def test_review_posted_reads_another_reviewer_login(review_posted):
+    assert (
+        review_posted([comment(login="my-reviewer[bot]")], bot="my-reviewer[bot]").returncode == 0
+    )
+
+
+def test_review_posted_fails_when_it_cannot_read_or_is_misused(review_posted):
+    assert review_posted(None).returncode == 3
+    assert review_posted([], "7", "yesterday").returncode == 2
+    assert review_posted([], "x", SINCE).returncode == 2
+
+
+def test_the_gate_needs_the_summary_not_just_a_green_action():
+    workflow = (REPO / ".github/workflows/claude-review.yml").read_text()
+    steps = workflow.split("\n      - ")
+    step = {s.split("\n", 1)[0].removeprefix("name: "): s for s in steps}
+    assert "id: start" in step["Mark the review as running"]
+    assert 'echo "since=$since" >> "$GITHUB_OUTPUT"' in step["Mark the review as running"]
+    done = step["Mark the review as done"]
+    assert "SINCE: ${{ steps.start.outputs.since }}" in done
+    assert 'scripts/review-posted.sh "$PR" "$SINCE"' in done
+    # Skipped (a claude-*.yml change) is checked first: the action posts nothing then.
+    assert done.index('"$SKIPPED" == true') < done.index("review-posted.sh")
+    assert "-f state=failure" in done and "posted no summary" in done
+    failed = step["Mark the review as failed"]
+    assert "if: failure() && steps.done.outputs.reported != 'true'" in failed
+    sync = (REPO / "scripts/sync-sdlc.sh").read_text()
+    assert '"scripts/review-posted.sh:scripts/review-posted.sh"' in sync
