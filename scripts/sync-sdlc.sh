@@ -33,6 +33,7 @@ main() {
     "scripts/bootstrap-github.sh:scripts/bootstrap-github.sh"
     "scripts/spec-pr.sh:scripts/spec-pr.sh"
     "scripts/auto-merge.sh:scripts/auto-merge.sh"
+    "scripts/request-review.sh:scripts/request-review.sh"
     "scripts/agent-identity.sh:scripts/agent-identity.sh"
     "scripts/agent-session.sh:scripts/agent-session.sh"
     "scripts/create-agent-apps.py:scripts/create-agent-apps.py"

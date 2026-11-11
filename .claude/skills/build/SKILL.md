@@ -174,7 +174,7 @@ For a small build after its steps, and for a large build as part of its last mil
 Report the PR's state: checks, and the latest review summary with its open findings. Don't start new work.
 
 - **Merged:** the build is complete. The PR's merged state is the record; build.md isn't updated.
-- **Review findings need code changes and the person asks this session to make them:** treat them as a `reopened` milestone. Make the fix, run the checks, push, and add the `review` label if the repo's review workflow uses one and it isn't already on, so the latest push gets reviewed.
+- **Review findings need code changes and the person asks this session to make them:** treat them as a `reopened` milestone. Make the fix, run the checks, push, then run `scripts/request-review.sh <N>` so the latest push gets reviewed without cancelling a review the push already started (#105), and pass on the line it prints.
 
 ## Running every milestone (`/build all`)
 
