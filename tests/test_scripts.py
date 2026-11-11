@@ -1759,3 +1759,17 @@ def test_bootstrap_adds_the_build_skill_exception_after_an_existing_build_line(t
     (repo / ".claude/skills/build").mkdir(parents=True)
     (repo / ".claude/skills/build/SKILL.md").write_text("x\n")
     assert run(["git", "check-ignore", ".claude/skills/build/SKILL.md"], cwd=repo).returncode == 1
+
+
+def test_v0_9_1_upgrade_steps_name_commands_that_exist():
+    notes = (REPO / "docs/release-notes/v0.9.1.md").read_text()
+    assert notes.startswith("## Upgrade steps")  # the section /sdlc carries out
+    bootstrap = (REPO / "scripts/bootstrap-github.sh").read_text()
+    assert (
+        "scripts/bootstrap-github.sh --gitignore-only" in notes and "--gitignore-only)" in bootstrap
+    )
+    identity = (REPO / "scripts/agent-identity.sh").read_text()
+    for sub in ("create", "check"):
+        assert f"scripts/agent-identity.sh {sub}" in notes and f"  {sub})" in identity
+    assert "!.claude/skills/build/" in notes
+    assert "!.claude/skills/build/" in (REPO / "templates/gitignore").read_text()
