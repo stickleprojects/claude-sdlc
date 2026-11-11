@@ -8,8 +8,9 @@
 # started a review cancels that review (one review per PR at a time), which shows a cancelled
 # check and spends a second review. So this script:
 #   1. reads SDLC_AUTO_MERGE the way scripts/auto-merge.sh does;
-#   2. set (any value, as the workflow's own condition reads it): waits for the Claude review run
-#      on the pushed commit and doesn't add the label; adds it only if no run starts;
+#   2. on (THE RULE in scripts/auto-merge.sh, which the workflow's condition follows: set, and not
+#      `off`): waits for the Claude review run on the pushed commit and doesn't add the label;
+#      adds it only if no run starts;
 #      unset: adds the label; can't be read: looks for the run, and adds the label if none starts;
 #   3. before adding the label, waits until the PR's head is the pushed commit, so the label's
 #      review never runs on the old one. Without a label to add, there's nothing to wait for.
@@ -22,7 +23,7 @@
 set -uo pipefail
 
 pr="${1:-}"
-[[ "$pr" =~ ^[0-9]+$ ]] || { sed -n '2,21p' "$0" >&2; exit 2; }
+[[ "$pr" =~ ^[0-9]+$ ]] || { sed -n '2,22p' "$0" >&2; exit 2; }
 sha="${2:-HEAD}"
 # The runs API needs the full sha; expand a short one when this checkout has the commit.
 sha="$(git rev-parse --verify --quiet "$sha^{commit}" 2>/dev/null || echo "$sha")"
@@ -74,7 +75,7 @@ if [[ "$labels" == true ]]; then
   exit 0
 fi
 
-if method="$(bash "$(dirname "$0")/auto-merge.sh" --setting SDLC_AUTO_MERGE 2>/dev/null)"; then
+if method="$(bash "$(dirname "$0")/auto-merge.sh" --method 2>/dev/null)"; then
   if [[ -z "$method" ]]; then
     add_label "auto-merge is off, so pushes don't start a review"
   elif until_ok review_run_started; then

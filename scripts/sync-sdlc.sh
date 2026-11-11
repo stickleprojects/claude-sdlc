@@ -237,16 +237,22 @@ main() {
     # Opt-in auto-merge: with this person's login (usually an admin), check main still qualifies.
     # The pipeline re-checks approvals and the review check live on each PR; the stale-approval
     # setting is the one an App token may not see, which SDLC_AUTO_MERGE_CONFIRMED stands in for.
-    local prot problems
+    # By THE RULE in scripts/auto-merge.sh (#101): `off` is off, so it gets no warnings. A value
+    # that can't be read still gets the check, as when only the name was known.
+    local prot problems method=""
     if set_in variable SDLC_AUTO_MERGE; then
+      method="$(GITHUB_REPOSITORY="$gh_repo" bash scripts/auto-merge.sh --method 2>/dev/null)" \
+        || method="unknown"
+    fi
+    if [[ -n "$method" ]]; then
       if prot="$(gh api "repos/$gh_repo/branches/main/protection" 2>/dev/null)"; then
         problems="$(jq -r '[
           (if (.required_pull_request_reviews.required_approving_review_count // 0) < 1
             then "no approving review is required (solo mode)" else empty end),
           (if .required_pull_request_reviews.dismiss_stale_reviews != true
             then "stale approvals are not dismissed on push" else empty end),
-          (if ([.required_status_checks.contexts[]?] | index("review")) == null
-            then "the review check is not required" else empty end)
+          (if ([.required_status_checks.contexts[]?] | index("claude-review")) == null
+            then "the claude-review status is not required" else empty end)
         ] | join("; ")' <<<"$prot" 2>/dev/null)"
         if [[ -n "$problems" ]]; then
           out+="  WARNING: SDLC_AUTO_MERGE is set, but main doesn't qualify: $problems. The pipeline won't enable auto-merge until scripts/bootstrap-github.sh --mode team fixes it."$'\n'
@@ -317,6 +323,16 @@ main() {
   report_targets
   report_settings
   local f
+  # The repo's own scripts: the sync sets modes only on framework files, so it reports theirs
+  # rather than changing them (#101). A non-executable hook or script is skipped silently.
+  local not_exec
+  not_exec="$(git ls-files -s -- '*.sh' | awk '$1 != "100755" { print $4 }' \
+    | grep -vxF -f .sdlc-files || true)"
+  if [[ -n "$not_exec" ]]; then
+    echo "your own scripts that aren't executable in git (the sync leaves them alone; fix with"
+    echo "git update-index --chmod=+x <file>, which works on NTFS too, then commit):"
+    while IFS= read -r f; do echo "  $f"; done <<<"$not_exec"
+  fi
   if ((${#merged[@]})); then
     echo "kept your local changes (any framework changes are merged in):"
     for f in "${merged[@]}"; do echo "  $f"; done

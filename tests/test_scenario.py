@@ -468,6 +468,9 @@ case "$1 $2" in
       forbidden) echo "gh: Resource not accessible (HTTP 403)" >&2; exit 1 ;;
     esac
     printf '%s\\n' $org ;;
+  "api repos/o/r/actions/variables/SDLC_AUTO_MERGE")
+    value="${FAKE_GH_AUTO_MERGE-merge}"
+    [[ "$value" != unreadable ]] || exit 1; echo "$value" ;;
   "api repos/o/r/branches/main/protection")
     [[ -n "${FAKE_GH_PROTECTION:-}" ]] || exit 1; echo "$FAKE_GH_PROTECTION" ;;
   *) exit 1 ;;
@@ -595,7 +598,7 @@ APP_VARS = "SDLC_AGENT_APP_ID SDLC_AGENT_APP_SLUG"
 def _protection(dismiss):
     return json.dumps(
         {
-            "required_status_checks": {"contexts": ["check", "pr-title", "review"]},
+            "required_status_checks": {"contexts": ["check", "pr-title", "claude-review"]},
             "required_pull_request_reviews": {
                 "required_approving_review_count": 1,
                 "dismiss_stale_reviews": dismiss,
@@ -824,3 +827,61 @@ def test_request_review_arrives_with_the_sync(consumer):
     assert "scripts/request-review.sh" in (consumer / ".sdlc-files").read_text()
     skill = (consumer / ".claude" / "skills" / "review-findings" / "SKILL.md").read_text()
     assert "scripts/request-review.sh <N>" in skill
+
+
+def test_sync_reports_the_repos_own_scripts_that_arent_executable(consumer, framework_snapshot):
+    """#101 finding 10: the sync sets modes only on framework files, so a repo-owned script that
+    lost its bit (NTFS) is reported with the fix, not changed."""
+    commit(
+        consumer,
+        "chore: own scripts",
+        {".github/actions/deploy.sh": "echo hi\n", "tools/ok.sh": "echo ok\n"},
+    )
+    (consumer / "tools/ok.sh").chmod(0o755)  # executable on disk and in git, as on Linux
+    git(consumer, "update-index", "--chmod=+x", "tools/ok.sh")
+    commit(consumer, "chore: ok.sh is executable")
+    commit(framework_snapshot, "fix: change", {"REVIEW.md": "changed\n"})
+    out = sync(consumer, framework_snapshot, "main").stdout
+    report = out[out.index("your own scripts that aren't executable") :]
+    assert "  .github/actions/deploy.sh" in report
+    assert "tools/ok.sh" not in report and "scripts/sync-sdlc.sh" not in report
+    assert "git update-index --chmod=+x" in report
+    mode = git(consumer, "ls-files", "-s", ".github/actions/deploy.sh").split()[0]
+    assert mode == "100644", "reported, not changed"
+
+
+def test_sync_is_quiet_when_the_repos_scripts_are_executable(consumer, framework_snapshot):
+    commit(framework_snapshot, "fix: change", {"REVIEW.md": "changed\n"})
+    assert "aren't executable" not in sync(consumer, framework_snapshot, "main").stdout
+
+
+@pytest.mark.parametrize("value", ["off", "OFF", ""])
+def test_sync_says_nothing_about_auto_merge_when_it_is_off(
+    consumer, framework_snapshot, tmp_path, value
+):
+    # #101 finding 7: `off` is off (THE RULE in scripts/auto-merge.sh), so no warnings.
+    out = sync_with_gh(
+        consumer,
+        framework_snapshot,
+        tmp_path,
+        variables=f"{APP_VARS} SDLC_AUTO_MERGE SDLC_AUTO_MERGE_CONFIRMED",
+        FAKE_GH_PROTECTION=_protection(False),
+        FAKE_GH_AUTO_MERGE=value,
+        **ALL_SET,
+    ).stdout
+    assert "SDLC_AUTO_MERGE is set" not in out and "SDLC_AUTO_MERGE_CONFIRMED is set" not in out
+
+
+def test_sync_still_checks_auto_merge_when_its_value_cant_be_read(
+    consumer, framework_snapshot, tmp_path
+):
+    out = sync_with_gh(
+        consumer,
+        framework_snapshot,
+        tmp_path,
+        variables=f"{APP_VARS} SDLC_AUTO_MERGE",
+        FAKE_GH_PROTECTION=_protection(False),
+        FAKE_GH_AUTO_MERGE="unreadable",
+        **ALL_SET,
+    ).stdout
+    assert "WARNING: SDLC_AUTO_MERGE is set, but main doesn't qualify" in out

@@ -413,8 +413,9 @@ def stage(change_dir: Path) -> str:
 def check_criteria(path: Path) -> list[Problem]:
     """A spec's acceptance criteria are `- AC<n>` bullets, not a numbered list (#90).
 
-    Checked while the spec is the latest artifact, so the spec PR fails rather than the plan PR
-    after it; specs that already have a plan stay as they were merged.
+    Checked while the spec is the latest artifact and the branch adds or edits it, so the spec PR
+    fails rather than the plan PR after it; merged specs, and specs that already have a plan,
+    stay as they were merged.
     """
     text = path.read_text(encoding="utf-8")
     if "Acceptance criteria" not in headings(text):
@@ -522,9 +523,9 @@ def check_change(
     dod: DefinitionOfDone | None = None,
 ) -> list[Problem]:
     """Problems with one change folder. `changed` holds the files the branch adds or edits
-    (resolved paths); NEW_SECTIONS, the Descopes rules, the definition of done line and the
-    readable-requirements rule apply only to those. None means it isn't known (no git, or no main
-    to compare with), and those rules are skipped."""
+    (resolved paths); NEW_SECTIONS, the Descopes rules, the definition of done line, the
+    readable-requirements rule and the criteria form apply only to those. None means it isn't
+    known (no git, or no main to compare with), and those rules are skipped."""
     problems: list[Problem] = []
     words = words or placeholders(change_dir.parents[1])
     edited = {p.resolve() for p in changed or ()}
@@ -554,7 +555,9 @@ def check_change(
             problems.extend(check_descopes(path, words))
             problems.extend(check_dod(path, dod or definition_of_done(change_dir.parents[1])))
     spec = change_dir / "spec.md"
-    if spec.exists() and not (change_dir / "plan.md").exists():
+    # Only a spec the branch adds or edits, like the other new rules: a merged spec in a form
+    # this rejects would otherwise fail every unrelated branch, sync PRs included (#101).
+    if spec.exists() and not (change_dir / "plan.md").exists() and spec.resolve() in edited:
         problems.extend(check_criteria(spec))
     if not any((change_dir / first).exists() for first in ("intent.md", "bug.md")):
         problems.append(Problem(change_dir, "has no intent.md (or bug.md for a bug)"))
