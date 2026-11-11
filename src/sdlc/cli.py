@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import shutil
@@ -21,6 +22,7 @@ from sdlc.artifacts import (
     placeholders,
     stage,
 )
+from sdlc.clauses import ClauseError, change_blocks
 from sdlc.routing import steps
 
 # `make new-change NAME=x TYPE=bug`: make exports command-line variables to recipes, so the
@@ -165,6 +167,30 @@ def cmd_next(root: Path, ref: str | None, slug: str | None) -> int:
     return 0
 
 
+def find_change(root: Path, name: str) -> Path | None:
+    """A change folder from a path, a full slug or its number (`0002`)."""
+    if (path := Path(name)).is_dir():
+        return path
+    if (path := root / name).is_dir():
+        return path
+    found = [d for d in change_dirs(root) if d.name == name or d.name.split("-")[0] == name]
+    return found[0] if len(found) == 1 else None
+
+
+def cmd_clauses(root: Path, name: str, ref: str | None) -> int:
+    change_dir = find_change(root, name)
+    if change_dir is None:
+        print(f"no change matching {name!r}", file=sys.stderr)
+        return 1
+    try:
+        found = change_blocks(root, change_dir, ref)
+    except ClauseError as e:
+        print(f"{change_dir}: {e}", file=sys.stderr)
+        return 1
+    print(json.dumps({"change": change_dir.name, "requirements": found}, indent=2))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="sdlc")
     parser.add_argument("--root", type=Path, default=Path.cwd(), help="repository root")
@@ -183,11 +209,21 @@ def main(argv: list[str] | None = None) -> int:
     nxt.add_argument("slug", nargs="?", help="one change: 0002 or 0002-name")
     nxt.add_argument("--ref", help="read the changes from this git ref, e.g. origin/main")
 
+    cl = sub.add_parser(
+        "clauses",
+        help="split a spec into one block per requirement, with the criteria and plan lines "
+        "that cite it (JSON)",
+    )
+    cl.add_argument("change", help="a change: 0002, 0002-name, or a folder path")
+    cl.add_argument("--ref", help="only the requirements that are new or differ from this git ref")
+
     args = parser.parse_args(argv)
     if args.command == "new":
         return cmd_new(args.root, args.name, args.kind)
     if args.command == "check":
         return cmd_check(args.root)
+    if args.command == "clauses":
+        return cmd_clauses(args.root, args.change, args.ref)
     if args.command == "next":
         return cmd_next(args.root, args.ref, args.slug)
     return cmd_status(args.root)

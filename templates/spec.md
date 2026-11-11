@@ -20,6 +20,9 @@ reads). The checks only read bullets in this form, not a numbered list:
 
 - AC1 (R1): <command> exits 0 and prints X.
 
+Every clause of a requirement (each separate outcome) is tested by at least one criterion. A
+clause that can't be tested is listed as `- Untestable (R<n>): "<clause>" because <reason>.`
+
 ## Policy concerns
 
 Flags raised by the policy skills, especially where policies conflict. Write "None" if none.

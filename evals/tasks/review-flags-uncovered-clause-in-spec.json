@@ -1,0 +1,5 @@
+{
+  "name": "review flags a requirement clause no acceptance criterion tests (spec stage, #47)",
+  "prompt": "Review the spec at evals/fixtures/clause-coverage/0001-role-search/spec.md as if it were a `spec:` PR, following REVIEW.md exactly, including clause coverage. Treat that folder as the change folder; the intent counts as merged. Don't use GitHub, git or the network: write each finding to findings.md in the repo root, one finding per `## ` heading, quoting the text it is about, as REVIEW.md's Writing findings section says. Don't edit any other file.",
+  "check": "grep -qi 'clears the search' findings.md && scripts/clause-check.sh --stage spec evals/fixtures/clause-coverage/0001-role-search | jq -e 'any(.[]; .requirement == \"R2\" and (.clause | test(\"clear\"; \"i\")))'"
+}

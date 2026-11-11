@@ -656,3 +656,28 @@ def test_numbered_criteria_fail_on_the_consumer_spec_pr(consumer):
     (folder / "spec.md").write_text(spec)
     assert make(consumer, "validate").returncode == 0
     assert (consumer / ".claude" / "skills" / "scope.md").exists()
+
+
+def test_clause_check_in_consumer(consumer, framework_snapshot):
+    """The clause check (#47) arrives with the sync and splits a consumer's spec, and a
+    consumer without the `clauses` target is told it's optional."""
+    script = consumer / "scripts" / "clause-check.sh"
+    assert os.access(script, os.X_OK)
+    assert (consumer / "prompts" / "clause-check.md").exists()
+    fixture = REPO / "evals" / "fixtures" / "clause-coverage" / "0001-role-search"
+    folder = consumer / "changes" / "0001-role-search"
+    folder.mkdir(parents=True)
+    for name in ("spec.md", "plan.md"):
+        shutil.copy(fixture / name, folder / name)
+    out = make(consumer, "clauses", "CHANGE=0001")
+    assert out.returncode == 0, out.stderr
+    assert [b["id"] for b in json.loads(out.stdout)["requirements"]] == ["R1", "R2"]
+    dry = run([str(script), "--stage", "plan", "0001"], cwd=consumer, env={"AGENT": "echo"})
+    assert dry.returncode == 0, dry.stderr
+    assert [f["requirement"] for f in json.loads(dry.stdout)] == ["R1", "R2"]
+
+    shutil.rmtree(folder)
+    makefile = (consumer / "Makefile").read_text().replace("clauses", "noclauses")
+    commit(consumer, "chore: drop clauses target", {"Makefile": makefile})
+    commit(framework_snapshot, "fix: change", {"REVIEW.md": "changed\n"})
+    assert "make clauses  (optional" in sync(consumer, framework_snapshot, "main").stdout

@@ -884,3 +884,210 @@ def test_an_edited_plan_fails_without_a_definition_of_done(change: Path) -> None
         problem.message == "no definition of done found: expected templates/definition-of-done.md"
     )
     assert check_change(change, changed=set()) == []  # a merged plan isn't held to it
+
+
+# --- clause coverage: `sdlc clauses` (#47) ---------------------------------------------------
+
+CLAUSE_SPEC = """# Spec: search
+
+## Requirements
+
+**Search**
+- R1. The list has a search box. It filters by title.
+- R2. When nothing matches, the list shows "No roles match",
+  offers a button that clears the search, and keeps the text.
+1. **R3** Results are ordered by title.
+
+**Export**
+- R4: Export writes a CSV.
+
+Some note about the group that isn't part of R4's text.
+
+## Acceptance criteria
+
+- AC1 (R1): typing filters by title.
+- AC2 (R2): "zzz" shows "No roles match".
+  1. open the list
+  2. type zzz
+- AC3 (R1–R3): `make check` exits 0.
+- A4 (R4). Export writes a CSV.
+- Untestable (R2): "keeps the text" because the box is native.
+- AC5: no requirement cited.
+
+## Policy concerns
+
+None.
+"""
+
+CLAUSE_PLAN = """# Plan
+
+## Approach
+
+The box filters on each keystroke (R1).
+<!-- R4 is mentioned only in a comment -->
+
+## Verification
+
+| AC2 | `make test` | message shows |
+| A4 | `make test` | a CSV |
+"""
+
+
+def clause_blocks(spec: str = CLAUSE_SPEC, plan: str | None = CLAUSE_PLAN) -> dict:
+    from sdlc.clauses import blocks
+
+    return {b.id: b for b in blocks(spec, plan)}
+
+
+def test_clauses_reads_each_requirement_with_its_continuation_lines() -> None:
+    found = clause_blocks()
+    assert list(found) == ["R1", "R2", "R3", "R4"]
+    assert found["R2"].text == (
+        'When nothing matches, the list shows "No roles match", offers a button that clears the '
+        "search, and keeps the text."
+    )
+    assert found["R3"].text == "Results are ordered by title."
+    # Prose after a blank line, and group labels, aren't part of the requirement above.
+    assert found["R1"].text == "The list has a search box. It filters by title."
+    assert found["R4"].text == "Export writes a CSV."
+
+
+def test_clauses_attach_the_criteria_that_cite_each_requirement() -> None:
+    found = clause_blocks()
+    assert [c.id for c in found["R1"].criteria] == ["AC1", "AC3"]
+    assert [c.id for c in found["R2"].criteria] == ["AC2", "AC3", "Untestable"]
+    assert [c.id for c in found["R3"].criteria] == ["AC3"], "R1–R3 is a range"
+    assert [c.id for c in found["R4"].criteria] == ["A4"]
+    assert "2. type zzz" in found["R2"].criteria[0].text, "nested steps stay with the criterion"
+
+
+def test_clauses_attach_plan_lines_citing_a_requirement_or_its_criteria() -> None:
+    found = clause_blocks()
+    assert [(p.section, p.text) for p in found["R1"].plan] == [
+        ("Approach", "The box filters on each keystroke (R1).")
+    ]
+    assert [p.text for p in found["R2"].plan] == ["| AC2 | `make test` | message shows |"]
+    assert [p.text for p in found["R4"].plan] == ["| A4 | `make test` | a CSV |"], (
+        "an HTML comment isn't a plan line"
+    )
+    assert clause_blocks(plan=None)["R1"].plan == []
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("R1, R2", {"R1", "R2"}),
+        ("R2–R4", {"R2", "R3", "R4"}),
+        ("AC1-AC3", {"AC1", "AC2", "AC3"}),
+        ("R5 to 6", {"R5", "R6"}),
+        ("R2D2 and FOR1", set()),
+    ],
+)
+def test_cited_expands_ranges(text: str, expected: set[str]) -> None:
+    from sdlc.clauses import cited
+
+    assert cited(text) == expected
+
+
+@pytest.mark.parametrize(
+    "requirements",
+    ["", "Numbered, testable requirements (R1, R2, ...).", "1. The list has a search box."],
+)
+def test_clauses_fail_safe_when_no_requirement_can_be_read(requirements: str) -> None:
+    from sdlc.clauses import ClauseError, blocks
+
+    with pytest.raises(ClauseError, match="no requirements could be read"):
+        blocks(f"# Spec\n\n## Requirements\n\n{requirements}\n\n## Acceptance criteria\n")
+
+
+def clause_repo(tmp_path: Path) -> Path:
+    root = init_repo(tmp_path / "repo")
+    commit(
+        root,
+        "spec",
+        {
+            "changes/0001-search/spec.md": CLAUSE_SPEC,
+            "changes/0001-search/plan.md": CLAUSE_PLAN,
+        },
+    )
+    return root
+
+
+def test_clauses_command_prints_json_for_a_change(tmp_path: Path, capsys) -> None:
+    import json
+
+    root = clause_repo(tmp_path)
+    for name in ("0001", "0001-search", str(root / "changes/0001-search")):
+        assert main(["--root", str(root), "clauses", name]) == 0
+        out = json.loads(capsys.readouterr().out)
+        assert out["change"] == "0001-search"
+        assert [b["id"] for b in out["requirements"]] == ["R1", "R2", "R3", "R4"]
+        assert out["requirements"][3]["criteria"] == [
+            {"id": "A4", "text": "(R4). Export writes a CSV."}
+        ]
+
+
+def test_clauses_command_fails_for_an_unknown_change_or_unreadable_spec(
+    tmp_path: Path, capsys
+) -> None:
+    root = clause_repo(tmp_path)
+    assert main(["--root", str(root), "clauses", "0009"]) == 1
+    assert "no change matching '0009'" in capsys.readouterr().err
+    (root / "changes/0001-search/spec.md").write_text("# Spec\n\n## Requirements\n\nTBD\n")
+    assert main(["--root", str(root), "clauses", "0001"]) == 1
+    assert "no requirements could be read" in capsys.readouterr().err
+    (root / "changes/0001-search/spec.md").unlink()
+    assert main(["--root", str(root), "clauses", "0001"]) == 1
+
+
+def test_clauses_with_a_ref_keeps_only_what_changed(tmp_path: Path, capsys) -> None:
+    import json
+
+    root = clause_repo(tmp_path)
+    spec = root / "changes/0001-search/spec.md"
+    plan = root / "changes/0001-search/plan.md"
+    spec.write_text(
+        CLAUSE_SPEC.replace("Results are ordered by title.", "Results are ordered by date.")
+        + "- R9. not in Requirements, so not read.\n"
+    )
+    plan.write_text(CLAUSE_PLAN + "| AC1 | `make test` | filtered |\n")
+
+    def ids(*ref: str) -> list[str]:
+        assert main(["--root", str(root), "clauses", "0001", *ref]) == 0
+        return [b["id"] for b in json.loads(capsys.readouterr().out)["requirements"]]
+
+    # R3's text changed, and R1 has a new plan row for its criterion AC1.
+    assert ids("--ref", "HEAD") == ["R1", "R3"]
+    assert ids() == ["R1", "R2", "R3", "R4"]
+    # A ref without the spec (a new change): check everything.
+    git(root, "rm", "-q", "--cached", "changes/0001-search/spec.md")
+    git(root, "commit", "-q", "-m", "drop spec")
+    assert ids("--ref", "HEAD") == ["R1", "R2", "R3", "R4"]
+
+
+def test_clause_coverage_reaches_every_stage() -> None:
+    for path in (
+        ".claude/skills/spec/SKILL.md",
+        ".claude/skills/plan/SKILL.md",
+        ".claude/agents/verifier.md",
+        "REVIEW.md",
+    ):
+        text = (REPO / path).read_text()
+        assert "clause" in text.lower(), path
+    review = (REPO / "REVIEW.md").read_text()
+    assert "scripts/clause-check.sh" in review
+    assert "IDs only" in review, "the spec-match line states its basis"
+    assert "Untestable (R<n>)" in (REPO / "templates/spec.md").read_text()
+    assert "make clauses CHANGE=" in (REPO / ".claude/agents/verifier.md").read_text()
+
+
+def test_clauses_with_a_ref_whose_spec_cant_be_read_checks_everything(
+    tmp_path: Path, capsys
+) -> None:
+    import json
+
+    root = init_repo(tmp_path / "repo")
+    commit(root, "old", {"changes/0001-search/spec.md": "# Spec\n\n## Requirements\n\nTBD\n"})
+    (root / "changes/0001-search/spec.md").write_text(CLAUSE_SPEC)
+    assert main(["--root", str(root), "clauses", "0001", "--ref", "HEAD"]) == 0
+    assert len(json.loads(capsys.readouterr().out)["requirements"]) == 4
