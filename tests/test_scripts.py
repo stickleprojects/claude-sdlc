@@ -1732,3 +1732,30 @@ def test_request_review_expands_the_checkouts_head_for_the_runs_api(request_revi
     for sha in (None, full[:7]):  # no sha means the checkout's HEAD; a short one is expanded
         _, _, calls = request_review(variable="merge", runs=[review_run()], sha=sha)
         assert f"actions/runs?head_sha={full}&" in calls
+
+
+def test_baseline_gitignore_keeps_the_build_skill_while_ignoring_build_output(tmp_path):
+    # #103: a bare `build/` also matched .claude/skills/build/, so a file a sync added there
+    # was ignored and the sync PR silently left it out.
+    repo = init_repo(tmp_path / "r")
+    shutil.copy(REPO / "templates" / "gitignore", repo / ".gitignore")
+    paths = [".claude/skills/build/new.md", "build/out.js", "app/build/out.js"]
+    for path in paths:
+        (repo / path).parent.mkdir(parents=True, exist_ok=True)
+        (repo / path).write_text("x\n")
+    ignored = run(["git", "check-ignore", *paths], cwd=repo).stdout.split()
+    assert ignored == ["build/out.js", "app/build/out.js"]
+
+
+def test_bootstrap_adds_the_build_skill_exception_after_an_existing_build_line(tmp_path):
+    repo = init_repo(tmp_path / "r")
+    (repo / "templates").mkdir()
+    shutil.copy(REPO / "templates" / "gitignore", repo / "templates" / "gitignore")
+    (repo / ".gitignore").write_text("build/\n")  # a consumer that already had the bare line
+    result = run(["bash", str(REPO / "scripts/bootstrap-github.sh"), "--gitignore-only"], cwd=repo)
+    assert result.returncode == 0, result.stderr
+    lines = (repo / ".gitignore").read_text().splitlines()
+    assert lines.index("!.claude/skills/build/") > lines.index("build/")
+    (repo / ".claude/skills/build").mkdir(parents=True)
+    (repo / ".claude/skills/build/SKILL.md").write_text("x\n")
+    assert run(["git", "check-ignore", ".claude/skills/build/SKILL.md"], cwd=repo).returncode == 1
