@@ -981,6 +981,7 @@ def test_clauses_attach_plan_lines_citing_a_requirement_or_its_criteria() -> Non
         ("AC1-AC3", {"AC1", "AC2", "AC3"}),
         ("R5 to 6", {"R5", "R6"}),
         ("R2D2 and FOR1", set()),
+        ("R14a, R14b", {"R14a", "R14b"}),
     ],
 )
 def test_cited_expands_ranges(text: str, expected: set[str]) -> None:
@@ -1091,3 +1092,38 @@ def test_clauses_with_a_ref_whose_spec_cant_be_read_checks_everything(
     (root / "changes/0001-search/spec.md").write_text(CLAUSE_SPEC)
     assert main(["--root", str(root), "clauses", "0001", "--ref", "HEAD"]) == 0
     assert len(json.loads(capsys.readouterr().out)["requirements"]) == 4
+
+
+def test_clauses_list_requirement_lines_they_cant_read() -> None:
+    # PR #107 review: a line in another form, or an R<n> with no text, was dropped silently.
+    from sdlc.clauses import blocks, unreadable
+
+    spec = CLAUSE_SPEC.replace(
+        "- R4: Export writes a CSV.",
+        "- R4: Export writes a CSV.\n- Requirement 5: Import reads a CSV.\n- R6.\n"
+        "3. The export is quick.\n<!-- - an HTML comment isn't a line -->",
+    )
+    assert unreadable(spec) == [
+        "- Requirement 5: Import reads a CSV.",
+        "- R6.",
+        "3. The export is quick.",
+    ]
+    assert [b.id for b in blocks(spec)] == ["R1", "R2", "R3", "R4"], "the rest are still checked"
+    # Wrapped lines, group labels and prose aren't requirements that went missing.
+    assert unreadable(CLAUSE_SPEC) == []
+    # Lettered requirements (spellbound3d 0006's `- **R14a.** …`) are read, not reported.
+    lettered = CLAUSE_SPEC.replace("- R4: Export", "- **R4a.** Export")
+    assert unreadable(lettered) == [] and "R4a" in [b.id for b in blocks(lettered)]
+
+
+def test_clauses_command_warns_and_lists_unreadable_lines(tmp_path: Path, capsys) -> None:
+    import json
+
+    root = clause_repo(tmp_path)
+    spec = root / "changes/0001-search/spec.md"
+    spec.write_text(CLAUSE_SPEC.replace("- R4: Export", "- Requirement 4: Export"))
+    for ref in ([], ["--ref", "HEAD"]):  # listed whatever the ref: nothing has checked them
+        assert main(["--root", str(root), "clauses", "0001", *ref]) == 0
+        out, err = capsys.readouterr()
+        assert json.loads(out)["unreadable"] == ["- Requirement 4: Export writes a CSV."]
+        assert "warning: can't read this as a requirement" in err

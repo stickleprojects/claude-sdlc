@@ -1356,3 +1356,17 @@ def test_review_runs_the_clause_check_before_the_review_and_never_fails_on_it():
     )
     assert "Where the clauses come from" in workflow
     assert "Where the clauses come from" in (REPO / "REVIEW.md").read_text()
+
+
+def test_clause_check_reports_unreadable_requirement_lines_as_unchecked(fake_claude, tmp_path):
+    change = tmp_path / "0001-search"
+    shutil.copytree(REPO / CLAUSE_FIXTURE, change)
+    spec = change / "spec.md"
+    spec.write_text(spec.read_text().replace("- R2. When", "- Requirement 2: When"))
+    result, calls = fake_claude("CLAUSES: []", "--stage", "spec", str(change))
+    assert result.returncode == 0, result.stderr
+    assert len(calls) == 1, "R1 is still checked"
+    [entry] = json.loads(result.stdout)
+    assert entry["requirement"] is None and entry["stage"] == "spec"
+    assert entry["text"].startswith("- Requirement 2: When no roles match")
+    assert "could not be read as a requirement" in entry["unchecked"]

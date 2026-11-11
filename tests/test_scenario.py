@@ -700,7 +700,10 @@ def test_clause_check_finds_the_changed_specs_and_plans_in_consumer(consumer):
         {
             # 0001: the plan changes R2's row only, so it's checked at stage plan, R2 only.
             "changes/0001-search/plan.md": plan.replace("box holds", "box still holds"),
-            "changes/0002-export/spec.md": spec.replace("search box", "export button"),
+            # 0002: new, at stage spec; its R2 is in a form the check can't read.
+            "changes/0002-export/spec.md": spec.replace("search box", "export button").replace(
+                "- R2. When", "- Requirement 2: When"
+            ),
             "changes/0003-broken/spec.md": "# Spec\n\n## Requirements\n\nTBD\n",
         },
     )
@@ -718,7 +721,7 @@ def test_clause_check_finds_the_changed_specs_and_plans_in_consumer(consumer):
     assert found == [
         ("0001-search", "plan", "R2"),
         ("0002-export", "spec", "R1"),
-        ("0002-export", "spec", "R2"),
+        ("0002-export", "spec", None),  # unreadable, so unchecked, never dropped
         ("0003-broken", "spec", None),
     ]
     broken = json.loads(result.stdout)[-1]
