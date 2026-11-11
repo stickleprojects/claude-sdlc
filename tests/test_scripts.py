@@ -1596,7 +1596,9 @@ def request_review(tmp_path):
     state = tmp_path / "gh"
     state.mkdir()
 
-    def go(variable="", status=200, heads=(PUSHED,), runs=(), labels=(), label_fails=False):
+    def go(
+        variable="", status=200, heads=(PUSHED,), runs=(), labels=(), label_fails=False, sha=PUSHED
+    ):
         (state / "heads").write_text("\n".join(heads) + "\n")
         (state / "var-status").write_text(str(status))
         (state / "var.json").write_text(json.dumps({"value": variable}))
@@ -1613,7 +1615,8 @@ def request_review(tmp_path):
             "REQUEST_REVIEW_WAIT": "2",
             "REQUEST_REVIEW_POLL": "1",
         }
-        result = run(["bash", str(REPO / "scripts/request-review.sh"), "7", PUSHED], env=env)
+        args = [] if sha is None else [sha]
+        result = run(["bash", str(REPO / "scripts/request-review.sh"), "7", *args], env=env)
         calls = (state / "calls").read_text()
         labelled = any(c.startswith("api repos/o/r/issues/7/labels -f") for c in calls.splitlines())
         return result, labelled, calls
@@ -1635,6 +1638,10 @@ def test_request_review_leaves_the_push_review_alone_when_auto_merge_is_on(reque
     assert result.returncode == 0 and not labelled
     assert "SDLC_AUTO_MERGE=merge" in result.stdout and "abc1234" in result.stdout
     assert f"actions/runs?head_sha={PUSHED}&event=pull_request" in calls
+    # No label to add, so no waiting for GitHub to show the push: even an old head is fine.
+    assert "api repos/o/r/pulls/7 " not in calls
+    result, labelled, _ = request_review(variable="merge", runs=[review_run()], heads=("0ld0000",))
+    assert not labelled and "already started a review" in result.stdout
 
 
 @pytest.mark.parametrize(
@@ -1687,6 +1694,7 @@ def test_request_review_waits_for_github_to_show_the_push(request_review):
 def test_request_review_never_labels_the_old_head(request_review):
     result, labelled, _ = request_review(heads=("0ld0000",))
     assert result.returncode == 0 and not labelled
+    assert result.stdout.startswith("Not adding the review label (auto-merge is off, ")
     assert "still 0ld0000, not the pushed abc1234" in result.stdout
 
 
@@ -1717,3 +1725,10 @@ def test_skills_ask_for_a_review_through_request_review():
         assert 'labels[]=review"' not in text, f"{path} adds the label directly"
     sync = (REPO / "scripts/sync-sdlc.sh").read_text()
     assert '"scripts/request-review.sh:scripts/request-review.sh"' in sync
+
+
+def test_request_review_expands_the_checkouts_head_for_the_runs_api(request_review):
+    full = git(REPO, "rev-parse", "HEAD")
+    for sha in (None, full[:7]):  # no sha means the checkout's HEAD; a short one is expanded
+        _, _, calls = request_review(variable="merge", runs=[review_run()], sha=sha)
+        assert f"actions/runs?head_sha={full}&" in calls
