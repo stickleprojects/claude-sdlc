@@ -1547,3 +1547,188 @@ def test_unapproved_gap_eval_needs_the_heading(eval_check, report, passes):
     entry = {"clause": "generates a 3D scene", "delivered": "x", "gap": "large", "approved": None}
     result = eval_check(FLAGGED_TASK, report, [entry])
     assert (result.returncode == 0) == passes, result.stdout + result.stderr
+
+
+# --- asking for a review after a push (#105) ------------------------------------------------
+
+FAKE_GH_REQUEST_REVIEW = r"""#!/usr/bin/env bash
+# Serves $D/<file> for each API path and logs every call to $D/calls.
+printf '%s\n' "$*" >> "$D/calls"
+path="$2" jq_filter="" post=0
+shift 2
+while (($#)); do
+  case "$1" in --jq) jq_filter="$2"; shift 2 ;; -f) post=1; shift 2 ;; *) shift ;; esac
+done
+serve() { if [[ -n "$jq_filter" ]]; then jq -r "$jq_filter" "$D/$1"; else cat "$D/$1"; fi; }
+case "$path" in
+  repos/o/r/pulls/7)
+    # Each call takes the next head from $D/heads (the push shows up after a while).
+    head="$(head -n 1 "$D/heads")"
+    (($(wc -l < "$D/heads") > 1)) && sed -i 1d "$D/heads"
+    echo "{\"head\": {\"sha\": \"$head\"}}" > "$D/pull.json"; serve pull.json ;;
+  repos/o/r/issues/7/labels)
+    if ((post)); then [[ ! -e "$D/label-fails" ]] || exit 1; else serve labels.json; fi ;;
+  repos/o/r/actions/variables/SDLC_AUTO_MERGE)
+    status="$(cat "$D/var-status")"
+    [[ "$status" == 200 ]] || { echo "gh: HTTP $status" >&2; exit 1; }
+    serve var.json ;;
+  repos/o/r/actions/organization-variables)
+    echo '{"variables": []}' > "$D/org.json"; serve org.json ;;
+  repos/o/r/actions/runs*) serve runs.json ;;
+  *) echo "unexpected: $path" >&2; exit 1 ;;
+esac
+"""
+
+PUSHED = "abc1234def5678abc1234def5678abc1234def56"
+
+
+def review_run(conclusion=None, path=".github/workflows/claude-review.yml"):
+    status = "completed" if conclusion else "in_progress"
+    return {"path": path, "status": status, "conclusion": conclusion}
+
+
+@pytest.fixture
+def request_review(tmp_path):
+    fake = tmp_path / "fakebin"
+    fake.mkdir()
+    (fake / "gh").write_text(FAKE_GH_REQUEST_REVIEW)
+    (fake / "gh").chmod(0o755)
+    state = tmp_path / "gh"
+    state.mkdir()
+
+    def go(
+        variable="", status=200, heads=(PUSHED,), runs=(), labels=(), label_fails=False, sha=PUSHED
+    ):
+        (state / "heads").write_text("\n".join(heads) + "\n")
+        (state / "var-status").write_text(str(status))
+        (state / "var.json").write_text(json.dumps({"value": variable}))
+        (state / "runs.json").write_text(json.dumps({"workflow_runs": list(runs)}))
+        (state / "labels.json").write_text(json.dumps([{"name": n} for n in labels]))
+        (state / "label-fails").unlink(missing_ok=True)
+        if label_fails:
+            (state / "label-fails").write_text("")
+        (state / "calls").unlink(missing_ok=True)
+        env = {
+            "PATH": f"{fake}:{os.environ['PATH']}",
+            "D": str(state),
+            "GITHUB_REPOSITORY": "o/r",
+            "REQUEST_REVIEW_WAIT": "2",
+            "REQUEST_REVIEW_POLL": "1",
+        }
+        args = [] if sha is None else [sha]
+        result = run(["bash", str(REPO / "scripts/request-review.sh"), "7", *args], env=env)
+        calls = (state / "calls").read_text()
+        labelled = any(c.startswith("api repos/o/r/issues/7/labels -f") for c in calls.splitlines())
+        return result, labelled, calls
+
+    return go
+
+
+def test_request_review_adds_the_label_when_auto_merge_is_off(request_review):
+    result, labelled, _ = request_review(variable="")
+    assert result.returncode == 0 and labelled
+    assert result.stdout == (
+        "Added the review label: auto-merge is off, so pushes don't start a review.\n"
+    )
+
+
+def test_request_review_leaves_the_push_review_alone_when_auto_merge_is_on(request_review):
+    # spellbound3d PR #95: the label cancelled the review the push had started.
+    result, labelled, calls = request_review(variable="merge", runs=[review_run()])
+    assert result.returncode == 0 and not labelled
+    assert "SDLC_AUTO_MERGE=merge" in result.stdout and "abc1234" in result.stdout
+    assert f"actions/runs?head_sha={PUSHED}&event=pull_request" in calls
+    # No label to add, so no waiting for GitHub to show the push: even an old head is fine.
+    assert "api repos/o/r/pulls/7 " not in calls
+    result, labelled, _ = request_review(variable="merge", runs=[review_run()], heads=("0ld0000",))
+    assert not labelled and "already started a review" in result.stdout
+
+
+@pytest.mark.parametrize(
+    "runs",
+    [
+        [],  # no run yet
+        [review_run("skipped")],  # the job's condition skipped it
+        [review_run("cancelled")],  # a newer run replaced it
+        [review_run(path=".github/workflows/ci.yml")],  # another workflow
+    ],
+)
+def test_request_review_adds_the_label_when_no_review_started_on_the_push(request_review, runs):
+    result, labelled, _ = request_review(variable="squash", runs=runs)
+    assert result.returncode == 0 and labelled
+    assert "no review run started on abc1234" in result.stdout
+
+
+def test_request_review_counts_a_finished_review_of_the_push(request_review):
+    result, labelled, _ = request_review(variable="merge", runs=[review_run("success")])
+    assert not labelled and "already started a review" in result.stdout
+
+
+@pytest.mark.parametrize("status", [403, 500])
+def test_request_review_falls_back_to_the_runs_when_the_variable_cant_be_read(
+    request_review, status
+):
+    result, labelled, _ = request_review(status=status, runs=[review_run()])
+    assert not labelled
+    assert "couldn't read SDLC_AUTO_MERGE, but a review run already started" in result.stdout
+    result, labelled, _ = request_review(status=status)
+    assert labelled
+    assert result.stdout == (
+        "Added the review label: couldn't read SDLC_AUTO_MERGE, and no review run had started "
+        "on abc1234.\n"
+    )
+
+
+def test_request_review_reads_an_unset_variable_as_off(request_review):
+    # A 404 means the variable isn't set (auto-merge.sh --setting); not an unreadable one.
+    result, labelled, _ = request_review(status=404)
+    assert labelled and "auto-merge is off" in result.stdout
+
+
+def test_request_review_waits_for_github_to_show_the_push(request_review):
+    result, labelled, calls = request_review(heads=("0ld0000", "0ld0000", PUSHED))
+    assert labelled, result.stdout
+    assert calls.count("api repos/o/r/pulls/7 ") == 3
+
+
+def test_request_review_never_labels_the_old_head(request_review):
+    result, labelled, _ = request_review(heads=("0ld0000",))
+    assert result.returncode == 0 and not labelled
+    assert result.stdout.startswith("Not adding the review label (auto-merge is off, ")
+    assert "still 0ld0000, not the pushed abc1234" in result.stdout
+
+
+def test_request_review_leaves_a_label_that_is_already_on(request_review):
+    result, labelled, _ = request_review(labels=["bug", "review"])
+    assert not labelled and "already on" in result.stdout
+
+
+def test_request_review_says_when_it_couldnt_add_the_label(request_review):
+    result, labelled, _ = request_review(label_fails=True)
+    assert result.returncode == 0
+    assert result.stdout.startswith("Couldn't add the review label")
+
+
+def test_request_review_usage():
+    assert run(["bash", "scripts/request-review.sh"]).returncode == 2
+    assert run(["bash", "scripts/request-review.sh", "7", "not-a-sha"]).returncode == 2
+
+
+def test_skills_ask_for_a_review_through_request_review():
+    for path in (
+        ".claude/skills/review-findings/SKILL.md",
+        ".claude/skills/po-review/SKILL.md",
+        ".claude/skills/build/SKILL.md",
+    ):
+        text = (REPO / path).read_text()
+        assert "scripts/request-review.sh <N>" in text, path
+        assert 'labels[]=review"' not in text, f"{path} adds the label directly"
+    sync = (REPO / "scripts/sync-sdlc.sh").read_text()
+    assert '"scripts/request-review.sh:scripts/request-review.sh"' in sync
+
+
+def test_request_review_expands_the_checkouts_head_for_the_runs_api(request_review):
+    full = git(REPO, "rev-parse", "HEAD")
+    for sha in (None, full[:7]):  # no sha means the checkout's HEAD; a short one is expanded
+        _, _, calls = request_review(variable="merge", runs=[review_run()], sha=sha)
+        assert f"actions/runs?head_sha={full}&" in calls

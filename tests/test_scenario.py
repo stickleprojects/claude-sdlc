@@ -815,3 +815,12 @@ def test_readable_requirements_hold_new_specs_and_leave_merged_ones(consumer):
     fixed = old_form.replace("- Requirement 2: Export", "- R2. Export")
     (consumer / "changes/0002-new/spec.md").write_text(fixed)
     assert make(consumer, "validate").returncode == 0
+
+
+def test_request_review_arrives_with_the_sync(consumer):
+    """#105: the review skills call scripts/request-review.sh, so the sync installs it runnable."""
+    script = consumer / "scripts" / "request-review.sh"
+    assert os.access(script, os.X_OK)
+    assert "scripts/request-review.sh" in (consumer / ".sdlc-files").read_text()
+    skill = (consumer / ".claude" / "skills" / "review-findings" / "SKILL.md").read_text()
+    assert "scripts/request-review.sh <N>" in skill
