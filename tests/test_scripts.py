@@ -906,6 +906,27 @@ def test_workflows_guard_against_agent_loops():
     assert "actions/create-github-app-token" in spec
 
 
+# #126: SDLC_RUNNER picks the runner, fork PRs never get it, and unset means GitHub's.
+RUNS_ON = (
+    "runs-on: ${{ vars.SDLC_RUNNER && "
+    "(github.event.pull_request.head.repo.full_name || github.repository) == github.repository "
+    "&& vars.SDLC_RUNNER || 'ubuntu-latest' }}"
+)
+
+
+@pytest.mark.parametrize(
+    "workflow", sorted(p.name for p in REPO.glob(".github/workflows/*.yml")), ids=str
+)
+def test_every_job_runs_on_sdlc_runner_with_the_fork_guard(workflow):
+    text = (REPO / ".github/workflows" / workflow).read_text()
+    lines = [line.strip() for line in text.splitlines() if line.strip().startswith("runs-on:")]
+    assert lines, f"{workflow} has no jobs"
+    # A job pinned to a literal runner stays queued in an outage and blocks the merge.
+    assert all(line == RUNS_ON for line in lines), lines
+    jobs = re.findall(r"^  [a-z][a-z0-9_-]*:\n(?:    .*\n|\n)*?    steps:", text, re.M)
+    assert len(lines) == len(jobs), f"{workflow}: a job without runs-on"
+
+
 # --- tests-locked: bug fixes lock their tests automatically -------------------------------------
 
 

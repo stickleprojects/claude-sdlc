@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   pr-title:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.SDLC_RUNNER && (github.event.pull_request.head.repo.full_name || github.repository) == github.repository && vars.SDLC_RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
       - env:

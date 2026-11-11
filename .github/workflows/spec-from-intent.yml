@@ -21,7 +21,7 @@ concurrency:
 
 jobs:
   spec:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.SDLC_RUNNER && (github.event.pull_request.head.repo.full_name || github.repository) == github.repository && vars.SDLC_RUNNER || 'ubuntu-latest' }}
     steps:
       # Open spec PRs as the agent's App identity when it's set up (docs/agent-identity.md):
       # PRs opened with the default GITHUB_TOKEN don't run CI until someone approves them.

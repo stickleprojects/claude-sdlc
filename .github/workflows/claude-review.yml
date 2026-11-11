@@ -32,7 +32,7 @@ jobs:
       (github.event.action != 'labeled' || github.event.label.name == 'review') &&
       (github.event.action != 'synchronize' ||
         (vars.SDLC_AUTO_MERGE != '' && vars.SDLC_AUTO_MERGE != 'off'))
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.SDLC_RUNNER && (github.event.pull_request.head.repo.full_name || github.repository) == github.repository && vars.SDLC_RUNNER || 'ubuntu-latest' }}
     # One review per PR at a time: a newer push or `review` label replaces a review still
     # running on an older commit. On the job, not the workflow, so a skipped run (another
     # label, or a push without auto-merge) never cancels a review in progress.
@@ -164,7 +164,7 @@ jobs:
       github.event.action == 'synchronize' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       (vars.SDLC_AUTO_MERGE == '' || vars.SDLC_AUTO_MERGE == 'off')
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.SDLC_RUNNER && (github.event.pull_request.head.repo.full_name || github.repository) == github.repository && vars.SDLC_RUNNER || 'ubuntu-latest' }}
     env:
       GH_TOKEN: ${{ github.token }}
       PR: ${{ github.event.pull_request.number }}
