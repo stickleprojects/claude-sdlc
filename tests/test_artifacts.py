@@ -520,7 +520,8 @@ def spec_with_criteria(change: Path, criteria: str) -> Path:
     write(change / "intent.md", CHAIN["intent.md"])
     spec = change / "spec.md"
     write(spec, [s for s in CHAIN["spec.md"] if s != "Acceptance criteria"])
-    spec.write_text(spec.read_text() + f"## Acceptance criteria\n\n{criteria}\n")
+    body = spec.read_text().replace("## Requirements\n\ntext", "## Requirements\n\n- R1. text")
+    spec.write_text(body + f"## Acceptance criteria\n\n{criteria}\n")
     return spec
 
 
@@ -535,7 +536,7 @@ def spec_with_criteria(change: Path, criteria: str) -> Path:
 )
 def test_readable_criteria_are_valid(change: Path, criteria: str) -> None:
     spec_with_criteria(change, criteria)
-    assert check_change(change) == []
+    assert check_change(change, changed={change / "spec.md"}) == []
 
 
 @pytest.mark.parametrize(
@@ -548,8 +549,15 @@ def test_readable_criteria_are_valid(change: Path, criteria: str) -> None:
 )
 def test_unreadable_criteria_fail_on_the_spec_pr(change: Path, criteria: str, says: str) -> None:
     spec_with_criteria(change, criteria)
-    [problem] = check_change(change)
+    [problem] = check_change(change, changed={change / "spec.md"})
     assert says in problem.message and "AC<n>" in problem.message
+
+
+def test_criteria_of_a_merged_spec_are_left_alone(change: Path) -> None:
+    # #101 finding 9: it failed every unrelated branch, sync PRs included, until someone edited it.
+    spec_with_criteria(change, "1. `make check` exits 0.")
+    assert check_change(change, changed=set()) == []
+    assert check_change(change, changed=None) == [], "no main to compare with: skipped"
 
 
 def test_criteria_of_a_planned_spec_are_left_as_merged(change: Path) -> None:

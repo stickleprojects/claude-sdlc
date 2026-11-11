@@ -824,3 +824,29 @@ def test_request_review_arrives_with_the_sync(consumer):
     assert "scripts/request-review.sh" in (consumer / ".sdlc-files").read_text()
     skill = (consumer / ".claude" / "skills" / "review-findings" / "SKILL.md").read_text()
     assert "scripts/request-review.sh <N>" in skill
+
+
+def test_sync_reports_the_repos_own_scripts_that_arent_executable(consumer, framework_snapshot):
+    """#101 finding 10: the sync sets modes only on framework files, so a repo-owned script that
+    lost its bit (NTFS) is reported with the fix, not changed."""
+    commit(
+        consumer,
+        "chore: own scripts",
+        {".github/actions/deploy.sh": "echo hi\n", "tools/ok.sh": "echo ok\n"},
+    )
+    (consumer / "tools/ok.sh").chmod(0o755)  # executable on disk and in git, as on Linux
+    git(consumer, "update-index", "--chmod=+x", "tools/ok.sh")
+    commit(consumer, "chore: ok.sh is executable")
+    commit(framework_snapshot, "fix: change", {"REVIEW.md": "changed\n"})
+    out = sync(consumer, framework_snapshot, "main").stdout
+    report = out[out.index("your own scripts that aren't executable") :]
+    assert "  .github/actions/deploy.sh" in report
+    assert "tools/ok.sh" not in report and "scripts/sync-sdlc.sh" not in report
+    assert "git update-index --chmod=+x" in report
+    mode = git(consumer, "ls-files", "-s", ".github/actions/deploy.sh").split()[0]
+    assert mode == "100644", "reported, not changed"
+
+
+def test_sync_is_quiet_when_the_repos_scripts_are_executable(consumer, framework_snapshot):
+    commit(framework_snapshot, "fix: change", {"REVIEW.md": "changed\n"})
+    assert "aren't executable" not in sync(consumer, framework_snapshot, "main").stdout
