@@ -5,8 +5,9 @@ module where a change is, and hands over to the skill that owns the next step. T
 table lives here, once, so the skills can't drift apart; `.claude/skills/routing.md`
 explains it for the skills.
 
-Only files are read, from the working tree or from a git ref (normally origin/main, which
-holds what has been merged). Open PRs are GitHub state: the skills check those themselves.
+Only files and git history are read, from the working tree or from a git ref (normally
+origin/main, which holds what has been merged). Open PRs are GitHub state: the skills check
+those themselves.
 """
 
 from __future__ import annotations
@@ -79,6 +80,26 @@ def out_of_date(root: Path, rev: str, slug: str, present: set[str]) -> tuple[str
     return None
 
 
+def merged_build(root: Path, rev: str, slug: str) -> str | None:
+    """How a small build (one with no build.md) shows it merged at `rev`: "#N", or None.
+
+    A large build records "PR open" in build.md, which reaches main with its PR. A small build
+    leaves no file, so its merge is read from history (#122): the merge commit GitHub writes,
+    `Merge pull request #N from <owner>/build/<slug>` (the branch's own merges of main don't
+    match), or, in a repo that squash-merges, the build PR's title `feat(<slug>): ... (#N)`
+    (`fix(<slug>)` for a bug). A repo that rebase-merges leaves neither.
+    """
+    patterns = (
+        ("--merges", rf"^Merge pull request #[0-9]+ from [^ ]+/build/{slug}$"),
+        ("--no-merges", rf"^(feat|fix)\({slug}\)!?: .* \(#[0-9]+\)$"),
+    )
+    for kind, pattern in patterns:
+        found = _git(root, "log", rev, kind, "-E", f"--grep={pattern}", "--format=%s", "-1")
+        if found and (m := re.search(r"#\d+", found)):
+            return m.group()
+    return None
+
+
 def next_step(change_dir: Path, merged: bool, root: Path | None = None, rev: str = "HEAD") -> Next:
     """The next step for one change. `merged` means the files come from main, so a build
     plan saying "PR open" there has been merged (it only reaches main with its PR). With
@@ -89,9 +110,13 @@ def next_step(change_dir: Path, merged: bool, root: Path | None = None, rev: str
         if path.exists() and (m := WITHDRAWN_RE.search(path.read_text(encoding="utf-8"))):
             return Next(slug, where, "withdrawn", m.group(1).strip())
     finished = False
+    small_build: str | None = None
     if (change_dir / BUILD).exists():
         status = Build.parse((change_dir / BUILD).read_text(encoding="utf-8")).status or ""
         finished = merged and status.startswith("PR open")
+    elif where == "plan" and root is not None:
+        small_build = merged_build(root, rev, slug)
+        finished = small_build is not None
     if root is not None and not finished:
         present = {p.name for p in change_dir.iterdir()}
         if stale := out_of_date(root, rev, slug, present):
@@ -109,6 +134,8 @@ def next_step(change_dir: Path, merged: bool, root: Path | None = None, rev: str
     if where == "spec":
         return Next(slug, where, "plan", "plan it")
     if where == "plan":
+        if small_build is not None:
+            return Next(slug, where, "done", f"built and merged ({small_build})")
         return Next(slug, where, "build", "build it")
     build = Build.parse((change_dir / BUILD).read_text(encoding="utf-8"))
     status = build.status or ""

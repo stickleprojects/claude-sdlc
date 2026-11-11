@@ -200,3 +200,72 @@ def test_a_template_comment_does_not_withdraw(tmp_path: Path) -> None:
     folder.mkdir(parents=True)
     (folder / "intent.md").write_text((REPO / "templates/intent.md").read_text())
     assert steps(tmp_path)[0].skill == "spec"
+
+
+# --- a small build (no build.md) is done once its PR merges (#122) ----------------------------
+
+
+def merge_build_branch(repo: Path, slug: str, pr: int, branch: str | None = None) -> None:
+    """A build branch with a commit, merged into main the way GitHub writes the merge commit,
+    after the branch has itself merged main once (which mustn't count as the PR's merge)."""
+    from conftest import git
+
+    branch = branch or f"build/{slug}"
+    git(repo, "checkout", "-q", "-b", branch)
+    commit(repo, f"feat({slug}): the code", {"src.py": "x = 1\n"})
+    git(repo, "checkout", "-q", "main")
+    commit(repo, "chore: something else on main", {"other.txt": "y\n"})
+    git(repo, "checkout", "-q", branch)
+    git(
+        repo,
+        "merge",
+        "-q",
+        "--no-edit",
+        "-m",
+        f"Merge remote-tracking branch 'origin/main' into {branch}",
+        "main",
+    )
+    git(repo, "checkout", "-q", "main")
+    git(repo, "merge", "-q", "--no-ff", "-m", f"Merge pull request #{pr} from o/{branch}", branch)
+
+
+def test_a_small_build_is_done_once_its_pr_merges(tmp_path: Path) -> None:
+    repo = planned_repo(tmp_path)
+    assert steps(repo, ref="HEAD")[0].skill == "build"
+    merge_build_branch(repo, "0001-x", 95)
+    [step] = steps(repo, ref="HEAD")
+    assert (step.stage, step.skill, step.detail) == ("plan", "done", "built and merged (#95)")
+    assert steps(repo)[0].skill == "done", "the working tree reads HEAD's history too"
+
+
+def test_a_squash_merged_small_build_is_done_too(tmp_path: Path) -> None:
+    repo = planned_repo(tmp_path)
+    commit(repo, "fix(0001-x): stop the hang (#12)", {"src.py": "x = 2\n"})
+    [step] = steps(repo, ref="HEAD")
+    assert (step.skill, step.detail) == ("done", "built and merged (#12)")
+
+
+@pytest.mark.parametrize(
+    "subject",
+    [
+        "Merge pull request #7 from o/build/0001-x-and-more",  # another change's branch
+        "Merge pull request #7 from o/plan/0001-x",  # the plan PR, not the build
+        "Merge remote-tracking branch 'origin/main' into build/0001-x",  # the branch, not main
+        "feat(0001-x): M1 the model",  # a build commit, not a squashed PR
+        "plan(0001-x): plan it (#4)",  # the plan PR squashed
+        "feat(0001-xy): other (#9)",  # a different slug
+    ],
+)
+def test_other_commits_dont_count_as_the_build_merging(tmp_path: Path, subject: str) -> None:
+    repo = planned_repo(tmp_path)
+    commit(repo, subject)
+    assert steps(repo, ref="HEAD")[0].skill == "build"
+
+
+def test_a_merged_small_build_stays_done_when_the_spec_changes_later(tmp_path: Path) -> None:
+    repo = planned_repo(tmp_path)
+    merge_build_branch(repo, "0001-x", 95)
+    spec = repo / "changes/0001-x/spec.md"
+    spec.write_text(spec.read_text() + "Later.\n")
+    commit(repo, "spec: later edit")
+    assert steps(repo, ref="HEAD")[0].skill == "done", "what's shipped stays shipped"
