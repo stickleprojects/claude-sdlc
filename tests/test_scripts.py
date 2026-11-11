@@ -2345,3 +2345,14 @@ def test_the_roadmap_is_the_projects_and_its_format_is_synced():
     assert "Milestone: M<n>" in intent and "Adjustment: NNNN-<slug>" in intent
     # Only in a comment: a repo with no roadmap gets no Milestone: line in its intents.
     assert "\nMilestone:" not in re.sub(r"<!--.*?-->", "", intent, flags=re.S)
+
+
+def test_next_and_the_upgrade_steps_know_the_roadmap():
+    # #81: /next reads the roadmap from main; v0.10.0's upgrade covers both consumers' shapes.
+    nxt = (REPO / ".claude/skills/next/SKILL.md").read_text()
+    assert "git show origin/main:docs/roadmap.md" in nxt
+    assert "Never reorder the roadmap" in nxt
+    steps = (REPO / "docs/release-notes/v0.10.0.md").read_text().split("## Upgrade steps", 1)[1]
+    for case in ("own roadmap check already", "in another shape", "No roadmap"):
+        assert case in steps, case
+    assert re.findall(r"^(\d)\. ", steps, re.M) == ["1", "2", "3", "4", "5", "6", "7"]
