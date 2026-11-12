@@ -981,7 +981,8 @@ def test_next_shows_a_merged_small_build_as_done_in_consumer(consumer):
 
 def test_stale_review_and_title_checks_arrive_with_the_sync(consumer):
     """#46: the workflows call these scripts, so the sync installs them runnable."""
-    for name in ("review-current.sh", "review-posted.sh", "check-pr-title.sh"):
+    scripts = ("review-current.sh", "review-posted.sh", "review-findings.sh", "check-pr-title.sh")
+    for name in scripts:
         assert os.access(consumer / "scripts" / name, os.X_OK), name
     bad = run(
         ["scripts/check-pr-title.sh", "docs: tidy"], cwd=consumer, input="changes/0001-x/spec.md\n"
