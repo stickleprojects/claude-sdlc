@@ -29,7 +29,7 @@ Tell the person in one or two lines: the version they're on (a ref such as `main
 Read the notes of every release after theirs (`gh api repos/<owner/repo>/releases/tags/<tag> --jq .body`) and summarise them in plain language, in this order:
 
 1. **Breaking changes** (the `⚠ Breaking changes` section): what the project must change, for example a renamed `make` target or a new required artifact section. Check this repo for each one (`grep` the Makefile, `changes/`) and say whether it's affected.
-2. **Optional features** (sections titled `Optional: …`): what each one is, that nothing changes until the team adopts it, and how to adopt it. Check whether the repo already uses it, for example whether `docs/adr/` exists for architecture decision records. Leave out each feature the project has declined: a `[[features.declined]]` entry in `.sdlc.toml` whose `feature` is the heading's text after `Optional: ` (ignore case). Say in one line how many you left out, and that `.sdlc.toml` lists them with the reasons.
+2. **Optional features** (sections titled `Optional: …`): what each one is, that nothing changes until the team adopts it, and how to adopt it. Check whether the repo already uses it, for example whether `docs/adr/` exists for architecture decision records. Leave out each feature the project has declined: a `[[features.declined]]` entry in `.sdlc.toml` whose `feature` is the heading's text after `Optional: ` (ignore case). Don't mention them here; section 5 lists them once the update is done.
 3. **Upgrade steps** (a section titled `Upgrade steps` in a release's notes): work the release asks Claude to do in this repo as part of the update, such as adding a `make` target or bringing in-flight work up to a new rule. Say what each step will touch here; you do them in section 3.
 4. **Features and fixes:** one line each, only the ones a user of the pipeline would notice.
 
@@ -82,6 +82,15 @@ Push, open the PR, run `.sdlc/scripts/auto-merge.sh <N>` on it (the `sdlc-agent-
 ## 5. Afterwards
 
 For each optional feature the repo hasn't adopted or declined, offer in one line to start it, for example drafting proposed ADRs for the decisions this repo has already made, for the tech lead to accept. Don't start one without a yes.
+
+Then list the optional features in these releases that the project has declined, without offering them, so nobody wonders where they went. Use this wording, one line per feature with who declined it, when, and their reason:
+
+> Not offered, since you've said no to these before:
+> - architecture decision records (ADRs): declined by Sam on 6 Nov 2026 ("a short-lived prototype; the plan's Risks line is enough")
+>
+> To reconsider one, delete its entry in `.sdlc.toml` and run `/sdlc` again.
+
+Leave the list out when nothing in these releases was declined.
 
 When the person says no, ask with AskUserQuestion which they mean:
 - **Not now:** nothing is recorded, and the next update offers it again.

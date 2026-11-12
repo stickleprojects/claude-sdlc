@@ -1352,6 +1352,20 @@ def test_the_sdlc_skills_example_entry_is_valid(tmp_path: Path) -> None:
     assert "Not now" in skill and "Not for us" in skill and "never make one up" in skill
 
 
+def test_the_sdlc_skill_lists_declined_features_after_the_update_without_offering_them() -> None:
+    """#147: a declined feature is skipped in what's new and the offers, then listed after."""
+    skill = (REPO / ".sdlc/skills/sdlc/SKILL.md").read_text()
+    whats_new, rest = skill.split("## 3. Update on a branch")
+    afterwards = rest.split("## 5. Afterwards")[1]
+    assert "Leave out each feature the project has declined" in whats_new
+    assert "how many you left out" not in whats_new
+    offer, listing = afterwards.split("Then list the optional features")
+    assert "hasn't adopted or declined" in offer
+    assert "without offering them" in listing
+    assert "Not offered, since you've said no to these before:" in listing
+    assert "declined by" in listing and "delete its entry in `.sdlc.toml`" in listing
+
+
 def test_optional_feature_titles_are_unique_across_releases() -> None:
     """A decline is keyed by the title, so two features with one title would share it."""
     titles = [
