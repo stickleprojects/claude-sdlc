@@ -5,6 +5,14 @@ on:
   push:
     branches: [main]
 
+# A new push to a PR cancels the run for its old head, queued or in progress (#138): on a
+# self-hosted runner that runs one job at a time, the stale run would hold up the current one.
+# A push to main gets a group of its own commit: a group keeps only one pending run, and a
+# shared one would let the next merge replace it, leaving that commit with no result.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   check:
     runs-on: ${{ vars.SDLC_RUNNER && !github.event.issue.pull_request && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && vars.SDLC_RUNNER || 'ubuntu-latest' }}

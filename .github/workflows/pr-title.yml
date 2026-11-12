@@ -11,6 +11,11 @@ permissions:
   contents: read
   pull-requests: read
 
+# A newer push or title edit on the same PR cancels the older check (#138).
+concurrency:
+  group: pr-title-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   pr-title:
     runs-on: ${{ vars.SDLC_RUNNER && !github.event.issue.pull_request && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && vars.SDLC_RUNNER || 'ubuntu-latest' }}
