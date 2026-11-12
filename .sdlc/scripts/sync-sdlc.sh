@@ -37,27 +37,23 @@ main() {
   local old_files_list=".sdlc-files" old_version_file=".sdlc-version"
   # Framework-only workflows that consumers must not run.
   local skip_workflows=("release.yml")
-  # make targets the synced files call: "<target> <what uses it>". The stack contract
-  # is required; the optional ones are only needed for what they name.
+  # make targets the synced files call: "<target> <what uses it>". The project's Makefile
+  # defines the stack contract and includes .sdlc/sdlc.mk, which brings the rest (#133).
   local contract_targets=(
     "setup stack contract: install dependencies"
     "fmt stack contract: the format-after-edit hook"
     "lint stack contract: make check"
     "test stack contract: make check"
-    "validate stack contract: artifact checks in make check"
+    "validate stack contract: artifact checks in make check, via the SDLC tool's check"
     "check stack contract: CI and every skill"
-    "new-change stack contract: /intent"
-    "status stack contract: /next"
-    "next stack contract: /next and the entry skills' routing"
   )
   local optional_targets=(
     "coverage optional: /build runs it when present"
-    "clauses optional: the clause check (.sdlc/scripts/clause-check.sh) in the Claude review"
-    "evals optional: the agent-evals workflow"
-    "sync-sdlc optional: shortcut for this script"
     "deploy-dev optional: deploys to dev"
     "deploy-prod optional: the production gate's release route"
   )
+  # What .sdlc/sdlc.mk defines; a project that still defines one itself should delete it.
+  local sdlc_mk_targets=(new-change status next clauses exec-bits evals sync-sdlc)
   # Repo secrets and variables the synced workflows use: "<secret|variable> <NAME> <what uses it>".
   # Required ones break those workflows when missing. The agent App's three are optional but
   # go together: half set up, spec-from-intent or the Claude review fails at run time.
@@ -137,7 +133,7 @@ main() {
   fi
 
   local pair src dst file installed=() merged=() conflicts=() kept=() sidecars=() executables=()
-  local carried=() moved=()
+  local carried=() moved=() policy_moved=0
   # The framework's executable files, by git's recorded mode (#79): the consumer's copies get
   # the same bit, whatever their extension. Nothing else is touched.
   local fw_exec
@@ -184,8 +180,20 @@ main() {
     if [[ ! -e "$2" && -n "$legacy" && -f "$legacy" ]] && was_installed "$legacy"; then
       moved+=("$legacy")
       if ! { base_of "$1" "$base" && cmp -s "$base" "$legacy"; }; then
-        mkdir -p "$(dirname "$2")"
-        cp "$legacy" "$2"
+        if [[ "$2" == ".sdlc/skills/security-policy/SKILL.md" ]]; then
+          # The policy is the project's own, so it becomes its override, not a merge into the
+          # framework's placeholder (#133). The frontmatter stays in the stub.
+          local policy=".sdlc-local/skills/security-policy/SKILL.md"
+          if [[ ! -e "$policy" ]]; then
+            mkdir -p "$(dirname "$policy")"
+            awk 'NR == 1 && /^---$/ { fm = 1; next } fm && /^---$/ { fm = 0; next } !fm' \
+              "$legacy" > "$policy"
+            policy_moved=1
+          fi
+        else
+          mkdir -p "$(dirname "$2")"
+          cp "$legacy" "$2"
+        fi
         carried+=("$legacy")
       fi
     fi
@@ -216,7 +224,18 @@ main() {
   # The Makefile is the consumer's, but the synced hooks, skills and workflows call these
   # targets. Name the ones it doesn't define (each line: target, what uses it).
   report_targets() {
-    local have line t missing=()
+    local have line t missing=() dup=()
+    if [[ -f Makefile ]] && ! grep -qE '^-?include[[:space:]]+\.sdlc/sdlc\.mk[[:space:]]*$' Makefile; then
+      echo "your Makefile doesn't include the pipeline's targets; add this line near the top:"
+      echo "  include .sdlc/sdlc.mk"
+    fi
+    for t in "${sdlc_mk_targets[@]}"; do
+      if [[ -f Makefile ]] && grep -qE "^$t[[:space:]]*:([^=]|$)" Makefile; then dup+=("$t"); fi
+    done
+    if ((${#dup[@]})); then
+      echo "your Makefile defines targets .sdlc/sdlc.mk now provides; delete yours:"
+      echo "  ${dup[*]}"
+    fi
     have="$(make -pRrq __sdlc_probe__ 2>/dev/null | awk '
       /^# Not a target/ { skip = 1; next }
       /^[a-zA-Z0-9][^$#\/\t=]*:([^=]|$)/ && !skip {
@@ -400,13 +419,18 @@ main() {
   if ((${#merged[@]})); then
     echo "kept your local changes (any framework changes are merged in):"
     for f in "${merged[@]}"; do echo "  $f"; done
+    echo "(edits to .sdlc/ files merge on every update; an override in .sdlc-local/ doesn't need"
+    echo " to: see .sdlc/docs/overrides.md)"
   fi
   # After the move (#133): the repo's own files that still name an old path, such as a
   # Makefile running the tool from tools/sdlc/src. The sync never edits them.
   if ((${#moved[@]})); then
     # An old path on its own, not the tail of its new one (.sdlc/scripts/x contains scripts/x).
     local stale pats=(-e '(^|[^.[:alnum:]_/-])tools/sdlc/src') m
-    for m in "${moved[@]}"; do pats+=(-e "(^|[^.[:alnum:]_/-])${m//./\\.}"); done
+    for m in "${moved[@]}"; do
+      grep -qxF -- "$m" "$files_list" && continue  # still there: a skill or agent stub
+      pats+=(-e "(^|[^.[:alnum:]_/-])${m//./\\.}")
+    done
     # Matches in files the framework installed don't count: the sync just rewrote those.
     stale="$(git grep -n -E "${pats[@]}" -- . ':!.sdlc' ':!changes' ':!docs/release-notes' \
       2>/dev/null | awk -F: 'NR == FNR { ours[$0] = 1; next } !($1 in ours)' "$files_list" - \
@@ -415,6 +439,30 @@ main() {
       echo "the framework moved into .sdlc/; these lines of yours still use the old paths"
       echo "(tools/sdlc/src is now .sdlc/src, scripts/<x> is .sdlc/scripts/<x> and so on):"
       while IFS= read -r f; do echo "  $f"; done <<<"$stale"
+    fi
+  fi
+  if ((policy_moved)); then
+    echo "your security policy is the project's own, so it moved to its override:"
+    echo "  .sdlc-local/skills/security-policy/SKILL.md (the sync never writes there again)"
+  fi
+  # Overrides (.sdlc-local/, #133) whose framework file this sync changed: re-read each one.
+  # One that no longer applies (a block it names is gone) also fails make validate.
+  if [[ -d .sdlc-local ]]; then
+    local changed_now rel touched=() broken=()
+    changed_now="$(git diff --cached --name-only -- .sdlc)"
+    while IFS= read -r rel; do
+      [[ -n "$rel" && "$rel" != hooks/* && "$rel" != local.mk ]] || continue
+      grep -qxF -- ".sdlc/$rel" <<<"$changed_now" || continue
+      touched+=(".sdlc-local/$rel")
+      .sdlc/scripts/resolve.sh "$rel" >/dev/null 2>&1 || broken+=(".sdlc-local/$rel")
+    done < <(cd .sdlc-local && find . -type f | sed 's|^\./||' | sort)
+    if ((${#touched[@]})); then
+      echo "your overrides of files this update changed (check each still fits):"
+      for f in "${touched[@]}"; do echo "  $f"; done
+    fi
+    if ((${#broken[@]})); then
+      echo "ERROR: these overrides no longer apply (make validate says why):"
+      for f in "${broken[@]}"; do echo "  $f"; done
     fi
   fi
   if ((${#kept[@]})); then

@@ -1,4 +1,5 @@
-<!-- The frontmatter for this skill is in .claude/skills/sdlc/SKILL.md, which Claude Code reads. -->
+<!-- The frontmatter for this skill is in .claude/skills/sdlc/SKILL.md, which Claude Code reads. Projects change this
+file with an override in .sdlc-local/ (see .sdlc/docs/overrides.md), never by editing it. -->
 
 # The pipeline: version, what's new, update
 
@@ -47,7 +48,9 @@ Then ask with AskUserQuestion: update to the latest release (recommended), to a 
    - *CONFLICT … `<<<<<<<` markers*: go through each file with the person. Show both sides (theirs, then the framework's), explain what each does, recommend one, and ask. Edit the file to the decision, remove the markers, and `git add` it.
    - *CONFLICT … `.sdlc-new`*: the framework's version is beside their file. Merge it by hand the same way, delete the `.sdlc-new` file and `git add` the result.
    - *kept (the framework dropped these…)*: the file is theirs now. Mention it. No action is needed.
-   - *your Makefile doesn't define these targets*: the stack-contract ones (`setup fmt lint test validate check new-change status next`) must exist for the pipeline to work. Propose each recipe for this repo's stack, following its existing targets. The optional ones (`coverage`, `evals`, `deploy-dev`, …) only matter for what they name, so ask before adding them.
+   - *your Makefile doesn't include the pipeline's targets*: add `include .sdlc/sdlc.mk` near the top of the Makefile. It brings `new-change status next clauses exec-bits evals sync-sdlc`, so the project never adds those by hand.
+   - *your Makefile defines targets .sdlc/sdlc.mk now provides*: delete the project's copies of the targets it names, once the include is there. If one does something extra for this project, keep that in a target with its own name.
+   - *your Makefile doesn't define these targets*: the stack-contract ones (`setup fmt lint test validate check`) must exist for the pipeline to work. Propose each recipe for this repo's stack, following its existing targets. The optional ones (`coverage`, `deploy-dev`, …) only matter for what they name, so ask before adding them.
    - *secrets and variables the workflows use*: the sync checked the GitHub repo by name (values are never readable). No such section means everything is set, or the check was skipped because there's no GitHub `origin` or `gh` isn't logged in. If it was skipped, say so.
      - *MISSING (required)*: the named workflows fail until it's set. Tell the person how (`.sdlc/scripts/bootstrap-github.sh`, or the repo's *Settings → Secrets and variables → Actions*). Never ask for or handle the value yourself. Open the sync PR as a draft until it's set.
      - *ERROR: the agent App is half set up*: spec-from-intent or the Claude review fails at run time. Point at `.sdlc/docs/setup-agent-apps.md` and ask whether to finish setting the App up or remove the parts that are set.

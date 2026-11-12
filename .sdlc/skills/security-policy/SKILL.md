@@ -1,4 +1,5 @@
-<!-- The frontmatter for this skill is in .claude/skills/security-policy/SKILL.md, which Claude Code reads. -->
+<!-- The frontmatter for this skill is in .claude/skills/security-policy/SKILL.md, which Claude Code reads. Projects change this
+file with an override in .sdlc-local/ (see .sdlc/docs/overrides.md), never by editing it. -->
 
 # Security policy (starter set: replace with your organisation's)
 

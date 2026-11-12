@@ -13,11 +13,12 @@
 #   clauses   a spec as one JSON block per requirement, for the clause check (CHANGE=, REF=)
 #   check     everything CI requires; exits non-zero on any failure
 
-.PHONY: setup fmt lint test validate check exec-bits new-change status next clauses evals deploy-dev deploy-prod
+.PHONY: setup fmt lint test validate check deploy-dev deploy-prod
 
 # How to run the pipeline's own CLI (Python, via uv). Repos on another stack point this
 # at their copy of the tool, e.g. `uv run --project tools/sdlc sdlc`.
 SDLC = uv run sdlc
+include .sdlc/sdlc.mk
 
 # --- current stack: Python via uv -------------------------------------------------
 PY_FILES = $(filter %.py,$(FILES))
@@ -45,32 +46,6 @@ validate:
 # ----------------------------------------------------------------------------------
 
 check: lint test validate exec-bits
-
-new-change:
-	@test -n "$(NAME)" || { echo "usage: make new-change NAME=kebab-name [TYPE=bug]"; exit 2; }
-	$(SDLC) new $(NAME)
-
-status:
-	@$(SDLC) status
-
-# Each change's next step and the skill that owns it; the entry skills route by it.
-# CHANGE=0002 limits it to one change, REF=origin/main reads what's merged.
-next:
-	@$(SDLC) next $(CHANGE) $(if $(REF),--ref $(REF))
-
-# One block per requirement (its text, the criteria and plan lines citing it), read by
-# .sdlc/scripts/clause-check.sh. CHANGE=0002 is required; REF=origin/main keeps only what changed.
-clauses:
-	@test -n "$(CHANGE)" || { echo "usage: make clauses CHANGE=0002 [REF=origin/main]"; exit 2; }
-	@$(SDLC) clauses $(CHANGE) $(if $(REF),--ref $(REF))
-
-# Committed scripts must be executable; a non-executable hook is skipped silently.
-exec-bits:
-	@bad=$$(git ls-files -s '*.sh' | awk '$$1 != "100755" {print $$4}'); \
-	test -z "$$bad" || { echo "not executable in git (git update-index --chmod=+x):"; echo "$$bad"; exit 1; }
-
-evals:
-	./.sdlc/evals/run.sh
 
 # Placeholders until there is something to deploy. The production gate hook
 # (.sdlc/hooks/production-gate.sh) stops the agent from ever running deploy-prod.

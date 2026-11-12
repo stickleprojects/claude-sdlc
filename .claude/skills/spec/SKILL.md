@@ -4,4 +4,4 @@ description: Internal; reached through the routing (/plan, /next) or the spec-fr
 user-invocable: false
 ---
 
-This skill is part of the claude-sdlc framework. Read `.sdlc/skills/spec/SKILL.md` and follow it. Paths in it are relative to the repo root.
+This skill is part of the claude-sdlc framework. Run `.sdlc/scripts/resolve.sh skills/spec/SKILL.md` and follow what it prints: the skill with this project's overrides (in .sdlc-local/) applied. Read any other file under .sdlc/ that it names the same way, with resolve.sh. Paths are relative to the repo root.

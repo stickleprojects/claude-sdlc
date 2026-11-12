@@ -417,13 +417,28 @@ def test_sync_keeps_a_dropped_file_the_consumer_changed(consumer, framework_snap
 
 
 def test_sync_reports_make_targets_the_consumer_lacks(consumer, framework_snapshot):
-    makefile = (consumer / "Makefile").read_text().replace("status", "nostatus")
-    commit(consumer, "chore: drop status target", {"Makefile": makefile})
+    makefile = (consumer / "Makefile").read_text().replace(" fmt ", " ")  # its rule and .PHONY
+    commit(consumer, "chore: drop fmt target", {"Makefile": makefile})
     commit(framework_snapshot, "fix: change", {".sdlc/REVIEW.md": "changed\n"})
     out = sync(consumer, framework_snapshot, "main").stdout
-    assert "make status  (stack contract" in out
-    assert "make evals  (optional" in out
+    assert "make fmt  (stack contract" in out
+    assert "make coverage  (optional" in out
     assert "make check  (" not in out
+    assert "make status" not in out, ".sdlc/sdlc.mk brings it"
+    assert "include the pipeline's targets" not in out
+
+
+def test_sync_asks_for_the_include_and_names_targets_it_replaces(consumer, framework_snapshot):
+    makefile = (consumer / "Makefile").read_text().replace("include .sdlc/sdlc.mk\n", "")
+    makefile += "\nstatus:\n\t@echo ours\n"
+    commit(consumer, "chore: an older Makefile", {"Makefile": makefile})
+    commit(framework_snapshot, "fix: change", {".sdlc/REVIEW.md": "changed\n"})
+    out = sync(consumer, framework_snapshot, "main").stdout
+    assert "your Makefile doesn't include the pipeline's targets" in out
+    assert "  include .sdlc/sdlc.mk\n" in out
+    assert (
+        "your Makefile defines targets .sdlc/sdlc.mk now provides; delete yours:\n  status\n" in out
+    )
 
 
 def test_sdlc_files_lists_what_was_installed(consumer):
@@ -766,12 +781,6 @@ def test_clause_check_in_consumer(consumer, framework_snapshot):
     assert dry.returncode == 0, dry.stderr
     assert [f["requirement"] for f in json.loads(dry.stdout)] == ["R1", "R2"]
 
-    shutil.rmtree(folder)
-    makefile = (consumer / "Makefile").read_text().replace("clauses", "noclauses")
-    commit(consumer, "chore: drop clauses target", {"Makefile": makefile})
-    commit(framework_snapshot, "fix: change", {".sdlc/REVIEW.md": "changed\n"})
-    assert "make clauses  (optional" in sync(consumer, framework_snapshot, "main").stdout
-
 
 def test_clause_check_finds_the_changed_specs_and_plans_in_consumer(consumer):
     """The review's mode: each change whose spec or plan the branch changed, at the right stage,
@@ -1085,7 +1094,7 @@ def framework_history(tmp_path):
 def old_consumer(tmp_path, framework_history):
     """A consumer on OLD, with local edits to two framework files."""
     repo = init_repo(tmp_path / "consumer")
-    makefile = (FIXTURE / "Makefile").read_text().replace(".sdlc/src", "tools/sdlc/src")
+    makefile = git(REPO, "show", f"{OLD}:tests/fixtures/consumer/Makefile") + "\n"
     old_sync = git(REPO, "show", f"{OLD}:scripts/sync-sdlc.sh") + "\n"
     commit(
         repo, "chore: consumer skeleton", {"Makefile": makefile, "scripts/sync-sdlc.sh": old_sync}
@@ -1097,6 +1106,7 @@ def old_consumer(tmp_path, framework_history):
     for rel, line in [
         ("templates/intent.md", "\nOur own line in the intent template.\n"),
         (".claude/skills/build/SKILL.md", "\nOur own build rule.\n"),
+        (".claude/skills/security-policy/SKILL.md", "\nNo secrets in Godot scenes.\n"),
     ]:
         path = repo / rel
         path.write_text(path.read_text() + line)
@@ -1137,6 +1147,19 @@ def test_an_old_consumer_moves_into_sdlc_in_one_sync(old_consumer, framework_his
     stub = old_consumer / ".claude/skills/build/SKILL.md"
     assert stub.read_text() == (REPO / ".claude/skills/build/SKILL.md").read_text()
 
+    # The security policy is the project's: it becomes the override, not a merge.
+    policy = (old_consumer / ".sdlc-local/skills/security-policy/SKILL.md").read_text()
+    assert "No secrets in Godot scenes." in policy and not policy.startswith("---")
+    framework_policy = REPO / ".sdlc/skills/security-policy/SKILL.md"
+    assert (old_consumer / ".sdlc/skills/security-policy/SKILL.md").read_text() == (
+        framework_policy.read_text()
+    )
+    assert "your security policy is the project's own" in out
+    resolved = run(
+        [".sdlc/scripts/resolve.sh", "skills/security-policy/SKILL.md"], cwd=old_consumer
+    )
+    assert "No secrets in Godot scenes." in resolved.stdout
+
     files = (old_consumer / ".sdlc/files").read_text().splitlines()
     assert ".sdlc/scripts/agent.sh" in files and ".claude/skills/build/SKILL.md" in files
     assert (old_consumer / ".sdlc/version").read_text().split("\n")[1] == git(
@@ -1164,3 +1187,53 @@ def test_the_next_sync_after_the_move_has_nothing_to_move(old_consumer, framewor
     assert again.returncode == 0, again.stdout + again.stderr
     assert "already up to date" in again.stdout
     assert "old paths" not in again.stdout
+
+
+def test_a_projects_override_shapes_new_changes_and_the_sync_flags_it(consumer, framework_snapshot):
+    """#133: .sdlc-local/ wins over .sdlc/, the sync never writes it, and when the framework
+    changes the file under an override, the sync says so and validate checks it still applies."""
+    override = consumer / ".sdlc-local/templates/intent.md"
+    override.parent.mkdir(parents=True)
+    override.write_text(
+        "<!-- extends -->\n<!-- append: header -->\nMilestone: M<n>\n<!-- /append -->\n"
+    )
+    commit(consumer, "chore: our intent header")
+    assert make(consumer, "new-change", "NAME=phone-access").returncode == 0
+    intent = (consumer / "changes/0001-phone-access/intent.md").read_text()
+    assert intent.index("Product owner: <name>") < intent.index("\nMilestone: M<n>\n")
+    assert intent.index("Milestone: M<n>") < intent.index("## Problem") and "block:" not in intent
+    shutil.rmtree(consumer / "changes")  # never committed: the sync needs a clean tree
+
+    # The framework renames the block the override aims at.
+    template = framework_snapshot / ".sdlc/templates/intent.md"
+    template.write_text(template.read_text().replace("block: header", "block: top"))
+    commit(framework_snapshot, "feat: rename the header block")
+    result = sync(consumer, framework_snapshot, "main")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "your overrides of files this update changed" in result.stdout
+    assert ".sdlc-local/templates/intent.md" in result.stdout
+    assert "these overrides no longer apply" in result.stdout
+    assert override.read_text().startswith("<!-- extends -->"), "the sync never writes it"
+    check = make(consumer, "validate")
+    assert check.returncode != 0
+    assert (
+        ".sdlc-local/templates/intent.md: the base file has no block named 'header'" in check.stderr
+    )
+
+
+def test_a_projects_hook_runs_after_the_framework_through_the_settings_it_already_has(
+    consumer,
+):
+    settings_before = (consumer / ".claude/settings.json").read_text()
+    local = consumer / ".sdlc-local/hooks"
+    local.mkdir(parents=True)
+    (local / "hooks.tsv").write_text("PreToolUse\tBash\t.sdlc-local/hooks/no-curl.sh\n")
+    (local / "no-curl.sh").write_text(
+        '#!/usr/bin/env bash\ngrep -q curl && { echo "no curl" >&2; exit 2; }\nexit 0\n'
+    )
+    (local / "no-curl.sh").chmod(0o755)
+    payload = json.dumps({"tool_name": "Bash", "tool_input": {"command": "curl example.com"}})
+    env = {"CLAUDE_PROJECT_DIR": str(consumer)}
+    blocked = run([".sdlc/hooks/dispatch.sh", "PreToolUse"], cwd=consumer, env=env, input=payload)
+    assert blocked.returncode == 2 and "no curl" in blocked.stderr
+    assert (consumer / ".claude/settings.json").read_text() == settings_before

@@ -115,6 +115,23 @@ jobs:
           fi
           cp "$out" .clause-check.json
           echo "Clause check: $(jq length .clause-check.json) entries"
+      # The rules the review follows, with the project's override (.sdlc-local/REVIEW.md, #133)
+      # applied, as the base branch has them: a PR can't weaken the rules for its own review.
+      - name: Review rules
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          # The sync PR that moves a project into .sdlc/ has no resolver on its base: use its own.
+          if ! git cat-file -e "$BASE:.sdlc/scripts/resolve.sh" 2>/dev/null; then
+            .sdlc/scripts/resolve.sh REVIEW.md > .review-rules.md
+            exit 0
+          fi
+          base="$RUNNER_TEMP/base"
+          mkdir -p "$base"
+          paths=(.sdlc)
+          if git cat-file -e "$BASE:.sdlc-local" 2>/dev/null; then paths+=(.sdlc-local); fi
+          git archive "$BASE" "${paths[@]}" | tar -x -C "$base"
+          "$base/.sdlc/scripts/resolve.sh" REVIEW.md > .review-rules.md
       - uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -128,12 +145,13 @@ jobs:
           classify_inline_comments: false
           prompt: |
             Review PR #${{ github.event.pull_request.number }} in ${{ github.repository }}.
-            Follow .sdlc/REVIEW.md exactly. Check the diff against the spec.md and plan.md
+            Follow the review rules in .review-rules.md exactly (.sdlc/REVIEW.md with this
+            project's overrides applied). Check the diff against the spec.md and plan.md
             of the change it implements (under changes/).
 
             If the file .clause-check.json exists in the workspace, it is the clause check's
             output for the specs and plans this PR changes: start clause coverage from it, as
-            .sdlc/REVIEW.md's "Where the clauses come from" says. If it doesn't exist, the PR changes
+            the rules' "Where the clauses come from" says. If it doesn't exist, the PR changes
             no spec.md or plan.md.
 
             This PR may have been reviewed before. First read the existing inline comments:
@@ -141,7 +159,7 @@ jobs:
             Post an inline comment only for a finding that is new or still not addressed
             in a different way; never repeat one that is already there.
 
-            Every Important finding is its own thread starting with **Important (.sdlc/REVIEW.md,
+            Every Important finding is its own thread starting with **Important (the rules'
             "Posting findings"), never only in the summary. When no line in the diff fits it,
             comment on the most relevant file with exactly:
               gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments -f subject_type=file -f path=<file> -f commit_id=${{ github.event.pull_request.head.sha }} -f body=<finding>

@@ -6,12 +6,12 @@ import argparse
 import json
 import os
 import re
-import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 from sdlc.artifacts import (
+    Problem,
     build_progress,
     change_dirs,
     check_adrs,
@@ -23,6 +23,7 @@ from sdlc.artifacts import (
     stage,
 )
 from sdlc.clauses import ClauseError, change_blocks
+from sdlc.resolve import OverrideError, check_overrides, resolve
 from sdlc.roadmap import check_roadmap
 from sdlc.routing import steps
 
@@ -44,7 +45,15 @@ def cmd_new(root: Path, name: str, kind: str = "feature") -> int:
     slug = next_slug(root, name)
     target = root / "changes" / slug
     target.mkdir(parents=True)
-    shutil.copy(root / ".sdlc" / "templates" / first, target / first)
+    try:  # the project's override of the template, if it has one (#133)
+        text = resolve(root, f"templates/{first}")
+    except OverrideError as e:
+        print(e, file=sys.stderr)
+        target.rmdir()
+        return 1
+    # Block markers are for overrides to aim at; the change's own file doesn't need them.
+    text = re.sub(r"^[ \t]*<!--\s*/?block\s*:[^>]*-->[ \t]*\n", "", text, flags=re.M)
+    (target / first).write_text(text, encoding="utf-8")
     print(target / first)
     return 0
 
@@ -145,6 +154,7 @@ def cmd_check(root: Path) -> int:
     problems += check_config(root)
     problems += check_commits(root)
     problems += check_roadmap(root)
+    problems += [Problem(path, message) for path, message in check_overrides(root)]
     for problem in problems:
         print(problem, file=sys.stderr)
     if not problems:
@@ -226,7 +236,20 @@ def main(argv: list[str] | None = None) -> int:
     cl.add_argument("change", help="a change: 0002, 0002-name, or a folder path")
     cl.add_argument("--ref", help="only the requirements that are new or differ from this git ref")
 
+    res = sub.add_parser(
+        "resolve",
+        help="print a framework file with the project's override applied (.sdlc-local/)",
+    )
+    res.add_argument("path", help="a path under .sdlc/, e.g. skills/build/SKILL.md")
+
     args = parser.parse_args(argv)
+    if args.command == "resolve":
+        try:
+            sys.stdout.write(resolve(args.root, args.path))
+        except OverrideError as e:
+            print(e, file=sys.stderr)
+            return 1
+        return 0
     if args.command == "new":
         return cmd_new(args.root, args.name, args.kind)
     if args.command == "check":

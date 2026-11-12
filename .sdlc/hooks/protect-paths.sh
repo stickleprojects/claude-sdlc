@@ -20,7 +20,7 @@ case "$rel" in
   .git/*) block "git internals are never edited directly." ;;
   uv.lock|*.lock) block "lockfiles change only through the package manager (make setup)." ;;
   .env|.env.*|*.pem|*.key) block "secrets stay out of the repo and out of diffs." ;;
-  .sdlc/hooks/*|.claude/settings.json)
+  .sdlc/hooks/*|.sdlc-local/hooks/*|.claude/settings.json)
     block "guardrails change only through a human-reviewed PR; describe the change you want instead." ;;
 esac
 

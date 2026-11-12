@@ -7,9 +7,7 @@
 node_modules/
 dist/
 build/
-# ...but not the framework's /build skill, or a file a sync adds there is never staged (#103).
-!.claude/skills/build/
-!.sdlc/skills/build/
+# (The framework's /build skill stays tracked through .gitignore files in its own folders.)
 coverage/
 .expo/
 .next/

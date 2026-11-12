@@ -1123,7 +1123,9 @@ def test_agent_session_locks_tests_for_a_bug_fix(bug_branch):
 def test_every_session_loads_the_agent_identity():
     settings = json.loads((REPO / ".claude/settings.json").read_text())
     commands = [h["command"] for e in settings["hooks"]["SessionStart"] for h in e["hooks"]]
-    assert '"$CLAUDE_PROJECT_DIR"/.sdlc/scripts/agent-session.sh --hook' in commands
+    assert commands == ['"$CLAUDE_PROJECT_DIR"/.sdlc/hooks/dispatch.sh SessionStart']
+    table = (REPO / ".sdlc/hooks/hooks.tsv").read_text()  # the dispatcher runs it (#133)
+    assert "SessionStart\t*\t.sdlc/scripts/agent-session.sh --hook\n" in table
 
 
 def test_session_hook_is_a_no_op_without_setup(tmp_path):
@@ -1355,6 +1357,8 @@ def test_sdlc_skill_matches_what_the_sync_prints():
         ".sdlc-new",
         "kept (the framework dropped these",
         "your Makefile doesn't define these targets",
+        "your Makefile doesn't include the pipeline's targets",
+        "your Makefile defines targets .sdlc/sdlc.mk now provides",
     ]:
         assert message in sync, f"the sync no longer prints {message!r}"
         assert message in skill, f"/sdlc doesn't handle {message!r}"
@@ -1565,6 +1569,24 @@ def test_delivery_check_names_the_branchs_changed_files(tmp_path):
     assert "changes/0001-x/notes.md" not in calls
 
 
+def test_delivery_check_runs_when_the_branch_changes_only_its_change_folder(tmp_path):
+    # Found in #133: with nothing changed outside changes/, `grep -v` matched nothing and exited
+    # 1, and under pipefail the check died with no output.
+    work = tmp_path / "work"
+    shutil.copytree(REPO, work, ignore=shutil.ignore_patterns(".git", ".venv", "__pycache__"))
+    init_repo(work)
+    commit(work, "base")
+    git(work, "checkout", "-q", "-b", "build/x")
+    commit(work, "notes", {"changes/0001-x/notes.md": "n\n"})
+    result = run(
+        [".sdlc/scripts/clause-check.sh", "--stage", "build", DELIVERY_FIXTURE],
+        cwd=work,
+        env={"AGENT": "echo"},
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout), "a row per requirement, unchecked by the echo agent"
+
+
 def test_delivery_prompt_example_is_not_an_answer():
     prompt = (REPO / ".sdlc/prompts/delivery-check.md").read_text()
     assert not re.search(r"^CLAUSES: ", prompt, re.M)
@@ -1622,7 +1644,7 @@ def test_review_skips_the_clause_check_quietly_without_a_clauses_target():
 def test_release_notes_give_the_clauses_recipe_the_makefile_uses():
     # The upgrade step tells consumers' Claude what to add; keep it in step with ours.
     notes = (REPO / "docs/release-notes/v0.9.0.md").read_text()
-    makefile = (REPO / "Makefile").read_text()
+    makefile = (REPO / ".sdlc/sdlc.mk").read_text()  # where the target lives since #133
     recipe = makefile[makefile.index("\nclauses:\n") + 1 :].split("\n\n", 1)[0]
     in_notes = {line.lstrip(" ") for line in notes.splitlines()}  # indented inside a list
     assert all(line in in_notes for line in recipe.splitlines()), recipe
@@ -1888,34 +1910,38 @@ def test_request_review_expands_the_checkouts_head_for_the_runs_api(request_revi
 
 def test_baseline_gitignore_keeps_the_build_skill_while_ignoring_build_output(tmp_path):
     # #103: a bare `build/` also matched .claude/skills/build/, so a file a sync added there
-    # was ignored and the sync PR silently left it out.
+    # was ignored and the sync PR silently left it out. Since #133 the framework's own
+    # .gitignore files carry the exception, so the project's root file never changes for it.
     repo = init_repo(tmp_path / "r")
     shutil.copy(REPO / ".sdlc" / "templates" / "gitignore", repo / ".gitignore")
-    paths = [".claude/skills/build/new.md", "build/out.js", "app/build/out.js"]
+    for nested in (".claude/skills/.gitignore", ".sdlc/.gitignore"):
+        (repo / nested).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(REPO / nested, repo / nested)
+    paths = [
+        ".claude/skills/build/new.md",
+        ".sdlc/skills/build/SKILL.md",
+        "build/out.js",
+        "app/build/out.js",
+        ".sdlc/src/sdlc/__pycache__/x.pyc",
+    ]
     for path in paths:
         (repo / path).parent.mkdir(parents=True, exist_ok=True)
         (repo / path).write_text("x\n")
     ignored = run(["git", "check-ignore", *paths], cwd=repo).stdout.split()
-    assert ignored == ["build/out.js", "app/build/out.js"]
+    assert ignored == ["build/out.js", "app/build/out.js", ".sdlc/src/sdlc/__pycache__/x.pyc"]
 
 
-def test_bootstrap_adds_the_build_skill_exception_after_an_existing_build_line(tmp_path):
+def test_the_build_skill_stays_tracked_under_a_projects_own_build_rule(tmp_path):
     repo = init_repo(tmp_path / "r")
-    (repo / ".sdlc" / "templates").mkdir(parents=True)
-    shutil.copy(
-        REPO / ".sdlc" / "templates" / "gitignore", repo / ".sdlc" / "templates" / "gitignore"
-    )
-    (repo / ".gitignore").write_text("build/\n")  # a consumer that already had the bare line
-    result = run(
-        ["bash", str(REPO / ".sdlc/scripts/bootstrap-github.sh"), "--gitignore-only"], cwd=repo
-    )
-    assert result.returncode == 0, result.stderr
-    lines = (repo / ".gitignore").read_text().splitlines()
-    assert lines.index("!.claude/skills/build/") > lines.index("build/")
+    (repo / ".gitignore").write_text("build/\n")  # the project's file, nothing of ours in it
+    for nested in (".claude/skills/.gitignore", ".sdlc/.gitignore"):
+        (repo / nested).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(REPO / nested, repo / nested)
     for skill in (".claude/skills/build/SKILL.md", ".sdlc/skills/build/SKILL.md"):
-        (repo / skill).parent.mkdir(parents=True)
+        (repo / skill).parent.mkdir(parents=True, exist_ok=True)
         (repo / skill).write_text("x\n")
         assert run(["git", "check-ignore", skill], cwd=repo).returncode == 1, skill
+    assert "skills/build" not in (REPO / ".sdlc/templates/gitignore").read_text()
 
 
 def test_v0_9_1_upgrade_steps_name_commands_that_exist():
@@ -1928,8 +1954,7 @@ def test_v0_9_1_upgrade_steps_name_commands_that_exist():
     identity = (REPO / ".sdlc/scripts/agent-identity.sh").read_text()
     for sub in ("create", "check"):
         assert f"scripts/agent-identity.sh {sub}" in notes and f"  {sub})" in identity
-    assert "!.claude/skills/build/" in notes
-    assert "!.claude/skills/build/" in (REPO / ".sdlc/templates/gitignore").read_text()
+    assert "!.claude/skills/build/" in notes  # since #133 in .claude/skills/.gitignore instead
 
 
 # --- THE RULE for SDLC_AUTO_MERGE, in every place that reads it (#101) ----------------------

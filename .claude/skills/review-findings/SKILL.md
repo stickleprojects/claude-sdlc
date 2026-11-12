@@ -4,4 +4,4 @@ description: Internal; reached through /pr for plan and code PRs. Work through t
 user-invocable: false
 ---
 
-This skill is part of the claude-sdlc framework. Read `.sdlc/skills/review-findings/SKILL.md` and follow it. Paths in it are relative to the repo root.
+This skill is part of the claude-sdlc framework. Run `.sdlc/scripts/resolve.sh skills/review-findings/SKILL.md` and follow what it prints: the skill with this project's overrides (in .sdlc-local/) applied. Read any other file under .sdlc/ that it names the same way, with resolve.sh. Paths are relative to the repo root.

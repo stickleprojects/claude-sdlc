@@ -1,4 +1,5 @@
-<!-- The frontmatter for this skill is in .claude/skills/po-review/SKILL.md, which Claude Code reads. -->
+<!-- The frontmatter for this skill is in .claude/skills/po-review/SKILL.md, which Claude Code reads. Projects change this
+file with an override in .sdlc-local/ (see .sdlc/docs/overrides.md), never by editing it. -->
 
 # Product owner review of a PR
 

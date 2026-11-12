@@ -63,7 +63,7 @@ changed_files() {
   base="$(git -C "$root" merge-base origin/main HEAD 2>/dev/null \
     || git -C "$root" merge-base main HEAD 2>/dev/null)" || { echo "[]"; return; }
   { git -C "$root" diff --name-only "$base"; git -C "$root" ls-files --others --exclude-standard; } \
-    | grep -v '^changes/' | sort -u | jq -R . | jq -sc .
+    | { grep -v '^changes/' || true; } | sort -u | jq -R . | jq -sc .  # none: grep exits 1
 }
 
 # The change's folder, however it was named: a path, or a slug or number under changes/.
@@ -101,7 +101,7 @@ check() {
     text="$(jq -r .text <<<"$block")"
     base="$(jq -nc --arg r "$rid" --arg t "$text" --arg s "$stage" \
       '{requirement: $r, text: $t, stage: $s}')"
-    prompt="$(cat "$root/.sdlc/prompts/$prompt_file"; printf '\nStage: %s\n\nBlock:\n%s\n' "$stage" "$block")"
+    prompt="$("$root/.sdlc/scripts/resolve.sh" "prompts/$prompt_file"; printf '\nStage: %s\n\nBlock:\n%s\n' "$stage" "$block")"
     if answer="$(AGENT_MAX_TURNS="$turns" AGENT_ALLOWED_TOOLS="$tools" \
         "$root/.sdlc/scripts/agent.sh" - --model "$model" <<<"$prompt" 2>/dev/null)"; then
       line="$(grep '^CLAUSES: ' <<<"$answer" | tail -n 1 || true)"
