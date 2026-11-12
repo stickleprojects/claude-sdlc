@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="docs/assets/logo.svg" width="112" height="112" alt="">
+
 # claude-sdlc
 
 **Ship software with Claude, without giving up control.**
