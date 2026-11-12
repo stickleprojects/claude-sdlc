@@ -320,6 +320,7 @@ gh workflow run release.yml -f dry_run=false   # check, run evals, tag, publish 
 `scripts/next-version.sh --explain` shows the same calculation locally.
 - **Release notes** list the PR titles.
 - **For what a title can't say,** such as a new optional feature or an *upgrade step* for `/sdlc` to carry out in consumer repos, write `docs/release-notes/<version>.md` before releasing. It's added after the change list.
+- **An optional feature** gets a section titled `## Optional: <feature>`. `/sdlc` offers it to each consumer until they adopt it or decline it. A decline is recorded in their `.sdlc.toml` under that title, so keep the title the same in later notes.
 - **A breaking release must have upgrade steps:** a `## Upgrade steps` section in that file, saying what a consumer repo has to change. The release, dry runs included, fails without it. When a consumer syncs, the sync copies the steps of each release it brings in to `.sdlc/upgrade-pending.md`. `/sdlc` works through them and deletes the file, and `make check` fails while it exists.
 - **The mechanical part of an upgrade,** such as moving files to a renamed path, can be a script: `.sdlc/migrations/<version>.sh`. The sync runs it from the consumer's root after installing the new files, once per release it brings in, and stages what it changes. A script runs again if the sync can't tell which release a repo came from, so it must be safe to run twice. `SDLC_UPGRADE_FROM` and `SDLC_UPGRADE_TO` hold the versions.
 

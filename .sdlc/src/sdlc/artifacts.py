@@ -29,6 +29,7 @@ import re
 import tomllib
 from collections.abc import Collection
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 
 # Ordered: each artifact depends on the one before it.
@@ -335,8 +336,60 @@ def placeholders(root: Path) -> Placeholders:
     )
 
 
+DECLINED_KEYS = {"feature": True, "reason": True, "by": False, "date": False}  # key: required
+
+
+def check_features(root: Path) -> list[str]:
+    """The [features] table of .sdlc.toml (#74): optional features the project said no to.
+
+    Each `[[features.declined]]` entry names the feature as its release notes title it (the
+    text after "Optional: "), with the reason, so /sdlc stops offering it. Invalid TOML is
+    reported once, by placeholders()."""
+    config = root / CONFIG_FILE
+    if not config.exists():
+        return []
+    try:
+        features = tomllib.loads(config.read_text(encoding="utf-8")).get("features", {})
+    except tomllib.TOMLDecodeError:
+        return []
+    if not isinstance(features, dict):
+        return ["[features] must be a table"]
+    problems = [
+        f"unknown key features.{k}; expected: declined" for k in features if k != "declined"
+    ]
+    declined = features.get("declined", [])
+    if not isinstance(declined, list) or not all(isinstance(e, dict) for e in declined):
+        return problems + ["features.declined must be [[features.declined]] entries"]
+    seen: set[str] = set()
+    for i, entry in enumerate(declined, 1):
+        where = f"features.declined entry {i}"
+        for key in entry:
+            if key not in DECLINED_KEYS:
+                problems.append(
+                    f"unknown key {key} in {where}; expected: {', '.join(DECLINED_KEYS)}"
+                )
+        for key, required in DECLINED_KEYS.items():
+            value = entry.get(key)
+            if value is None:
+                if required:
+                    problems.append(f"{where} has no {key}")
+            elif key == "date" and not isinstance(value, (str, date)):
+                problems.append(f"{where}: date must be a date, e.g. 2026-11-13")
+            elif key != "date" and (not isinstance(value, str) or not value.strip()):
+                problems.append(f"{where}: {key} must be text")
+        name = entry.get("feature")
+        if isinstance(name, str):
+            if name.lower().startswith("optional:"):
+                problems.append(f'{where}: name the feature without "Optional:"')
+            if name.strip().lower() in seen:
+                problems.append(f"{where}: {name} is declined twice")
+            seen.add(name.strip().lower())
+    return problems
+
+
 def check_config(root: Path) -> list[Problem]:
-    return [Problem(root / CONFIG_FILE, p) for p in placeholders(root).problems]
+    problems = list(placeholders(root).problems) + check_features(root)
+    return [Problem(root / CONFIG_FILE, p) for p in problems]
 
 
 def check_build(path: Path, words: Placeholders | None = None) -> list[Problem]:
