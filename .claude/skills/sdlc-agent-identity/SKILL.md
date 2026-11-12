@@ -1,5 +1,5 @@
 ---
-name: agent-identity
+name: sdlc-agent-identity
 description: How Claude acts on GitHub, under its own identity or the person's: who commits, how comments are signed, and the rules that stop agents triggering each other or fighting over a branch. Apply whenever you commit, push, open or update a PR, or post a comment or reply on GitHub.
 user-invocable: false
 ---

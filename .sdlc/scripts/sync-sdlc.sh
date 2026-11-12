@@ -48,7 +48,7 @@ main() {
     "check stack contract: CI and every skill"
   )
   local optional_targets=(
-    "coverage optional: /build runs it when present"
+    "coverage optional: /sdlc-build runs it when present"
     "deploy-dev optional: deploys to dev"
     "deploy-prod optional: the production gate's release route"
   )

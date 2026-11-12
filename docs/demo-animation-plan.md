@@ -34,9 +34,9 @@ To use real Claude output instead, set `DEMO_LIVE=1`. The shim is skipped and yo
 | # | Role | Shows | ~Length |
 |---|---|---|---|
 | 0 | Overview | `sdlc status` as one change moves intent → spec → plan, with a diagram card | 30s |
-| 1 | Originator | `/intent …`, Claude's questions, the `intent.md` it writes, `gh pr create` | 45s |
+| 1 | Originator | `/sdlc-intent …`, Claude's questions, the `intent.md` it writes, `gh pr create` | 45s |
 | 2 | Product owner | Reviewing the spec PR with `gh pr view` and `gh pr diff`, then a resolved policy concern | 40s |
-| 3 | Engineer | Plan mode → `/plan` → `claude --worktree` → `make check` → verifier verdict | 60s |
+| 3 | Engineer | Plan mode → `/sdlc-plan` → `claude --worktree` → `make check` → verifier verdict | 60s |
 | 4 | Engineer (bug fix) | Commit a failing test, `SDLC_LOCK_TESTS=1`, a blocked test edit, the fix | 40s |
 | 5 | Code owner | Claude review summary, an `@claude` fix pushed, approval | 40s |
 | 6 | Release manager | Claude's attempt at `deploy-prod` blocked by the gate, then a human runs it with authorization | 30s |

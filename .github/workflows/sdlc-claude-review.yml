@@ -72,15 +72,15 @@ jobs:
           BEFORE: ${{ github.event.before }}
         run: |
           base="${{ github.event.pull_request.base.sha }}"
-          git diff --name-only "$base"...HEAD | grep -q '^\.github/workflows/claude-' || exit 0
+          git diff --name-only "$base"...HEAD | grep -qE '^\.github/workflows/(sdlc-)?claude-' || exit 0
           echo "skipped=true" >> "$GITHUB_OUTPUT"
           case "${{ github.event.action }}" in
             opened | ready_for_review) note=1 ;;
             synchronize) git diff --name-only "$BEFORE" HEAD 2>/dev/null \
-              | grep -q '^\.github/workflows/claude-' && note=1 ;;
+              | grep -qE '^\.github/workflows/(sdlc-)?claude-' && note=1 ;;
           esac
           if [[ -n "${note:-}" ]]; then
-            gh pr comment "$PR" -R "$GITHUB_REPOSITORY" --body "AI review skipped: this PR changes a \`.github/workflows/claude-*.yml\` file, and the review action won't run until that file matches \`main\`. A code owner needs to review it by hand."
+            gh pr comment "$PR" -R "$GITHUB_REPOSITORY" --body "AI review skipped: this PR changes a \`.github/workflows/sdlc-claude-*.yml\` file, and the review action won't run until that file matches \`main\`. A code owner needs to review it by hand."
           fi
       # Clause coverage (#47): when the PR changes a spec.md or plan.md, check each changed
       # requirement's clauses with one small-model call each (.sdlc/scripts/clause-check.sh), and
@@ -175,7 +175,7 @@ jobs:
             --max-turns 30
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments),Bash(gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments -f subject_type=file:*),Read,Grep,Glob"
       # The required `claude-review` status (auto-merge repos, #101). Success says what happened;
-      # a PR that changes a claude-*.yml workflow isn't AI-reviewed, so its description says a
+      # a PR that changes an sdlc-claude-*.yml workflow isn't AI-reviewed, so its description says a
       # code owner reviews it by hand, and .sdlc/scripts/auto-merge.sh never auto-merges such a PR.
       # A green action isn't enough: it can end early (refused tools, the turn limit) having
       # posted nothing, so success needs the summary posted or edited during this job.
@@ -188,7 +188,7 @@ jobs:
         run: |
           description="The Claude review is posted"
           if [[ "$SKIPPED" == true ]]; then
-            description="No AI review: the PR changes a claude-*.yml workflow, so a code owner reviews it by hand"
+            description="No AI review: the PR changes an sdlc-claude-*.yml workflow, so a code owner reviews it by hand"
           elif ! .sdlc/scripts/review-posted.sh "$PR" "$SINCE"; then
             echo "reported=true" >> "$GITHUB_OUTPUT"
             gh api "repos/$GITHUB_REPOSITORY/statuses/$HEAD_SHA" --silent -f state=failure \

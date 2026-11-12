@@ -1,4 +1,4 @@
-<!-- The frontmatter for this skill is in .claude/skills/plan/SKILL.md, which Claude Code reads. Projects change this
+<!-- The frontmatter for this skill is in .claude/skills/sdlc-plan/SKILL.md, which Claude Code reads. Projects change this
 file with an override in .sdlc-local/ (see .sdlc/docs/overrides.md), never by editing it. -->
 
 # Plan a change
@@ -7,9 +7,9 @@ file with an override in .sdlc-local/ (see .sdlc/docs/overrides.md), never by ed
 
 Follow `.sdlc/skills/routing.md`. The candidates are the changes whose next step is `plan`: the spec is merged, and there's no plan on main or in an open PR.
 
-- **The change named is already planned** (plan.md merged, or a plan PR open): don't start again silently. Ask: build it (`/build`, recommended, which you then run for them), work through the plan PR's review (`/pr`) if one is open, amend the plan (a new plan PR that changes part of it; a build in progress then goes back to a draft build.md), replace it, or stop.
+- **The change named is already planned** (plan.md merged, or a plan PR open): don't start again silently. Ask: build it (`/sdlc-build`, recommended, which you then run for them), work through the plan PR's review (`/sdlc-pr`) if one is open, amend the plan (a new plan PR that changes part of it; a build in progress then goes back to a draft build.md), replace it, or stop.
 - **The plan is out of date** (`make next` says the spec changed after it): read what changed in the spec (`git log -p <plan's last commit>..origin/main -- changes/<slug>/spec.md`), then either amend the plan for it, or, if nothing in the plan is affected, confirm it by updating its `Spec:` line to say which spec commit it was checked against. Either way it goes through a plan PR.
-- **Its spec isn't merged yet:** say what it's waiting on (the spec PR and who reviews it), and offer `/pr` on that PR.
+- **Its spec isn't merged yet:** say what it's waiting on (the spec PR and who reviews it), and offer `/sdlc-pr` on that PR.
 - **Nothing to plan:** say so, with what each change is waiting on, and offer the step one stage back (routing step 4).
 
 ## 2. Plan it in plan mode
@@ -50,7 +50,7 @@ Once the plan is approved:
 3. Keep the architecture check's outcome: the build-or-adopt reason in **Approach**, and any `Architecture decision needed:` line, with the engineer's decision, in **Risks**.
 4. Under **Verification**, name the kinds of work this change is in the `- **Definition of done:**` line: read `.sdlc/templates/definition-of-done.md` and the repo's `docs/definition-of-done.md` (its rows replace the template's), and name every kind that fits, not the fewest. Then map each acceptance criterion from `spec.md`, and each requirement clause it doesn't fully test, to an exact command and its expected result, and show how each named row is met. What a named row asks for that the plan won't do goes under **Descopes**, approved.
 5. For a bug fix (a change that starts from `bug.md`, or any fix), the first step is a failing test committed on its own, one per acceptance criterion in the short spec, with the message `test(<slug>): failing test for <symptom>`. Once that commit is on the branch, the files it touched lock automatically for a change with `bug.md` (`.sdlc/scripts/tests-locked.sh`), so the failing test can't be edited; new tests in other files still can. Nobody needs to set `SDLC_LOCK_TESTS=1`.
-6. Size the steps to the change. A small change (a message, a one-line fix) needs one to three steps, not a breakdown: `/build` builds a plan that small in one session.
-7. Run `make validate`, then commit `plan.md` alone on `plan/<slug>` (by explicit path, never `git add -A`), push, and open its PR titled `plan(<slug>): <summary>`. No code is written before it merges. Follow the `agent-identity` skill for the commit trailer and PR signature.
+6. Size the steps to the change. A small change (a message, a one-line fix) needs one to three steps, not a breakdown: `/sdlc-build` builds a plan that small in one session.
+7. Run `make validate`, then commit `plan.md` alone on `plan/<slug>` (by explicit path, never `git add -A`), push, and open its PR titled `plan(<slug>): <summary>`. No code is written before it merges. Follow the `sdlc-agent-identity` skill for the commit trailer and PR signature.
 
-Then tell the engineer: once the plan PR merges, run `/build` (`/pr` handles its review first). `/build` builds it in its own worktree (`claude --worktree <slug>`): in one session for a small plan, or milestone by milestone from an approved `build.md` for a larger one. It finishes with `make check` and the `verifier` subagent before opening a PR.
+Then tell the engineer: once the plan PR merges, run `/sdlc-build` (`/sdlc-pr` handles its review first). `/sdlc-build` builds it in its own worktree (`claude --worktree <slug>`): in one session for a small plan, or milestone by milestone from an approved `build.md` for a larger one. It finishes with `make check` and the `sdlc-verifier` subagent before opening a PR.

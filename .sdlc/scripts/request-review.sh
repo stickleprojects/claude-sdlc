@@ -3,7 +3,7 @@
 #
 # Usage: .sdlc/scripts/request-review.sh <pr-number> [<sha>]     sha: the commit just pushed (default HEAD)
 #
-# claude-review.yml runs on a push (`synchronize`) only when the repo variable SDLC_AUTO_MERGE is
+# sdlc-claude-review.yml runs on a push (`synchronize`) only when the repo variable SDLC_AUTO_MERGE is
 # set; otherwise a review needs the `review` label. Adding the label after a push that already
 # started a review cancels that review (one review per PR at a time), which shows a cancelled
 # check and spends a second review. So this script:
@@ -51,7 +51,7 @@ head_is_pushed() {
 review_run_started() {
   local runs
   runs="$(gh api "repos/$repo/actions/runs?head_sha=$sha&event=pull_request&per_page=100" --jq '
-    [.workflow_runs[] | select(.path | endswith("/claude-review.yml"))
+    [.workflow_runs[] | select(.path | endswith("/sdlc-claude-review.yml"))
       | select(.conclusion != "skipped" and .conclusion != "cancelled")] | length' 2>/dev/null)" \
     && ((runs > 0))
 }

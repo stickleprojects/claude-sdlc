@@ -1,4 +1,4 @@
-<!-- The frontmatter for this skill is in .claude/skills/spec/SKILL.md, which Claude Code reads. Projects change this
+<!-- The frontmatter for this skill is in .claude/skills/sdlc-spec/SKILL.md, which Claude Code reads. Projects change this
 file with an override in .sdlc-local/ (see .sdlc/docs/overrides.md), never by editing it. -->
 
 # Write a spec from an intent
@@ -10,7 +10,7 @@ Input: a change folder, `changes/<slug>/`, that contains an accepted `intent.md`
    - **Requirements:** numbered (R1, R2, …). Each one is testable on its own.
    - **Acceptance criteria:** quantifiable checks, e.g. "`make check` exits 0" or "command prints X". Write each as a bullet `- AC<n> (R<n>, …): …`, never a numbered list (`1.`): the coverage checks read only that form, and `make validate` fails a spec without it. Each criterion is tested at the level it describes (`.sdlc/skills/scope.md`): say "through the UI" or "inside the editor" when that's what it means.
    - **Clause coverage:** a criterion can cite a requirement and still test only part of it (#47). Split each requirement into clauses, one per separate outcome: each thing it "shows", "has", "is" or "combines with", each "otherwise" or fallback, each "when … then". Every clause needs at least one criterion that tests it. If a clause truly can't be tested, add `- Untestable (R<n>): "<clause>" because <reason>.` under Acceptance criteria, and list it for the product owner. `make clauses CHANGE=<slug>` prints each requirement with the criteria that cite it, to check against.
-   - **Policy concerns:** apply every policy skill in `.claude/skills/` (e.g. `security-policy`). Flag anything the intent asks for that a policy restricts, and any case where two policies contradict each other. Write "None" only if you checked and found nothing.
+   - **Policy concerns:** apply every policy skill in `.claude/skills/` (e.g. `sdlc-security-policy`). Flag anything the intent asks for that a policy restricts, and any case where two policies contradict each other. Write "None" only if you checked and found nothing.
 3. **Requirements that rely on people writing text in a set format.** When the change reads text that a person writes, such as an intent section or a list in a markdown file, don't expect the product owner to follow formatting rules. Write requirements so that:
    - **Claude owns the format.** The template and the skill that writes the file state the convention, and Claude applies it. The product owner talks and decides; they never format.
    - **Parsing fails safe.** Text the parser doesn't recognise is treated as the riskier case (for example "has open questions"), never as "nothing there".
@@ -34,4 +34,4 @@ A bug gets a short spec.
 
 ## Committing
 
-When you commit, add `changes/<slug>/spec.md` by explicit path, never `git add -A` or `git add .`. Follow the `agent-identity` skill for commit trailers and PR signatures.
+When you commit, add `changes/<slug>/spec.md` by explicit path, never `git add -A` or `git add .`. Follow the `sdlc-agent-identity` skill for commit trailers and PR signatures.

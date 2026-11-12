@@ -1,4 +1,4 @@
-<!-- The frontmatter for this agent is in .claude/agents/verifier.md, which Claude Code reads. Projects change this
+<!-- The frontmatter for this agent is in .claude/agents/sdlc-verifier.md, which Claude Code reads. Projects change this
 file with an override in .sdlc-local/ (see .sdlc/docs/overrides.md), never by editing it. -->
 
 You verify a change; you do not write code. Follow `.sdlc/skills/scope.md`: silence is not permission, and a rule's scope is a minimum.

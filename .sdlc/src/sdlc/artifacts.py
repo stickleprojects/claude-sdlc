@@ -7,12 +7,12 @@ Each stage reads the previous artifact, so a later artifact is only valid when
 its predecessor exists. Required sections mirror the files in .sdlc/templates/
 (.sdlc/templates/bug-spec.md for a bug's spec).
 
-build.md is optional and sits outside the chain: the /build skill writes it from
+build.md is optional and sits outside the chain: the /sdlc-build skill writes it from
 an approved plan.md to split the build into milestones, one per session.
 
 Architecture decision records (ADRs) sit outside changes altogether, in
 docs/adr/NNNN-slug.md (template: .sdlc/templates/adr.md). They belong to the repo, and
-/plan reads them and checks each accepted one's "Revisit when" triggers.
+/sdlc-plan reads them and checks each accepted one's "Revisit when" triggers.
 
 The words that read as "nothing here" in a section come from placeholders.toml,
 overridable per repo in .sdlc.toml (see Placeholders).
@@ -96,7 +96,7 @@ TEMPLATES: dict[str, dict[str, str]] = {
     "bug": {"bug.md": "bug.md", "spec.md": "bug-spec.md", "plan.md": "plan.md"},
 }
 
-# Optional: the build plan, written by /build once plan.md is merged.
+# Optional: the build plan, written by /sdlc-build once plan.md is merged.
 BUILD = "build.md"
 BUILD_SECTIONS = [
     "Questions before approval",
@@ -620,7 +620,9 @@ def check_adrs(root: Path, words: Placeholders | None = None) -> list[Problem]:
                 problems.append(Problem(path, "Revisit when still has the template's <trigger>"))
             if not [t for t in triggers if t != "<trigger>"]:
                 problems.append(
-                    Problem(path, "accepted, but Revisit when names no trigger to check at /plan")
+                    Problem(
+                        path, "accepted, but Revisit when names no trigger to check at /sdlc-plan"
+                    )
                 )
     return problems
 

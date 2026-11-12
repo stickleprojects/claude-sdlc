@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One spec PR per change, for .github/workflows/spec-from-intent.yml.
+# One spec PR per change, for .github/workflows/sdlc-spec-from-intent.yml.
 #
 # Usage: .sdlc/scripts/spec-pr.sh pending
 #          Print each change folder that needs a spec: it has intent.md or bug.md, has no
@@ -81,7 +81,7 @@ open_prs() {
     git push -q -f -u origin "$branch"
     n="$(gh api "repos/$repo/pulls" -f title="spec($slug): generate from accepted $kind" \
       -f head="$branch" -f base=main \
-      -f body="Generated spec for \`$d\` from its accepted \`$kind.md\`. Product owner: review it (\`/pr <this PR>\` in Claude Code) and resolve any flagged policy concerns. — Claude (spec)" \
+      -f body="Generated spec for \`$d\` from its accepted \`$kind.md\`. Product owner: review it (\`/sdlc-pr <this PR>\` in Claude Code) and resolve any flagged policy concerns. — Claude (spec)" \
       --jq .number)"
     echo "opened #$n for $d"
     # Now, while the PR is new: GitHub refuses auto-merge once it's approved and green.

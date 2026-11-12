@@ -1,4 +1,4 @@
-<!-- The frontmatter for this skill is in .claude/skills/agent-identity/SKILL.md, which Claude Code reads. Projects change this
+<!-- The frontmatter for this skill is in .claude/skills/sdlc-agent-identity/SKILL.md, which Claude Code reads. Projects change this
 file with an override in .sdlc-local/ (see .sdlc/docs/overrides.md), never by editing it. -->
 
 # Acting on GitHub as the agent

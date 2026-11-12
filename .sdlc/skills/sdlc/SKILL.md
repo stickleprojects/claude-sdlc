@@ -1,9 +1,9 @@
-<!-- The frontmatter for this skill is in .claude/skills/sdlc/SKILL.md, which Claude Code reads. Projects change this
+<!-- The frontmatter for this skill is in .claude/skills/sdlc-sdlc/SKILL.md, which Claude Code reads. Projects change this
 file with an override in .sdlc-local/ (see .sdlc/docs/overrides.md), never by editing it. -->
 
 # The pipeline: version, what's new, update
 
-The framework's files (skills, hooks, workflows, templates, the `sdlc` CLI) come from claude-sdlc, pulled in by `.sdlc/scripts/sync-sdlc.sh`. This skill keeps a project up to date with it. It never merges the sync PR: a person does that. It's about the framework, not a change: for where a change is and what's next, follow the routing in `.sdlc/skills/routing.md` (`/next`).
+The framework's files (skills, hooks, workflows, templates, the `sdlc` CLI) come from claude-sdlc, pulled in by `.sdlc/scripts/sync-sdlc.sh`. This skill keeps a project up to date with it. It never merges the sync PR: a person does that. It's about the framework, not a change: for where a change is and what's next, follow the routing in `.sdlc/skills/routing.md` (`/sdlc-next`).
 
 **In the framework repo itself** (its `CLAUDE.md` says `Change tracking: issues`, and `scripts/next-version.sh` exists), there's nothing to sync. Say so, and point at `scripts/next-version.sh --explain` and the release workflow instead.
 
@@ -64,7 +64,7 @@ Then ask with AskUserQuestion: update to the latest release (recommended), to a 
 
 ## 4. Open the sync PR
 
-Commit what the sync staged, plus the files you resolved, by explicit path (`git diff --cached --name-only` lists them; never `git add -A`). Follow the `agent-identity` skill for the commit trailer and the PR signature.
+Commit what the sync staged, plus the files you resolved, by explicit path (`git diff --cached --name-only` lists them; never `git add -A`). Follow the `sdlc-agent-identity` skill for the commit trailer and the PR signature.
 
 - **Title:** `chore: sync claude-sdlc <old> → <new>`. If a breaking change needed edits here, use `chore!:` and say so.
 - **Body:**
@@ -77,7 +77,7 @@ Commit what the sync staged, plus the files you resolved, by explicit path (`git
   - the optional features in these releases, adopted or not, so the team can decide
   - `make check` passing
 
-Push, open the PR, run `.sdlc/scripts/auto-merge.sh <N>` on it (the `agent-identity` skill), and stop: a person reviews and merges it.
+Push, open the PR, run `.sdlc/scripts/auto-merge.sh <N>` on it (the `sdlc-agent-identity` skill), and stop: a person reviews and merges it.
 
 ## 5. Afterwards
 

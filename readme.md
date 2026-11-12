@@ -9,7 +9,7 @@
 A ready-to-use delivery pipeline that turns an idea into a reviewed, tested pull request: Claude does the drafting, building and checking, and people make every decision that matters.
 
 [![Latest release](https://img.shields.io/github/v/release/stickleprojects/claude-sdlc?label=release)](https://github.com/stickleprojects/claude-sdlc/releases/latest)
-[![CI](https://github.com/stickleprojects/claude-sdlc/actions/workflows/ci.yml/badge.svg)](https://github.com/stickleprojects/claude-sdlc/actions/workflows/ci.yml)
+[![CI](https://github.com/stickleprojects/claude-sdlc/actions/workflows/sdlc-ci.yml/badge.svg)](https://github.com/stickleprojects/claude-sdlc/actions/workflows/sdlc-ci.yml)
 
 </div>
 
@@ -53,11 +53,11 @@ You need six skills in Claude Code. Each one works out where a change is and off
 
 | Skill | Use it to |
 |---|---|
-| `/intent` | Start anything new, a feature or a bug, by brainstorming it into `intent.md` (or `bug.md`) |
-| `/plan` | Plan a change whose spec has merged, in plan mode, and save `plan.md` |
-| `/build` | Build from the merged plan: in one session for a small plan, or milestone by milestone from an approved `build.md` |
-| `/pr [N]` | Work through a PR's review. The product owner's walkthrough for intent and spec PRs, the engineer's for the rest |
-| `/next` | See where every change is and what's waiting on whom |
+| `/sdlc-intent` | Start anything new, a feature or a bug, by brainstorming it into `intent.md` (or `bug.md`) |
+| `/sdlc-plan` | Plan a change whose spec has merged, in plan mode, and save `plan.md` |
+| `/sdlc-build` | Build from the merged plan: in one session for a small plan, or milestone by milestone from an approved `build.md` |
+| `/sdlc-pr [N]` | Work through a PR's review. The product owner's walkthrough for intent and spec PRs, the engineer's for the rest |
+| `/sdlc-next` | See where every change is and what's waiting on whom |
 | `/sdlc` | See which pipeline version you're on, what's new, and update it |
 
 ```mermaid
@@ -68,22 +68,22 @@ sequenceDiagram
     participant C as Claude
     participant GH as GitHub CI
 
-    PO->>C: /intent "users can't find old roles"
+    PO->>C: /sdlc-intent "users can't find old roles"
     C-->>PO: intent.md, in a PR
     PO->>GH: merge the intent PR
     GH->>C: Spec from intent
     C-->>PO: spec.md PR (requirements, acceptance criteria)
     GH->>GH: Claude review + clause check
-    PO->>C: /pr: decide each finding in plain language
+    PO->>C: /sdlc-pr: decide each finding in plain language
     PO->>GH: merge the spec PR
-    Eng->>C: /plan
+    Eng->>C: /sdlc-plan
     C-->>Eng: plan.md PR (steps, verification, descopes to approve)
     Eng->>GH: merge the plan PR
-    Eng->>C: /build
+    Eng->>C: /sdlc-build
     C->>C: build, test, coverage, verifier
     C-->>Eng: code PR (descopes and gaps listed first)
     GH->>GH: Claude review
-    Eng->>C: /pr: fix, reply, resolve threads
+    Eng->>C: /sdlc-pr: fix, reply, resolve threads
     Eng->>GH: merge 🎉
 ```
 
@@ -93,12 +93,12 @@ sequenceDiagram
 
 | Stage | Artifact | Automation |
 |---|---|---|
-| **Plan** | `changes/NNNN-*/intent.md` (or `bug.md`) | `/intent`; an optional roadmap (`docs/roadmap.md`, [format](.sdlc/docs/roadmap-format.md)) that `/intent` places each change on and `make validate` checks |
-| **Design** | `spec.md` | *Spec from intent* opens the spec PR when an intent merges; `spec` skill; policy skills such as `security-policy` |
-| **Build** | `plan.md`, optional `build.md`, code | plan mode, `/plan`, `/build` with worktrees and milestones; format-on-edit and protected-path hooks |
-| **Architecture** | `docs/adr/NNNN-*.md` (optional) | `/plan` checks each accepted ADR's *Revisit when* triggers; `make validate` checks the ADRs' sections |
-| **Test** | tests, evals | `make check`; the `verifier` subagent; agent evals before every release |
-| **Review** | the PR | *Claude review* follows [.sdlc/REVIEW.md](.sdlc/REVIEW.md), plus your project's own `docs/review-rules.md` if it has one; `@claude` fixes on request; `/pr` walkthroughs |
+| **Plan** | `changes/NNNN-*/intent.md` (or `bug.md`) | `/sdlc-intent`; an optional roadmap (`docs/roadmap.md`, [format](.sdlc/docs/roadmap-format.md)) that `/sdlc-intent` places each change on and `make validate` checks |
+| **Design** | `spec.md` | *Spec from intent* opens the spec PR when an intent merges; `sdlc-spec` skill; policy skills such as `sdlc-security-policy` |
+| **Build** | `plan.md`, optional `build.md`, code | plan mode, `/sdlc-plan`, `/sdlc-build` with worktrees and milestones; format-on-edit and protected-path hooks |
+| **Architecture** | `docs/adr/NNNN-*.md` (optional) | `/sdlc-plan` checks each accepted ADR's *Revisit when* triggers; `make validate` checks the ADRs' sections |
+| **Test** | tests, evals | `make check`; the `sdlc-verifier` subagent; agent evals before every release |
+| **Review** | the PR | *Claude review* follows [.sdlc/REVIEW.md](.sdlc/REVIEW.md), plus your project's own `docs/review-rules.md` if it has one; `@claude` fixes on request; `/sdlc-pr` walkthroughs |
 | **Release** | the merge | the production gate hook; optional auto-merge after a person's approval |
 
 ```mermaid
@@ -224,7 +224,7 @@ Switching modes later only means re-running `.sdlc/scripts/bootstrap-github.sh -
 **Auto-merge (optional, team mode only).** By default every PR waits for someone to click *Merge*. To have the pipeline turn on GitHub's auto-merge for the PRs it opens (the spec PR from CI, and the intent, plan, build and sync PRs from sessions), set the repo variable `SDLC_AUTO_MERGE` to `merge`, `squash` or `rebase`, then re-run `.sdlc/scripts/bootstrap-github.sh --mode team`:
 
 ```sh
-gh variable set SDLC_AUTO_MERGE --body merge   # use merge if you use /build: build.md records commit shas
+gh variable set SDLC_AUTO_MERGE --body merge   # use merge if you use /sdlc-build: build.md records commit shas
 .sdlc/scripts/bootstrap-github.sh --mode team
 ```
 
@@ -238,7 +238,7 @@ A PR still merges only after a person approves it and every check passes. `.sdlc
 
 Open any small PR. **check**, **pr-title**, **review** and **claude-review** should pass, and Claude should post a single *Review summary* comment. Then merge it yourself; in solo mode no approval is needed, and no bypass either. Two things to expect:
 
-- **A PR that changes `.github/workflows/claude-*.yml` gets no AI review.** The action skips itself on purpose until the file matches `main`, and a comment on the PR says so. Review those PRs by hand.
+- **A PR that changes `.github/workflows/sdlc-claude-*.yml` gets no AI review.** The action skips itself on purpose until the file matches `main`, and a comment on the PR says so. Review those PRs by hand.
 - **The review runs when a PR opens, not on every push**, to save subscription usage. But nobody merges on a stale review: a push after the review marks `claude-review` as "Not reviewed: N commits since the review", which blocks the merge. Add the `review` label to review the latest push; the label removes itself, so you can add it again. The skills do this for you after they push a fix.
 - **A PR's title says which gate artifact it changes.** A PR that changes a spec must be titled `spec(...)`, and likewise for `intent`, `bug` and `plan`, or the *PR title* check fails.
 
@@ -252,7 +252,7 @@ make next REF=origin/main                    # each change's next step, and the 
 make check                                   # lint + tests + artifact chain
 ```
 
-Mostly, though, you'll just talk to Claude: `/intent`, `/plan`, `/build`, `/pr`, `/next`. Who does what: [.sdlc/docs/roles.md](.sdlc/docs/roles.md).
+Mostly, though, you'll just talk to Claude: `/sdlc-intent`, `/sdlc-plan`, `/sdlc-build`, `/sdlc-pr`, `/sdlc-next`. Who does what: [.sdlc/docs/roles.md](.sdlc/docs/roles.md).
 
 ## Guardrails
 

@@ -1,11 +1,11 @@
-<!-- The frontmatter for this skill is in .claude/skills/review-findings/SKILL.md, which Claude Code reads. Projects change this
+<!-- The frontmatter for this skill is in .claude/skills/sdlc-review-findings/SKILL.md, which Claude Code reads. Projects change this
 file with an override in .sdlc-local/ (see .sdlc/docs/overrides.md), never by editing it. -->
 
 # Work through the review findings on a PR
 
 The person talks to you in the terminal; they don't need to use GitHub for feedback. You walk them through the findings, make the changes, push, and answer every thread on GitHub. Never approve or merge the PR: a person merges.
 
-For an `intent:`, `bug:` or `spec:` PR, use the `po-review` skill instead (`/pr` picks it). It follows the shared rules below.
+For an `intent:`, `bug:` or `spec:` PR, use the `sdlc-po-review` skill instead (`/sdlc-pr` picks it). It follows the shared rules below.
 
 ## 1. Load the PR
 
@@ -62,13 +62,13 @@ A finding is handled by one actor: either this session, or the GitHub bot (`@cla
 
 ## Before you push
 
-Run the check above. Add files by explicit path (`git add <file>…`), never `git add -A` or `git add .`. Follow the `agent-identity` skill (`.sdlc/skills/agent-identity/SKILL.md`) for commit trailers, and never @-mention anyone.
+Run the check above. Add files by explicit path (`git add <file>…`), never `git add -A` or `git add .`. Follow the `sdlc-agent-identity` skill (`.sdlc/skills/agent-identity/SKILL.md`) for commit trailers, and never @-mention anyone.
 
 ## Reply and resolve
 
 A thread is closed with a reply that says what was decided or changed. Never resolve one silently.
 
-1. **Reply** on the thread, signed as the `agent-identity` skill says. Under the agent's own identity (`SDLC_AGENT_IDENTITY` set), end with `— Claude`. Otherwise the reply appears under the person's GitHub account, so end it with `(posted from Claude Code)`:
+1. **Reply** on the thread, signed as the `sdlc-agent-identity` skill says. Under the agent's own identity (`SDLC_AGENT_IDENTITY` set), end with `— Claude`. Otherwise the reply appears under the person's GitHub account, so end it with `(posted from Claude Code)`:
 
    ```
    gh api repos/{owner}/{repo}/pulls/<N>/comments/<comment-id>/replies \

@@ -11,27 +11,27 @@ Status as of 2026-11-11 (v0.9.1). This is a living log: update it whenever the p
 
 | Stage | Status | Notes |
 |---|---|---|
-| Plan: intent | ✅ Works | `/intent`, for features and bugs (`bug.md`) |
-| Design: spec | ✅ Works | *Spec from intent* opens one spec PR per change. The product owner works through the review with `/pr`, in plain language, deciding only product questions |
-| Build: plan + code | ✅ Works | `/plan` in plan mode; `/build` builds small plans in one session and larger ones milestone by milestone from an approved `build.md`, or all of them with `/build all` |
+| Plan: intent | ✅ Works | `/sdlc-intent`, for features and bugs (`bug.md`) |
+| Design: spec | ✅ Works | *Spec from intent* opens one spec PR per change. The product owner works through the review with `/sdlc-pr`, in plain language, deciding only product questions |
+| Build: plan + code | ✅ Works | `/sdlc-plan` in plan mode; `/sdlc-build` builds small plans in one session and larger ones milestone by milestone from an approved `build.md`, or all of them with `/sdlc-build all` |
 | Test | ✅ Works | `make check`, coverage per suite in consumer builds, the verifier (per criterion, per clause, and delivery against each requirement), agent evals before every release |
-| Deploy | ✅ Works | Claude review on every PR, `/pr` walkthroughs, the production gate, and optional auto-merge after a person's approval |
+| Deploy | ✅ Works | Claude review on every PR, `/sdlc-pr` walkthroughs, the production gate, and optional auto-merge after a person's approval |
 | Maintain | Not built | #15 |
 
 ## What works
 
 - **CI** (`make check`): lint, about 600 tests, artifact validation (required sections, approved descopes, a definition of done, readable requirements and criteria in new work), and a check that scripts are committed as executable.
 - **AI PR review**: follows [.sdlc/REVIEW.md](../.sdlc/REVIEW.md). It quotes the text each finding refers to, says who decides, and keeps one summary comment. It also checks every clause of a requirement against the criteria and the plan, with a cheap per-requirement clause check in CI.
-- **Skills**: six entry skills (`/intent`, `/plan`, `/build`, `/pr`, `/next`, `/sdlc`) route each change to the right next step.
+- **Skills**: six entry skills (`/sdlc-intent`, `/sdlc-plan`, `/sdlc-build`, `/sdlc-pr`, `/sdlc-next`, `/sdlc`) route each change to the right next step.
 - **Guardrail hooks**: protected paths, format on edit, and a production gate (no deploys to production, no pushes to `main`, no merges or approvals by the agent). A bug's failing test locks once it's committed.
 - **GitHub setup**: branch protection, CODEOWNERS, the token secret, Actions permissions, labels, `.gitignore` and the agent's own App identity, all scripted in `.sdlc/scripts/bootstrap-github.sh`.
 - **Upgrades**: `/sdlc` syncs with three-way merges of local edits, and carries out each release's upgrade steps with the person.
 
 ## Earlier: product-owner review (since reworked)
 
-*This was paused on 3 Nov and has since been reworked. The `po-review` walkthrough (reached through `/pr`) now explains each finding in plain language and asks the product owner only product decisions. The minutes idea below wasn't built. It's kept as the record of why the flow changed.*
+*This was paused on 3 Nov and has since been reworked. The `sdlc-po-review` walkthrough (reached through `/sdlc-pr`) now explains each finding in plain language and asks the product owner only product decisions. The minutes idea below wasn't built. It's kept as the record of why the flow changed.*
 
-**What happened.** `/po-review 6` (the spec for what is now #27) asked the product owner to rule on findings like *"A8 depends on the stage name"*. That question only makes sense if you've read the spec, and the product owner hadn't opened any files. The flow was built around review findings when it should be built around the product owner's understanding.
+**What happened.** `/sdlc-po-review 6` (the spec for what is now #27) asked the product owner to rule on findings like *"A8 depends on the stage name"*. That question only makes sense if you've read the spec, and the product owner hadn't opened any files. The flow was built around review findings when it should be built around the product owner's understanding.
 
 **What we learned.**
 - The review sends testability and spec-wording findings to the product owner. Those findings belong to the engineer, or are tidy-ups Claude can make itself.
@@ -81,7 +81,7 @@ So the artifacts stay short, the reasoning is still kept in version control, and
 
 Open questions for this work:
 - Is this one session at the spec stage, or does it also run at the intent stage? If both, there would be one set of minutes per meeting.
-- Should `/plan` and the AI review read the minutes as context, or only the outcomes written into the spec?
+- Should `/sdlc-plan` and the AI review read the minutes as context, or only the outcomes written into the spec?
 - Should `.sdlc/REVIEW.md`'s "who decides" gain an *auto-fix* category, so spec-wording findings never reach the product owner?
 - Should `sdlc check` validate the minutes, for example that an *Outcomes* section exists?
 
@@ -100,7 +100,7 @@ The first consumer repo set up for a real product, outside the sandbox: [jobhunt
 | `__pycache__/` left untracked | No `.gitignore`; a dirty tree blocks the next sync |
 | Token prompt looked frozen | It waits silently for an empty line after the paste |
 | `gh secret set --org` returned 404 | `stickleprojects` is a user account; there are no organisation secrets, so each repo needs its own copy |
-| No `CLAUDE.md` | By design the sync doesn't bring one, but nothing prompts for it before the first `/intent` |
+| No `CLAUDE.md` | By design the sync doesn't bring one, but nothing prompts for it before the first `/sdlc-intent` |
 | `make new-change role-index` and `name=` failed | The error comes from `sdlc new`, not a usage line naming `NAME=` |
 
 About a dozen manual steps, with an assistant diagnosing each failure. A new user wouldn't have got through alone, hence #39's ask for a guide in the consumer repo and one re-runnable setup script.
@@ -113,7 +113,7 @@ About a dozen manual steps, with an assistant diagnosing each failure. A new use
 - **Other agents run our hooks.** GitHub Copilot in VS Code picked up `.claude/settings.json` and reported the pre-edit hook as *errored* (exit code 0), then refused the edit. The hook itself ran cleanly by hand. Failing closed is right, but the message pointed at the wrong cause.
 
 **Intent stage:**
-- **The split test was contaminated.** The whole brief went in as one change to see how `/intent` breaks it down, but the engineer's answers (read-only, no database) set the scope before the skill had to. A clean test needs an eval case with the brief alone.
+- **The split test was contaminated.** The whole brief went in as one change to see how `/sdlc-intent` breaks it down, but the engineer's answers (read-only, no database) set the scope before the skill had to. A clean test needs an eval case with the brief alone.
 - **Claude added an `## Out of scope` section on its own.** The template has none, so cut features could simply vanish. Evidence for adding the section to the template (a required-sections change, so it affects every consumer).
 - **The first draft promised *confirmed* duplicates in a read-only app,** and said *Open questions: None* while it had decided home-network access on the product owner's behalf. Both were caught in human review, not by the skill. The skill could ask whether each outcome fits the constraints, and send any decision it made for the originator to Open questions.
 - **The intent PR's AI review passed with 0 findings** on the corrected draft. It checked the rules (read-only, no outbound, no copied data) but has no view of earlier drafts.
@@ -127,7 +127,7 @@ About a dozen manual steps, with an assistant diagnosing each failure. A new use
 - **`@claude` can't check its own work.** The mention workflow has no `--allowedTools`, so `make check` needed an approval nobody could give; CI caught it instead. The review summary also stays stale after the fix until someone adds the `review` label. Both are on #40.
 
 **Plan stage:**
-- **Approving a plan skips `/plan`.** Claude Code's plan-mode dialog offers to leave plan mode and start building; nothing makes the engineer save and commit `plan.md` first. Here the engineer chose "keep planning", switched the mode selector by hand, and is watching that the session never goes to edit or auto mode until `/plan`. The rule needs a hook (#44).
+- **Approving a plan skips `/sdlc-plan`.** Claude Code's plan-mode dialog offers to leave plan mode and start building; nothing makes the engineer save and commit `plan.md` first. Here the engineer chose "keep planning", switched the mode selector by hand, and is watching that the session never goes to edit or auto mode until `/sdlc-plan`. The rule needs a hook (#44).
 
 ## Pipeline issues
 
@@ -143,7 +143,7 @@ Open gaps and ideas are tracked as GitHub issues labelled [`pipeline`](https://g
 | #5 | Exempt maintenance PRs from the artifact-chain review pass | Not every PR needs intent, spec and plan |
 | #7 | Pass allowed tools to the agent in CI | CI workspaces are never trusted, so the allow list in `settings.json` is ignored there |
 | #8, #9 | CODEOWNERS; production gate checks only push arguments | Whole-command matching blocked a legitimate `git merge main && git push` |
-| #16 | Readable findings, one summary comment, `/po-review` | Findings need quoted context; the first `/po-review` design was wrong (see above) |
+| #16 | Readable findings, one summary comment, `/sdlc-po-review` | Findings need quoted context; the first `/sdlc-po-review` design was wrong (see above) |
 | #17 | Bootstrap script and *Getting started* | Roughly ten manual GitHub settings broke setup; now scripted |
 
 Setup problems that weren't code: a token pasted with line wraps (the secret was cut off); the Claude GitHub app not installed; and the action skipping itself on PRs that change its own workflow file.

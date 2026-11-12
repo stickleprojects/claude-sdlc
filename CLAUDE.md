@@ -34,7 +34,7 @@ The framework itself. Its changes are tracked as GitHub issues (label `pipeline`
 ## Architecture
 
 - **Layout (#133):** everything synced to consumers lives in `.sdlc/`, and `scripts/` holds only the release scripts plus a shim for older syncs. Claude Code and GitHub need a few files in their own folders:
-  - a stub per skill in `.claude/skills/<name>/SKILL.md` (the frontmatter and one line that runs `.sdlc/scripts/resolve.sh`) and for the verifier in `.claude/agents/`. A skill's body lives in `.sdlc/skills/<name>/SKILL.md`, so edit the body there and the name or description in the stub;
+  - a stub per skill in `.claude/skills/sdlc-<name>/SKILL.md` (the frontmatter and one line that runs `.sdlc/scripts/resolve.sh`) and for the verifier in `.claude/agents/sdlc-verifier.md`. A skill's body lives in `.sdlc/skills/<name>/SKILL.md`, so edit the body there and the name or description in the stub;
   - `.claude/settings.json`, whose hooks all call `.sdlc/hooks/dispatch.sh <event>`. A new hook is a row in `.sdlc/hooks/hooks.tsv`, never a settings change;
   - the workflows.
 
@@ -42,8 +42,8 @@ The framework itself. Its changes are tracked as GitHub issues (label `pipeline`
 - **Stack contract:** hooks, CI and evals call only the `make` targets above, never `uv`, `ruff` or `pytest` directly. Language-specific details live only in `Makefile` and `.github/actions/setup-stack/`. Keep it that way.
 - **Agent adapter:** CI and evals call AI only through `.sdlc/scripts/agent.sh`. Don't call `claude -p` from workflows directly. (`claude-code-action` in the review and mention workflows is the one exception.)
 - **Artifact chain:** `changes/NNNN-name/{intent,spec,plan}.md`. The required `##` sections are defined in `.sdlc/src/sdlc/artifacts.py` (`CHAIN`) and must match `.sdlc/templates/`. A test enforces this. Change both together.
-- **Optional build plan:** `changes/NNNN-name/build.md`, written by `/build` for builds of more than one session. It sits outside `CHAIN`; `check_build` validates it when present (sections from `.sdlc/templates/build.md`, no approval with open questions). Small plans are built without one.
-- **Skills:** six entry skills people remember (`intent`, `plan`, `build`, `pr`, `next`, and `sdlc` for updating the pipeline itself) route by a change's state (`.sdlc/src/sdlc/routing.py`, `.sdlc/skills/routing.md`) to internal ones (`spec`, `po-review`, `review-findings`, `agent-identity`, `security-policy`, all `user-invocable: false`). A new skill is one or the other; `tests/test_routing.py` enforces it. Policy skills (e.g. `security-policy`) are advisory; rules that must always hold need a hook or CI check.
+- **Optional build plan:** `changes/NNNN-name/build.md`, written by `/sdlc-build` for builds of more than one session. It sits outside `CHAIN`; `check_build` validates it when present (sections from `.sdlc/templates/build.md`, no approval with open questions). Small plans are built without one.
+- **Skills:** six entry skills people remember (`sdlc-intent`, `sdlc-plan`, `sdlc-build`, `sdlc-pr`, `sdlc-next`, and `sdlc` for updating the pipeline itself) route by a change's state (`.sdlc/src/sdlc/routing.py`, `.sdlc/skills/routing.md`) to internal ones (`sdlc-spec`, `sdlc-po-review`, `sdlc-review-findings`, `sdlc-agent-identity`, `sdlc-security-policy`, all `user-invocable: false`). A new skill is one or the other; `tests/test_routing.py` enforces it. Policy skills (e.g. `sdlc-security-policy`) are advisory; rules that must always hold need a hook or CI check.
 - **Scope rules:** `.sdlc/skills/scope.md` (silence is not permission, a rule's scope is a minimum, descopes need a person's approval, test at the criterion's level) is shared by the plan, build, spec and review skills, the verifier and `.sdlc/REVIEW.md`. Change it there, not in each one.
 
 ## Guardrails (hooks in .claude/settings.json)

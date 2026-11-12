@@ -1,4 +1,4 @@
-<!-- The frontmatter for this skill is in .claude/skills/pr/SKILL.md, which Claude Code reads. Projects change this
+<!-- The frontmatter for this skill is in .claude/skills/sdlc-pr/SKILL.md, which Claude Code reads. Projects change this
 file with an override in .sdlc-local/ (see .sdlc/docs/overrides.md), never by editing it. -->
 
 # Work through the review on a PR
@@ -16,13 +16,13 @@ Read the PR (`gh api repos/{owner}/{repo}/pulls/<N>`) and pick by the type in it
 
 | Title starts with | Who decides | Skill |
 |---|---|---|
-| `intent`, `bug`, `spec` | the product owner | `po-review` |
-| anything else (`plan`, `feat`, `fix`, `chore`, …) | the engineer | `review-findings` |
+| `intent`, `bug`, `spec` | the product owner | `sdlc-po-review` |
+| anything else (`plan`, `feat`, `fix`, `chore`, …) | the engineer | `sdlc-review-findings` |
 
 Say which in one line ("PR 12 is a spec PR: walking you through it as the product owner"), then invoke that skill with the Skill tool, passing the PR number, and follow it.
 
-If the person isn't the one who decides (an engineer running `/pr` on a spec PR, say), say who decides and ask whether to go on anyway or stop.
+If the person isn't the one who decides (an engineer running `/sdlc-pr` on a spec PR, say), say who decides and ask whether to go on anyway or stop.
 
 ## 3. Afterwards
 
-When the skill has finished, run the routing check in `.sdlc/skills/routing.md` for the PR's change, and say what comes next once the PR merges: for example, "once this spec merges, run /plan".
+When the skill has finished, run the routing check in `.sdlc/skills/routing.md` for the PR's change, and say what comes next once the PR merges: for example, "once this spec merges, run /sdlc-plan".
