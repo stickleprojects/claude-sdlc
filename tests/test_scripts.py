@@ -9,9 +9,21 @@ import pytest
 
 from conftest import REPO, commit, git, init_repo, run
 
+
+def synced(path: str) -> bool:
+    """The sync installs everything under .sdlc/ (#133), so a file there reaches consumers."""
+    sync = (REPO / ".sdlc/scripts/sync-sdlc.sh").read_text()
+    return '".sdlc:.sdlc"' in sync and path.startswith(".sdlc/") and (REPO / path).is_file()
+
+
 SCRIPTS = sorted(
-    p.relative_to(REPO) for p in [*REPO.glob("scripts/*.sh"), *REPO.glob(".claude/hooks/*.sh")]
-) + [REPO.joinpath("evals/run.sh").relative_to(REPO)]
+    p.relative_to(REPO)
+    for p in [
+        *REPO.glob("scripts/*.sh"),
+        *REPO.glob(".sdlc/scripts/*.sh"),
+        *REPO.glob(".sdlc/hooks/*.sh"),
+    ]
+) + [REPO.joinpath(".sdlc/evals/run.sh").relative_to(REPO)]
 
 
 @pytest.mark.parametrize("script", SCRIPTS, ids=str)
@@ -23,7 +35,7 @@ def test_scripts_parse(script):
 
 
 def test_agent_echo_reads_stdin():
-    result = run(["scripts/agent.sh", "-"], env={"AGENT": "echo"}, input="hello agent")
+    result = run([".sdlc/scripts/agent.sh", "-"], env={"AGENT": "echo"}, input="hello agent")
     assert result.returncode == 0
     assert result.stdout.strip() == "hello agent"
 
@@ -31,18 +43,18 @@ def test_agent_echo_reads_stdin():
 def test_agent_echo_reads_prompt_file(tmp_path):
     prompt = tmp_path / "prompt.md"
     prompt.write_text("from a file")
-    result = run(["scripts/agent.sh", str(prompt)], env={"AGENT": "echo"})
+    result = run([".sdlc/scripts/agent.sh", str(prompt)], env={"AGENT": "echo"})
     assert result.stdout.strip() == "from a file"
 
 
 def test_agent_rejects_unknown_adapter():
-    result = run(["scripts/agent.sh", "-"], env={"AGENT": "nope"}, input="x")
+    result = run([".sdlc/scripts/agent.sh", "-"], env={"AGENT": "nope"}, input="x")
     assert result.returncode == 2
     assert "unknown AGENT" in result.stderr
 
 
 def test_agent_requires_a_prompt():
-    assert run(["scripts/agent.sh"]).returncode != 0
+    assert run([".sdlc/scripts/agent.sh"]).returncode != 0
 
 
 # --- eval runner -----------------------------------------------------------------------
@@ -72,7 +84,7 @@ def test_eval_runner_pass_rate(tmp_path, checks, min_rate, passes):
         "EVAL_TASKS_DIR": str(_tasks(tmp_path, checks)),
         "EVAL_MIN_PASS_RATE": min_rate,
     }
-    result = run(["evals/run.sh"], env=env)
+    result = run([".sdlc/evals/run.sh"], env=env)
     assert (result.returncode == 0) is passes, result.stdout
 
 
@@ -81,7 +93,7 @@ def test_eval_runner_without_tasks_passes_and_says_so(tmp_path, make_dir):
     tasks = tmp_path / "tasks"
     if make_dir:
         tasks.mkdir()
-    result = run(["evals/run.sh"], env={"AGENT": "echo", "EVAL_TASKS_DIR": str(tasks)})
+    result = run([".sdlc/evals/run.sh"], env={"AGENT": "echo", "EVAL_TASKS_DIR": str(tasks)})
     assert result.returncode == 0, result.stderr
     assert "no tasks" in result.stdout
 
@@ -90,12 +102,12 @@ def test_eval_runner_without_tasks_passes_and_says_so(tmp_path, make_dir):
 
 
 def test_bootstrap_help_and_bad_args():
-    assert run(["scripts/bootstrap-github.sh", "--help"]).returncode == 0
-    assert run(["scripts/bootstrap-github.sh", "--bogus"]).returncode == 2
+    assert run([".sdlc/scripts/bootstrap-github.sh", "--help"]).returncode == 0
+    assert run([".sdlc/scripts/bootstrap-github.sh", "--bogus"]).returncode == 2
 
 
 def test_bootstrap_creates_the_review_label_the_workflow_listens_for():
-    script = (REPO / "scripts/bootstrap-github.sh").read_text()
+    script = (REPO / ".sdlc/scripts/bootstrap-github.sh").read_text()
     workflow = (REPO / ".github/workflows/claude-review.yml").read_text()
     assert "\nreview|" in script
     assert "github.event.label.name == 'review'" in workflow
@@ -248,7 +260,7 @@ def test_merge_commits_after_the_first_are_parsed(released):
     [("solo", 0, False), ("team", 1, True)],
 )
 def test_bootstrap_protection_modes(mode, approvals, code_owners):
-    result = run(["scripts/bootstrap-github.sh", "--mode", mode, "--print-protection"])
+    result = run([".sdlc/scripts/bootstrap-github.sh", "--mode", mode, "--print-protection"])
     assert result.returncode == 0, result.stderr
     protection = json.loads(result.stdout)
     assert protection["enforce_admins"] is True, "nobody bypasses required checks"
@@ -265,9 +277,9 @@ def test_bootstrap_protection_modes(mode, approvals, code_owners):
 
 
 def test_bootstrap_defaults_to_solo_and_rejects_unknown_mode():
-    default = json.loads(run(["scripts/bootstrap-github.sh", "--print-protection"]).stdout)
+    default = json.loads(run([".sdlc/scripts/bootstrap-github.sh", "--print-protection"]).stdout)
     assert default["required_pull_request_reviews"]["required_approving_review_count"] == 0
-    assert run(["scripts/bootstrap-github.sh", "--mode", "chaos"]).returncode == 2
+    assert run([".sdlc/scripts/bootstrap-github.sh", "--mode", "chaos"]).returncode == 2
 
 
 # --- agents ----------------------------------------------------------------------------
@@ -275,7 +287,7 @@ def test_bootstrap_defaults_to_solo_and_rejects_unknown_mode():
 
 def test_verifier_runs_on_a_set_model():
     # Without a model the verifier inherits the caller's, so an Opus session runs it on Opus.
-    agent = (REPO / ".claude/agents/verifier.md").read_text()
+    agent = (REPO / ".claude/agents/verifier.md").read_text()  # the stub holds the frontmatter
     front = agent.split("---")[1]
     assert "\nmodel: sonnet\n" in front
 
@@ -285,24 +297,30 @@ def test_verifier_runs_on_a_set_model():
 
 def test_bootstrap_adds_missing_gitignore_lines_once(tmp_path):
     repo = init_repo(tmp_path / "r")
-    (repo / "templates").mkdir()
-    shutil.copy(REPO / "templates" / "gitignore", repo / "templates" / "gitignore")
+    (repo / ".sdlc" / "templates").mkdir(parents=True)
+    shutil.copy(
+        REPO / ".sdlc" / "templates" / "gitignore", repo / ".sdlc" / "templates" / "gitignore"
+    )
     (repo / ".gitignore").write_text("node_modules/\nmy-own-thing/\n")
-    first = run(["bash", str(REPO / "scripts/bootstrap-github.sh"), "--gitignore-only"], cwd=repo)
+    first = run(
+        ["bash", str(REPO / ".sdlc/scripts/bootstrap-github.sh"), "--gitignore-only"], cwd=repo
+    )
     assert first.returncode == 0, first.stderr
     text = (repo / ".gitignore").read_text()
     assert text.startswith("node_modules/\nmy-own-thing/\n")
     assert text.count("node_modules/") == 1
     for line in [".venv/", "__pycache__/", ".env", "!.env.example", "dist/"]:
         assert f"\n{line}\n" in text
-    second = run(["bash", str(REPO / "scripts/bootstrap-github.sh"), "--gitignore-only"], cwd=repo)
+    second = run(
+        ["bash", str(REPO / ".sdlc/scripts/bootstrap-github.sh"), "--gitignore-only"], cwd=repo
+    )
     assert second.returncode == 0
     assert (repo / ".gitignore").read_text() == text
     assert "has every baseline line" in second.stdout
 
 
 def test_bootstrap_turns_on_branch_deletion_idempotently():
-    script = (REPO / "scripts/bootstrap-github.sh").read_text()
+    script = (REPO / ".sdlc/scripts/bootstrap-github.sh").read_text()
     assert '-q .delete_branch_on_merge)" == true ]]' in script
     assert "-F delete_branch_on_merge=true" in script
     # The protection comparison includes `strict`, so an existing rule without it is updated.
@@ -310,13 +328,13 @@ def test_bootstrap_turns_on_branch_deletion_idempotently():
 
 
 def test_bootstrap_can_refresh_the_app_key_secret():
-    script = (REPO / "scripts/bootstrap-github.sh").read_text()
+    script = (REPO / ".sdlc/scripts/bootstrap-github.sh").read_text()
     assert "--update-agent-key) update_agent_key=1" in script
     assert "((update_agent_key == 0)) && gh secret list" in script
 
 
 def test_bootstrap_help_lists_every_step():
-    help_text = run(["scripts/bootstrap-github.sh", "--help"]).stdout
+    help_text = run([".sdlc/scripts/bootstrap-github.sh", "--help"]).stdout
     for n in range(1, 12):
         assert f"{n:>2}. " in help_text or f"#   {n}. " in help_text, n
     assert "set -euo" not in help_text
@@ -324,7 +342,7 @@ def test_bootstrap_help_lists_every_step():
 
 # --- review skills -----------------------------------------------------------------------
 
-REVIEW_SKILLS = [".claude/skills/po-review/SKILL.md", ".claude/skills/review-findings/SKILL.md"]
+REVIEW_SKILLS = [".sdlc/skills/po-review/SKILL.md", ".sdlc/skills/review-findings/SKILL.md"]
 
 
 @pytest.mark.parametrize("path", REVIEW_SKILLS)
@@ -339,17 +357,17 @@ def test_review_skills_sign_replies_and_avoid_graphql_pr_commands(path):
 
 
 def test_review_findings_resolves_threads_and_checks_for_bot_commits():
-    skill = (REPO / ".claude/skills/review-findings/SKILL.md").read_text()
+    skill = (REPO / ".sdlc/skills/review-findings/SKILL.md").read_text()
     assert "resolveReviewThread" in skill
     assert "If GraphQL fails" in skill
     assert "HEAD..origin/<branch>" in skill
 
 
 def test_pr_title_accepts_bug_artifact_prs():
-    script = (REPO / "scripts/check-pr-title.sh").read_text()
+    script = (REPO / ".sdlc/scripts/check-pr-title.sh").read_text()
     assert "|intent|bug|spec|plan'" in script
     workflow = (REPO / ".github/workflows/pr-title.yml").read_text()
-    assert 'scripts/check-pr-title.sh "$TITLE"' in workflow and "pulls/$PR/files" in workflow
+    assert '.sdlc/scripts/check-pr-title.sh "$TITLE"' in workflow and "pulls/$PR/files" in workflow
 
 
 # --- spec-pr: one spec PR per change --------------------------------------------------------
@@ -402,7 +420,7 @@ def spec_repo(tmp_path):
 
 
 def spec_pr(repo, env, *args):
-    return run(["bash", str(REPO / "scripts/spec-pr.sh"), *args], cwd=repo, env=env)
+    return run(["bash", str(REPO / ".sdlc/scripts/spec-pr.sh"), *args], cwd=repo, env=env)
 
 
 def test_spec_pr_pending_skips_changes_with_an_open_spec_pr(spec_repo):
@@ -454,7 +472,7 @@ def test_spec_from_intent_queues_runs_and_uses_spec_pr():
     workflow = (REPO / ".github/workflows/spec-from-intent.yml").read_text()
     assert "group: spec-from-intent" in workflow
     assert "cancel-in-progress: false" in workflow
-    assert "scripts/spec-pr.sh pending" in workflow
+    assert ".sdlc/scripts/spec-pr.sh pending" in workflow
     assert "GITHUB_RUN_ID" not in workflow
 
 
@@ -530,7 +548,7 @@ def auto_merge(tmp_path):
     env = {"PATH": f"{fake}:{os.environ['PATH']}", "D": str(state), "GITHUB_REPOSITORY": "o/r"}
 
     def go(**extra):
-        result = run(["bash", str(REPO / "scripts/auto-merge.sh"), "7"], env={**env, **extra})
+        result = run(["bash", str(REPO / ".sdlc/scripts/auto-merge.sh"), "7"], env={**env, **extra})
         calls = (state / "calls").read_text() if (state / "calls").exists() else ""
         return result, MUTATION in calls, calls
 
@@ -598,7 +616,7 @@ def test_auto_merge_prints_a_setting_for_bootstrap(auto_merge):
     env["GITHUB_REPOSITORY"] = "o/r"
 
     def setting(name="SDLC_AUTO_MERGE"):
-        return run(["bash", str(REPO / "scripts/auto-merge.sh"), "--setting", name], env=env)
+        return run(["bash", str(REPO / ".sdlc/scripts/auto-merge.sh"), "--setting", name], env=env)
 
     (state / "personal-account").write_text("")
     unset = setting()
@@ -608,18 +626,20 @@ def test_auto_merge_prints_a_setting_for_bootstrap(auto_merge):
     (state / "vars-forbidden").write_text("")
     forbidden = setting()
     assert forbidden.returncode == 1 and forbidden.stdout == ""
-    assert run(["bash", str(REPO / "scripts/auto-merge.sh"), "--setting", "a;b"]).returncode == 2
+    assert (
+        run(["bash", str(REPO / ".sdlc/scripts/auto-merge.sh"), "--setting", "a;b"]).returncode == 2
+    )
 
 
 def test_bootstrap_reads_the_variables_like_auto_merge_does():
     # spellbound3d: `gh variable get` doesn't exist before gh 2.48 (Ubuntu ships 2.46), and its
     # error was thrown away, so bootstrap skipped auto-merge without a word.
-    script = (REPO / "scripts/bootstrap-github.sh").read_text()
+    script = (REPO / ".sdlc/scripts/bootstrap-github.sh").read_text()
     assert "gh variable get" not in script.replace("Not `gh variable get`", "")
     assert 'bash "$auto_merge_sh" --setting' in script
     assert 'bash "$auto_merge_sh" --method' in script
     assert "can't read the SDLC_AUTO_MERGE variable" in script
-    assert "scripts/auto-merge.sh" in (REPO / "scripts/sync-sdlc.sh").read_text()
+    assert synced(".sdlc/scripts/auto-merge.sh")
 
 
 def _write(name, data):
@@ -704,7 +724,7 @@ def test_spec_pr_open_offers_each_new_pr_to_auto_merge(spec_repo):
 
 def test_bootstrap_requires_the_review_status_in_every_mode():
     def contexts(*args):
-        result = run(["scripts/bootstrap-github.sh", *args, "--print-protection"])
+        result = run([".sdlc/scripts/bootstrap-github.sh", *args, "--print-protection"])
         assert result.returncode == 0, result.stderr
         return sorted(json.loads(result.stdout)["required_status_checks"]["contexts"])
 
@@ -722,10 +742,10 @@ def test_bootstrap_requires_the_review_status_in_every_mode():
 def test_bootstrap_requires_resolved_conversations_and_compares_every_setting():
     # #92 and #91: a setting bootstrap applies but doesn't compare drifts unnoticed.
     for mode in ("solo", "team"):
-        result = run(["scripts/bootstrap-github.sh", "--mode", mode, "--print-protection"])
+        result = run([".sdlc/scripts/bootstrap-github.sh", "--mode", mode, "--print-protection"])
         protection = json.loads(result.stdout)
         assert protection["required_conversation_resolution"] is True
-    script = (REPO / "scripts/bootstrap-github.sh").read_text()
+    script = (REPO / ".sdlc/scripts/bootstrap-github.sh").read_text()
     shape = script.split("shape='", 1)[1].split("'", 1)[0]
     for field in (
         "dismiss_stale_reviews",
@@ -742,7 +762,7 @@ def test_bootstrap_keeps_protection_added_by_hand():
         "required_pull_request_reviews": {"require_last_push_approval": True},
     }
     result = run(
-        ["scripts/bootstrap-github.sh", "--print-protection"],
+        [".sdlc/scripts/bootstrap-github.sh", "--print-protection"],
         env={"SDLC_HAVE_PROTECTION": json.dumps(have)},
     )
     protection = json.loads(result.stdout)
@@ -755,7 +775,7 @@ def test_bootstrap_keeps_protection_added_by_hand():
 
 def test_bootstrap_and_sync_never_write_the_auto_merge_setting():
     # It's the project's choice; re-running bootstrap or syncing must not reset it.
-    for path in ("scripts/bootstrap-github.sh", "scripts/sync-sdlc.sh"):
+    for path in (".sdlc/scripts/bootstrap-github.sh", ".sdlc/scripts/sync-sdlc.sh"):
         text = (REPO / path).read_text()
         assert not re.search(r"variable (set|delete) SDLC_AUTO_MERGE\b(?!_)", text), path
 
@@ -767,11 +787,11 @@ def test_one_identity_and_no_personas():
     # One App serves every session; Claude never acts as the person. Personas were taken out
     # (claude-sdlc #61) and adding Apps back goes through the identity name.
     assert not (REPO / ".claude/personas.conf").exists()
-    skill = (REPO / ".claude/skills/agent-identity/SKILL.md").read_text()
+    skill = (REPO / ".sdlc/skills/agent-identity/SKILL.md").read_text()
     assert "persona" not in skill.lower()
     assert "`— Claude`" in skill and "Requested-by:" in skill
     for script in ["agent-identity.sh", "agent-session.sh"]:
-        assert "--persona" not in (REPO / "scripts" / script).read_text(), script
+        assert "--persona" not in (REPO / ".sdlc" / "scripts" / script).read_text(), script
 
 
 @pytest.fixture
@@ -805,7 +825,7 @@ def agent_env(tmp_path):
 
 
 def identity(env, *args, stdin=None):
-    return run(["bash", str(REPO / "scripts/agent-identity.sh"), *args], env=env, input=stdin)
+    return run(["bash", str(REPO / ".sdlc/scripts/agent-identity.sh"), *args], env=env, input=stdin)
 
 
 def test_token_is_minted_with_a_valid_jwt_and_cached(agent_env):
@@ -879,7 +899,7 @@ def test_env_without_setup_falls_back_to_the_person(agent_env, tmp_path):
 def test_agent_session_starts_claude_with_the_identity(agent_env):
     _, env = agent_env
     out = run(
-        ["bash", str(REPO / "scripts/agent-session.sh")],
+        ["bash", str(REPO / ".sdlc/scripts/agent-session.sh")],
         env={**env, "SDLC_CLAUDE": "env"},
     )
     assert out.returncode == 0, out.stderr
@@ -1037,7 +1057,7 @@ def bug_branch(tmp_path):
 
 
 def locked(repo, path="", env=None):
-    args = ["bash", str(REPO / "scripts/tests-locked.sh")] + ([path] if path else [])
+    args = ["bash", str(REPO / ".sdlc/scripts/tests-locked.sh")] + ([path] if path else [])
     clean = {"SDLC_LOCK_TESTS": "", "SDLC_CHANGE": "", **(env or {})}
     return run(args, cwd=repo, env=clean).returncode == 0
 
@@ -1091,7 +1111,7 @@ def test_a_later_commit_by_another_type_does_not_lock(bug_branch):
 def test_agent_session_locks_tests_for_a_bug_fix(bug_branch):
     commit(bug_branch, "test(0003-overlap): failing test", {"tests/t.py": "x\n"})
     out = run(
-        ["bash", str(REPO / "scripts/agent-session.sh")],
+        ["bash", str(REPO / ".sdlc/scripts/agent-session.sh")],
         cwd=bug_branch,
         env={"SDLC_CLAUDE": "env", "SDLC_LOCK_TESTS": "", "XDG_CONFIG_HOME": str(bug_branch)},
     )
@@ -1103,13 +1123,13 @@ def test_agent_session_locks_tests_for_a_bug_fix(bug_branch):
 def test_every_session_loads_the_agent_identity():
     settings = json.loads((REPO / ".claude/settings.json").read_text())
     commands = [h["command"] for e in settings["hooks"]["SessionStart"] for h in e["hooks"]]
-    assert '"$CLAUDE_PROJECT_DIR"/scripts/agent-session.sh --hook' in commands
+    assert '"$CLAUDE_PROJECT_DIR"/.sdlc/scripts/agent-session.sh --hook' in commands
 
 
 def test_session_hook_is_a_no_op_without_setup(tmp_path):
     env_file = tmp_path / "env"
     out = run(
-        ["bash", str(REPO / "scripts/agent-session.sh"), "--hook"],
+        ["bash", str(REPO / ".sdlc/scripts/agent-session.sh"), "--hook"],
         env={"CLAUDE_ENV_FILE": str(env_file), "XDG_CONFIG_HOME": str(tmp_path)},
     )
     assert out.returncode == 0
@@ -1327,8 +1347,8 @@ def test_rekey_replaces_the_key_and_says_what_next(file_keyed):
 
 def test_sdlc_skill_matches_what_the_sync_prints():
     """/sdlc acts on the sync's messages and lists the stack contract; keep them in step."""
-    sync = (REPO / "scripts/sync-sdlc.sh").read_text()
-    skill = (REPO / ".claude/skills/sdlc/SKILL.md").read_text()
+    sync = (REPO / ".sdlc/scripts/sync-sdlc.sh").read_text()
+    skill = (REPO / ".sdlc/skills/sdlc/SKILL.md").read_text()
     for message in [
         "kept your local changes",
         "CONFLICT",
@@ -1348,8 +1368,8 @@ def test_agent_allows_the_make_targets_the_skills_run_first():
     """CI ignores .claude/settings.json's allow list, so agent.sh's own list must cover what the
     skills run unprompted: the routing check (`make next`) and the scaffold. Without `make next`
     the intent eval stopped for approval and failed the v0.7.1 release."""
-    allowed = (REPO / "scripts/agent.sh").read_text()
-    routing = (REPO / ".claude/skills/routing.md").read_text()
+    allowed = (REPO / ".sdlc/scripts/agent.sh").read_text()
+    routing = (REPO / ".sdlc/skills/routing.md").read_text()
     assert "make next" in routing
     for target in ("make next:*", "make new-change:*", "make validate"):
         assert f"Bash({target})" in allowed
@@ -1380,7 +1400,7 @@ def fake_claude(tmp_path):
             "FAKE_ANSWER": answer,
             **({"FAKE_FAIL": "1"} if fail else {}),
         }
-        result = run(["scripts/clause-check.sh", *args], env=env)
+        result = run([".sdlc/scripts/clause-check.sh", *args], env=env)
         calls = log.read_text().split("\036")[:-1] if log.exists() else []
         log.unlink(missing_ok=True)
         return result, calls
@@ -1436,11 +1456,11 @@ def test_clause_check_takes_the_last_clauses_line_and_a_single_missing_value(fak
 def test_clause_check_dry_run_reads_as_unchecked():
     # The echo adapter prints the prompt; its example answer must not read as a real one.
     result = run(
-        ["scripts/clause-check.sh", "--stage", "spec", CLAUSE_FIXTURE], env={"AGENT": "echo"}
+        [".sdlc/scripts/clause-check.sh", "--stage", "spec", CLAUSE_FIXTURE], env={"AGENT": "echo"}
     )
     assert result.returncode == 0, result.stderr
     assert all("unchecked" in f for f in json.loads(result.stdout))
-    prompt = (REPO / "prompts/clause-check.md").read_text()
+    prompt = (REPO / ".sdlc/prompts/clause-check.md").read_text()
     assert not re.search(r"^CLAUSES: ", prompt, re.M)
 
 
@@ -1457,13 +1477,13 @@ def test_clause_check_dry_run_reads_as_unchecked():
     ],
 )
 def test_clause_check_usage(args):
-    result = run(["scripts/clause-check.sh", *args], env={"AGENT": "echo"})
+    result = run([".sdlc/scripts/clause-check.sh", *args], env={"AGENT": "echo"})
     assert result.returncode == 2 and "usage" in result.stderr
 
 
 def test_clause_check_fails_when_the_spec_cant_be_split(tmp_path):
     result = run(
-        ["scripts/clause-check.sh", "--stage", "spec", str(tmp_path)], env={"AGENT": "echo"}
+        [".sdlc/scripts/clause-check.sh", "--stage", "spec", str(tmp_path)], env={"AGENT": "echo"}
     )
     assert result.returncode != 0
     assert "spec.md doesn't exist" in result.stderr
@@ -1476,7 +1496,7 @@ def test_review_runs_the_clause_check_before_the_review_and_never_fails_on_it():
     assert check < workflow.index("- uses: anthropics/claude-code-action@v1")
     step = workflow[check : workflow.index("- uses: anthropics/claude-code-action@v1")]
     # AI only through the adapter (CLAUDE.md): the script calls agent.sh, the step never claude -p.
-    assert 'scripts/clause-check.sh --changed-since "$BASE"' in step
+    assert '.sdlc/scripts/clause-check.sh --changed-since "$BASE"' in step
     assert "claude -p" not in workflow
     assert "BASE: ${{ github.event.pull_request.base.sha }}" in step
     assert "could not run" in step, "a failed check is reported to the review, not dropped"
@@ -1488,7 +1508,7 @@ def test_review_runs_the_clause_check_before_the_review_and_never_fails_on_it():
         and ".clause-check.json" in workflow[check:].split("prompt: |", 1)[1]
     )
     assert "Where the clauses come from" in workflow
-    assert "Where the clauses come from" in (REPO / "REVIEW.md").read_text()
+    assert "Where the clauses come from" in (REPO / ".sdlc/REVIEW.md").read_text()
 
 
 # --- delivery check, stage build (#106) ---------------------------------------------------
@@ -1534,7 +1554,7 @@ def test_delivery_check_names_the_branchs_changed_files(tmp_path):
     )
     (bin_dir / "claude").chmod(0o755)
     result = run(
-        ["scripts/clause-check.sh", "--stage", "build", DELIVERY_FIXTURE],
+        [".sdlc/scripts/clause-check.sh", "--stage", "build", DELIVERY_FIXTURE],
         cwd=work,
         env={"PATH": f"{bin_dir}:{os.environ['PATH']}", "FAKE_LOG": str(log)},
     )
@@ -1546,7 +1566,7 @@ def test_delivery_check_names_the_branchs_changed_files(tmp_path):
 
 
 def test_delivery_prompt_example_is_not_an_answer():
-    prompt = (REPO / "prompts/delivery-check.md").read_text()
+    prompt = (REPO / ".sdlc/prompts/delivery-check.md").read_text()
     assert not re.search(r"^CLAUSES: ", prompt, re.M)
     assert "main verb or noun" in prompt
 
@@ -1596,7 +1616,7 @@ def test_review_skips_the_clause_check_quietly_without_a_clauses_target():
     find = workflow[workflow.index("- name: Find the changed specs and plans") :]
     find = find[: find.index("- uses: ./.github/actions/setup-stack")]
     assert "make -n clauses CHANGE=probe" in find, "probes the target before any stack setup"
-    assert "could not run" in (REPO / "REVIEW.md").read_text()
+    assert "could not run" in (REPO / ".sdlc/REVIEW.md").read_text()
 
 
 def test_release_notes_give_the_clauses_recipe_the_makefile_uses():
@@ -1607,7 +1627,7 @@ def test_release_notes_give_the_clauses_recipe_the_makefile_uses():
     in_notes = {line.lstrip(" ") for line in notes.splitlines()}  # indented inside a list
     assert all(line in in_notes for line in recipe.splitlines()), recipe
     assert "## Upgrade steps" in notes and "## Optional: the `clauses` make target" in notes
-    skill = (REPO / ".claude/skills/sdlc/SKILL.md").read_text()
+    skill = (REPO / ".sdlc/skills/sdlc/SKILL.md").read_text()
     assert "`Upgrade steps`" in skill and "never in the sync PR" in skill
 
 
@@ -1749,7 +1769,7 @@ def request_review(tmp_path):
             "REQUEST_REVIEW_POLL": "1",
         }
         args = [] if sha is None else [sha]
-        result = run(["bash", str(REPO / "scripts/request-review.sh"), "7", *args], env=env)
+        result = run(["bash", str(REPO / ".sdlc/scripts/request-review.sh"), "7", *args], env=env)
         calls = (state / "calls").read_text()
         labelled = any(c.startswith("api repos/o/r/issues/7/labels -f") for c in calls.splitlines())
         return result, labelled, calls
@@ -1843,21 +1863,20 @@ def test_request_review_says_when_it_couldnt_add_the_label(request_review):
 
 
 def test_request_review_usage():
-    assert run(["bash", "scripts/request-review.sh"]).returncode == 2
-    assert run(["bash", "scripts/request-review.sh", "7", "not-a-sha"]).returncode == 2
+    assert run(["bash", ".sdlc/scripts/request-review.sh"]).returncode == 2
+    assert run(["bash", ".sdlc/scripts/request-review.sh", "7", "not-a-sha"]).returncode == 2
 
 
 def test_skills_ask_for_a_review_through_request_review():
     for path in (
-        ".claude/skills/review-findings/SKILL.md",
-        ".claude/skills/po-review/SKILL.md",
-        ".claude/skills/build/SKILL.md",
+        ".sdlc/skills/review-findings/SKILL.md",
+        ".sdlc/skills/po-review/SKILL.md",
+        ".sdlc/skills/build/SKILL.md",
     ):
         text = (REPO / path).read_text()
-        assert "scripts/request-review.sh <N>" in text, path
+        assert ".sdlc/scripts/request-review.sh <N>" in text, path
         assert 'labels[]=review"' not in text, f"{path} adds the label directly"
-    sync = (REPO / "scripts/sync-sdlc.sh").read_text()
-    assert '"scripts/request-review.sh:scripts/request-review.sh"' in sync
+    assert synced(".sdlc/scripts/request-review.sh")
 
 
 def test_request_review_expands_the_checkouts_head_for_the_runs_api(request_review):
@@ -1871,7 +1890,7 @@ def test_baseline_gitignore_keeps_the_build_skill_while_ignoring_build_output(tm
     # #103: a bare `build/` also matched .claude/skills/build/, so a file a sync added there
     # was ignored and the sync PR silently left it out.
     repo = init_repo(tmp_path / "r")
-    shutil.copy(REPO / "templates" / "gitignore", repo / ".gitignore")
+    shutil.copy(REPO / ".sdlc" / "templates" / "gitignore", repo / ".gitignore")
     paths = [".claude/skills/build/new.md", "build/out.js", "app/build/out.js"]
     for path in paths:
         (repo / path).parent.mkdir(parents=True, exist_ok=True)
@@ -1882,30 +1901,35 @@ def test_baseline_gitignore_keeps_the_build_skill_while_ignoring_build_output(tm
 
 def test_bootstrap_adds_the_build_skill_exception_after_an_existing_build_line(tmp_path):
     repo = init_repo(tmp_path / "r")
-    (repo / "templates").mkdir()
-    shutil.copy(REPO / "templates" / "gitignore", repo / "templates" / "gitignore")
+    (repo / ".sdlc" / "templates").mkdir(parents=True)
+    shutil.copy(
+        REPO / ".sdlc" / "templates" / "gitignore", repo / ".sdlc" / "templates" / "gitignore"
+    )
     (repo / ".gitignore").write_text("build/\n")  # a consumer that already had the bare line
-    result = run(["bash", str(REPO / "scripts/bootstrap-github.sh"), "--gitignore-only"], cwd=repo)
+    result = run(
+        ["bash", str(REPO / ".sdlc/scripts/bootstrap-github.sh"), "--gitignore-only"], cwd=repo
+    )
     assert result.returncode == 0, result.stderr
     lines = (repo / ".gitignore").read_text().splitlines()
     assert lines.index("!.claude/skills/build/") > lines.index("build/")
-    (repo / ".claude/skills/build").mkdir(parents=True)
-    (repo / ".claude/skills/build/SKILL.md").write_text("x\n")
-    assert run(["git", "check-ignore", ".claude/skills/build/SKILL.md"], cwd=repo).returncode == 1
+    for skill in (".claude/skills/build/SKILL.md", ".sdlc/skills/build/SKILL.md"):
+        (repo / skill).parent.mkdir(parents=True)
+        (repo / skill).write_text("x\n")
+        assert run(["git", "check-ignore", skill], cwd=repo).returncode == 1, skill
 
 
 def test_v0_9_1_upgrade_steps_name_commands_that_exist():
     notes = (REPO / "docs/release-notes/v0.9.1.md").read_text()
     assert notes.startswith("## Upgrade steps")  # the section /sdlc carries out
-    bootstrap = (REPO / "scripts/bootstrap-github.sh").read_text()
+    bootstrap = (REPO / ".sdlc/scripts/bootstrap-github.sh").read_text()
     assert (
         "scripts/bootstrap-github.sh --gitignore-only" in notes and "--gitignore-only)" in bootstrap
     )
-    identity = (REPO / "scripts/agent-identity.sh").read_text()
+    identity = (REPO / ".sdlc/scripts/agent-identity.sh").read_text()
     for sub in ("create", "check"):
         assert f"scripts/agent-identity.sh {sub}" in notes and f"  {sub})" in identity
     assert "!.claude/skills/build/" in notes
-    assert "!.claude/skills/build/" in (REPO / "templates/gitignore").read_text()
+    assert "!.claude/skills/build/" in (REPO / ".sdlc/templates/gitignore").read_text()
 
 
 # --- THE RULE for SDLC_AUTO_MERGE, in every place that reads it (#101) ----------------------
@@ -1929,7 +1953,9 @@ def workflow_reviews_pushes(value: str) -> bool:
 
 @pytest.mark.parametrize(("value", "on"), AUTO_MERGE_VALUES)
 def test_every_reader_of_sdlc_auto_merge_follows_the_same_rule(request_review, value, on):
-    method = run(["bash", "scripts/auto-merge.sh", "--method"], env={"SDLC_AUTO_MERGE": value})
+    method = run(
+        ["bash", ".sdlc/scripts/auto-merge.sh", "--method"], env={"SDLC_AUTO_MERGE": value}
+    )
     assert method.returncode == 0
     assert method.stdout == (value.lower() if on else "")
 
@@ -1947,7 +1973,7 @@ def test_auto_merge_method_fails_when_the_variable_cant_be_read(auto_merge):
     state, _ = auto_merge
     (state / "vars-forbidden").write_text("")
     result = run(
-        ["bash", str(REPO / "scripts/auto-merge.sh"), "--method"],
+        ["bash", str(REPO / ".sdlc/scripts/auto-merge.sh"), "--method"],
         env={
             "PATH": f"{state.parent / 'fakebin'}:{os.environ['PATH']}",
             "D": str(state),
@@ -2027,7 +2053,7 @@ def bootstrap_run(tmp_path):
         result = run(
             [
                 "bash",
-                str(REPO / "scripts/bootstrap-github.sh"),
+                str(REPO / ".sdlc/scripts/bootstrap-github.sh"),
                 "--repo",
                 "o/r",
                 "--mode",
@@ -2151,14 +2177,14 @@ def test_review_notes_a_workflow_change_on_the_push_that_makes_it():
 def test_v0_10_0_upgrade_steps_match_the_scripts():
     notes = (REPO / "docs/release-notes/v0.10.0.md").read_text()
     assert "## Upgrade steps" in notes
-    bootstrap = (REPO / "scripts/bootstrap-github.sh").read_text()
+    bootstrap = (REPO / ".sdlc/scripts/bootstrap-github.sh").read_text()
     for quoted in (
         "'check', 'pr-title' and 'claude-review'",
         "the old review check is no longer required",
     ):
         assert quoted in notes and quoted in bootstrap, quoted
     assert "scripts/request-review.sh <N>" in notes and "unreviewed-push" in notes
-    assert '"${1:-}" == --method' in (REPO / "scripts/auto-merge.sh").read_text()
+    assert '"${1:-}" == --method' in (REPO / ".sdlc/scripts/auto-merge.sh").read_text()
     assert "your own scripts that aren't executable in git" in notes
 
 
@@ -2207,7 +2233,7 @@ def review_current(tmp_path):
         if post_fails:
             (tmp_path / "post-fails").write_text("")
         result = run(
-            ["bash", str(REPO / "scripts/review-current.sh"), "7", sha(commits[-1])],
+            ["bash", str(REPO / ".sdlc/scripts/review-current.sh"), "7", sha(commits[-1])],
             env={
                 "PATH": f"{fake}:{os.environ['PATH']}",
                 "D": str(tmp_path),
@@ -2265,8 +2291,8 @@ def test_review_current_fails_when_it_cant_post(review_current):
 
 
 def test_review_current_usage():
-    assert run(["bash", "scripts/review-current.sh", "7"]).returncode == 2
-    assert run(["bash", "scripts/review-current.sh", "x", sha(1)]).returncode == 2
+    assert run(["bash", ".sdlc/scripts/review-current.sh", "7"]).returncode == 2
+    assert run(["bash", ".sdlc/scripts/review-current.sh", "x", sha(1)]).returncode == 2
 
 
 def test_unreviewed_pushes_are_marked_when_the_review_doesnt_run():
@@ -2276,11 +2302,10 @@ def test_unreviewed_pushes_are_marked_when_the_review_doesnt_run():
     assert "github.event.action == 'synchronize'" in job
     assert "(vars.SDLC_AUTO_MERGE == '' || vars.SDLC_AUTO_MERGE == 'off')" in job
     assert "github.event.pull_request.head.repo.full_name == github.repository" in job
-    assert 'scripts/review-current.sh "$PR" "$HEAD_SHA"' in job
+    assert '.sdlc/scripts/review-current.sh "$PR" "$HEAD_SHA"' in job
     assert "claude-code-action" not in job and "secrets." not in job, "no model, no secrets"
-    sync = (REPO / "scripts/sync-sdlc.sh").read_text()
     for script in ("review-current.sh", "check-pr-title.sh"):
-        assert f'"scripts/{script}:scripts/{script}"' in sync
+        assert synced(f".sdlc/scripts/{script}"), script
 
 
 # --- the PR title says which gate artifact it changes (#46) ----------------------------------
@@ -2304,7 +2329,7 @@ def test_unreviewed_pushes_are_marked_when_the_review_doesnt_run():
 )
 def test_pr_title_type_matches_the_gate_artifacts_it_changes(title, files, ok):
     result = run(
-        ["bash", "scripts/check-pr-title.sh", title], input="".join(f"{f}\n" for f in files)
+        ["bash", ".sdlc/scripts/check-pr-title.sh", title], input="".join(f"{f}\n" for f in files)
     )
     assert (result.returncode == 0) == ok, result.stdout
     assert ("::error::" in result.stdout) == (not ok)
@@ -2312,7 +2337,7 @@ def test_pr_title_type_matches_the_gate_artifacts_it_changes(title, files, ok):
 
 def test_pr_title_error_names_the_types_to_use():
     result = run(
-        ["bash", "scripts/check-pr-title.sh", "docs: tidy"],
+        ["bash", ".sdlc/scripts/check-pr-title.sh", "docs: tidy"],
         input="changes/0007-x/spec.md\nchanges/0007-x/plan.md\n",
     )
     assert (
@@ -2321,27 +2346,29 @@ def test_pr_title_error_names_the_types_to_use():
 
 
 def test_project_review_rules_live_outside_review_md():
-    # spellbound3d added a pass to REVIEW.md, which then clashed with every framework update.
-    review = (REPO / "REVIEW.md").read_text()
+    # spellbound3d added a pass to .sdlc/REVIEW.md, which then clashed with every framework update.
+    review = (REPO / ".sdlc/REVIEW.md").read_text()
     passes = re.findall(r"^(\d)\. \*\*([^*]+):\*\*", review, re.M)
     assert [n for n, _ in passes] == ["1", "2", "3", "4", "5", "6"]
     assert passes[-1][1] == "Project rules", "last, so the earlier passes keep their numbers"
     assert "`docs/review-rules.md`" in review and "the sync never touches it" in review
-    sync = (REPO / "scripts/sync-sdlc.sh").read_text()
+    sync = (REPO / ".sdlc/scripts/sync-sdlc.sh").read_text()
     assert "review-rules" not in sync, "the project's file is never synced"
-    assert '"templates:templates"' in sync, "the starting point arrives with the templates"
-    template = (REPO / "templates/review-rules.md").read_text()
+    assert synced(".sdlc/templates/review-rules.md"), (
+        "the starting point arrives with the templates"
+    )
+    template = (REPO / ".sdlc/templates/review-rules.md").read_text()
     assert "Copy this file to docs/review-rules.md" in template
 
 
 def test_the_roadmap_is_the_projects_and_its_format_is_synced():
     # #81: the framework ships the format and the templates; docs/roadmap.md is the project's.
-    sync = (REPO / "scripts/sync-sdlc.sh").read_text()
-    assert '"docs/roadmap-format.md:docs/roadmap-format.md"' in sync
+    sync = (REPO / ".sdlc/scripts/sync-sdlc.sh").read_text()
+    assert synced(".sdlc/docs/roadmap-format.md")
     assert '"docs/roadmap.md:' not in sync and "docs/roadmap/adjustments" not in sync
     for name in ("roadmap.md", "roadmap-adjustment.md"):
-        assert "docs/roadmap" in (REPO / "templates" / name).read_text(), name
-    intent = (REPO / "templates/intent.md").read_text()
+        assert "docs/roadmap" in (REPO / ".sdlc" / "templates" / name).read_text(), name
+    intent = (REPO / ".sdlc/templates/intent.md").read_text()
     assert "Milestone: M<n>" in intent and "Adjustment: NNNN-<slug>" in intent
     # Only in a comment: a repo with no roadmap gets no Milestone: line in its intents.
     assert "\nMilestone:" not in re.sub(r"<!--.*?-->", "", intent, flags=re.S)
@@ -2349,7 +2376,7 @@ def test_the_roadmap_is_the_projects_and_its_format_is_synced():
 
 def test_next_and_the_upgrade_steps_know_the_roadmap():
     # #81: /next reads the roadmap from main; v0.10.0's upgrade covers both consumers' shapes.
-    nxt = (REPO / ".claude/skills/next/SKILL.md").read_text()
+    nxt = (REPO / ".sdlc/skills/next/SKILL.md").read_text()
     assert "git show origin/main:docs/roadmap.md" in nxt
     assert "Never reorder the roadmap" in nxt
     steps = (REPO / "docs/release-notes/v0.10.0.md").read_text().split("## Upgrade steps", 1)[1]
@@ -2393,7 +2420,7 @@ def review_posted(tmp_path):
         if bot:
             env["REVIEW_BOT"] = bot
         return run(
-            ["bash", str(REPO / "scripts/review-posted.sh"), *(args or ("7", SINCE))], env=env
+            ["bash", str(REPO / ".sdlc/scripts/review-posted.sh"), *(args or ("7", SINCE))], env=env
         )
 
     return go
@@ -2445,14 +2472,13 @@ def test_the_gate_needs_the_summary_not_just_a_green_action():
     assert 'echo "since=$since" >> "$GITHUB_OUTPUT"' in step["Mark the review as running"]
     done = step["Mark the review as done"]
     assert "SINCE: ${{ steps.start.outputs.since }}" in done
-    assert 'scripts/review-posted.sh "$PR" "$SINCE"' in done
+    assert '.sdlc/scripts/review-posted.sh "$PR" "$SINCE"' in done
     # Skipped (a claude-*.yml change) is checked first: the action posts nothing then.
     assert done.index('"$SKIPPED" == true') < done.index("review-posted.sh")
     assert "-f state=failure" in done and "posted no summary" in done
     failed = step["Mark the review as failed"]
     assert "if: failure() && steps.done.outputs.reported != 'true'" in failed
-    sync = (REPO / "scripts/sync-sdlc.sh").read_text()
-    assert '"scripts/review-posted.sh:scripts/review-posted.sh"' in sync
+    assert synced(".sdlc/scripts/review-posted.sh")
 
 
 # A gh serving the PR's comments and its review threads (GraphQL), applying --jq with real jq.
@@ -2519,7 +2545,7 @@ def review_findings(tmp_path):
             "FAKE_THREADS": str(threads),
             "FAKE_CALLS": str(tmp_path / "calls"),
         }
-        return run(["bash", str(REPO / "scripts/review-findings.sh"), "7"], env=env)
+        return run(["bash", str(REPO / ".sdlc/scripts/review-findings.sh"), "7"], env=env)
 
     return go
 
@@ -2582,7 +2608,7 @@ def test_the_gate_checks_what_the_review_found():
     step = {s.split("\n", 1)[0].removeprefix("name: "): s for s in steps}
     done = step["Mark the review as done"]
     # In order: the claude-*.yml exception, then a summary, then a thread per finding.
-    order = ['"$SKIPPED" == true', "review-posted.sh", 'scripts/review-findings.sh "$PR"']
+    order = ['"$SKIPPED" == true', "review-posted.sh", '.sdlc/scripts/review-findings.sh "$PR"']
     assert [done.index(x) for x in order] == sorted(done.index(x) for x in order)
     assert done.count('echo "reported=true"') == 2 and done.count("exit 1") == 2
     action = next(s for s in steps if s.startswith("uses: anthropics/claude-code-action"))
@@ -2591,8 +2617,8 @@ def test_the_gate_checks_what_the_review_found():
         "pulls/${{ github.event.pull_request.number }}/comments -f subject_type=file:*)" in action
     )
     assert "<!-- review-findings: important=<N> nit=<M> -->" in action
-    review = (REPO / "REVIEW.md").read_text()
+    review = (REPO / ".sdlc/REVIEW.md").read_text()
     assert "## Posting findings" in review
     assert "<!-- review-findings: important=<N> nit=<M> -->" in review
     assert "-f subject_type=file -f path=<file>" in review and "`**Important`" in review
-    assert "review-findings.sh" in (REPO / "scripts/sync-sdlc.sh").read_text()
+    assert synced(".sdlc/scripts/review-findings.sh")

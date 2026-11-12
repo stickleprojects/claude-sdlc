@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Start Claude Code as the agent's GitHub identity (see .sdlc/docs/agent-identity.md).
+#
+# Usage: .sdlc/scripts/agent-session.sh [claude arguments...]
+#          e.g. .sdlc/scripts/agent-session.sh --worktree 0002-jd-extraction
+#        .sdlc/scripts/agent-session.sh --hook
+#          As a SessionStart hook: appends the identity's environment to $CLAUDE_ENV_FILE, so
+#          every Bash command in the session commits, pushes and comments as the agent.
+#
+# When the identity isn't configured, the session starts as the person, with a note.
+# Env: SDLC_CLAUDE  the command to run instead of `claude` (tests use `env`).
+set -euo pipefail
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if [[ "${1:-}" == --hook ]]; then
+  [[ -n "${CLAUDE_ENV_FILE:-}" ]] || exit 0
+  "$here/agent-identity.sh" env >> "$CLAUDE_ENV_FILE" || true  # never block a session start
+  exit 0
+fi
+
+eval "$("$here/agent-identity.sh" env)"
+# A bug fix whose failing test is already committed has that test locked: the protect-paths
+# hook asks tests-locked.sh on every edit, so nothing needs setting here. Just say so.
+if [[ -z "${SDLC_LOCK_TESTS:-}" ]] && why="$("$here/tests-locked.sh")"; then
+  echo "tests locked: $why" >&2
+fi
+exec ${SDLC_CLAUDE:-claude} "$@"

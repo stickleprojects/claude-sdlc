@@ -52,8 +52,8 @@ demo/
 ```
 
 - New `make demo` target: renders every tape. `make demo SCENE=3` renders one.
-- CI renders on changes to `demo/**` or `docs/roles.md` and attaches the GIFs as artifacts.
-- Embed the GIFs in `docs/roles.md` under each role's heading.
+- CI renders on changes to `demo/**` or `.sdlc/docs/roles.md` and attaches the GIFs as artifacts.
+- Embed the GIFs in `.sdlc/docs/roles.md` under each role's heading.
 
 ## Build order
 

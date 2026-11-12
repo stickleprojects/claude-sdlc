@@ -59,7 +59,7 @@ next:
 	@$(SDLC) next $(CHANGE) $(if $(REF),--ref $(REF))
 
 # One block per requirement (its text, the criteria and plan lines citing it), read by
-# scripts/clause-check.sh. CHANGE=0002 is required; REF=origin/main keeps only what changed.
+# .sdlc/scripts/clause-check.sh. CHANGE=0002 is required; REF=origin/main keeps only what changed.
 clauses:
 	@test -n "$(CHANGE)" || { echo "usage: make clauses CHANGE=0002 [REF=origin/main]"; exit 2; }
 	@$(SDLC) clauses $(CHANGE) $(if $(REF),--ref $(REF))
@@ -70,10 +70,10 @@ exec-bits:
 	test -z "$$bad" || { echo "not executable in git (git update-index --chmod=+x):"; echo "$$bad"; exit 1; }
 
 evals:
-	./evals/run.sh
+	./.sdlc/evals/run.sh
 
 # Placeholders until there is something to deploy. The production gate hook
-# (.claude/hooks/production-gate.sh) stops the agent from ever running deploy-prod.
+# (.sdlc/hooks/production-gate.sh) stops the agent from ever running deploy-prod.
 deploy-dev:
 	@echo "deploy-dev: nothing to deploy yet"
 

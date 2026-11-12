@@ -11,7 +11,7 @@ from sdlc.cli import main
 from sdlc.routing import steps
 
 REPO = Path(__file__).resolve().parents[1]
-BUILD_TEMPLATE = (REPO / "templates" / "build.md").read_text()
+BUILD_TEMPLATE = (REPO / ".sdlc" / "templates" / "build.md").read_text()
 ENTRY = ["intent", "plan", "build", "pr", "next", "sdlc"]
 INTERNAL = ["spec", "po-review", "review-findings", "agent-identity", "security-policy"]
 
@@ -98,12 +98,12 @@ def test_internal_skills_are_hidden(name: str) -> None:
 @pytest.mark.parametrize("name", ENTRY)
 def test_entry_skills_are_visible_and_route(name: str) -> None:
     assert "user-invocable" not in _front(name)
-    body = (REPO / ".claude/skills" / name / "SKILL.md").read_text()
+    body = (REPO / ".sdlc/skills" / name / "SKILL.md").read_text()
     assert "routing" in body or name == "pr"
 
 
 def test_routing_lists_exactly_the_entry_and_internal_skills() -> None:
-    routing = (REPO / ".claude/skills/routing.md").read_text()
+    routing = (REPO / ".sdlc/skills/routing.md").read_text()
     table = re.findall(r"^\| `/([a-z]+)", routing, re.MULTILINE)
     assert table == ENTRY
     skills = {p.parent.name for p in (REPO / ".claude/skills").glob("*/SKILL.md")}
@@ -190,15 +190,15 @@ def test_a_withdrawn_change_is_closed_not_stuck(tmp_path: Path, first: str) -> N
 
 
 def test_templates_explain_withdrawing_and_came_from() -> None:
-    assert "Withdrawn:" in (REPO / "templates/intent.md").read_text()
-    bug = (REPO / "templates/bug.md").read_text()
+    assert "Withdrawn:" in (REPO / ".sdlc/templates/intent.md").read_text()
+    bug = (REPO / ".sdlc/templates/bug.md").read_text()
     assert "Withdrawn:" in bug and "Came from:" in bug
 
 
 def test_a_template_comment_does_not_withdraw(tmp_path: Path) -> None:
     folder = tmp_path / "changes" / "0001-x"
     folder.mkdir(parents=True)
-    (folder / "intent.md").write_text((REPO / "templates/intent.md").read_text())
+    (folder / "intent.md").write_text((REPO / ".sdlc/templates/intent.md").read_text())
     assert steps(tmp_path)[0].skill == "spec"
 
 

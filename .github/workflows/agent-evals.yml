@@ -4,7 +4,7 @@
 # On-demand only for now: the token is tied to a Claude subscription, which has limited
 # usage. The playbook runs this automatically; to do that, add these triggers:
 #   pull_request:
-#     paths: ["CLAUDE.md", "REVIEW.md", ".claude/**", "prompts/**", "evals/**", "scripts/agent.sh"]
+#     paths: ["CLAUDE.md", ".sdlc/REVIEW.md", ".claude/**", ".sdlc/prompts/**", "evals/**", ".sdlc/scripts/agent.sh"]
 #   schedule:
 #     - cron: "0 3 * * *"
 name: Agent evals

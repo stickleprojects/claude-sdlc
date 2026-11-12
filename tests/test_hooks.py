@@ -134,7 +134,7 @@ def test_production_gate(command, blocked):
     ("rel_path", "env", "blocked"),
     [
         (".claude/settings.json", {}, True),
-        (".claude/hooks/production-gate.sh", {}, True),
+        (".sdlc/hooks/production-gate.sh", {}, True),
         (".git/config", {}, True),
         ("uv.lock", {}, True),
         (".env", {}, True),
@@ -142,9 +142,9 @@ def test_production_gate(command, blocked):
         ("certs/server.pem", {}, True),
         ("tests/test_x.py", {"SDLC_LOCK_TESTS": "1"}, True),
         ("tests/test_x.py", {}, False),
-        ("src/sdlc/cli.py", {"SDLC_LOCK_TESTS": "1"}, False),
-        (".claude/skills/intent/SKILL.md", {}, False),
-        ("docs/roles.md", {}, False),
+        (".sdlc/src/sdlc/cli.py", {"SDLC_LOCK_TESTS": "1"}, False),
+        (".sdlc/skills/intent/SKILL.md", {}, False),
+        (".sdlc/docs/roles.md", {}, False),
     ],
 )
 def test_protect_paths(rel_path, env, blocked):
@@ -191,26 +191,26 @@ AUTO = "enablePullRequest" + "AutoMerge"
         (f"{MERGE} 21 --auto --merge", True),
         (f"gh api graphql -f query='mutation {{ {AUTO}(input: {{pullRequestId: 1}}) }}'", True),
         (f"gh api graphql -f query='\n  mutation {{\n    {AUTO}(input: {{}})\n  }}'", True),
-        ("scripts/auto-merge.sh 21", False),
-        (f"grep -n {AUTO} scripts/auto-merge.sh", False),
+        (".sdlc/scripts/auto-merge.sh 21", False),
+        (f"grep -n {AUTO} .sdlc/scripts/auto-merge.sh", False),
     ],
 )
 def test_agent_cannot_merge_or_approve(command, blocked):
     result = hook("production-gate.sh", {"tool_input": {"command": command}})
     assert result.returncode == (2 if blocked else 0), result.stderr
     if blocked:
-        assert "human decision" in result.stderr or "scripts/auto-merge.sh" in result.stderr
+        assert "human decision" in result.stderr or ".sdlc/scripts/auto-merge.sh" in result.stderr
 
 
 def test_protect_paths_locks_a_bug_fixes_tests_after_its_failing_test(tmp_path):
-    # The hook asks scripts/tests-locked.sh, so nobody has to set SDLC_LOCK_TESTS=1.
+    # The hook asks .sdlc/scripts/tests-locked.sh, so nobody has to set SDLC_LOCK_TESTS=1.
     import shutil
 
     from conftest import commit, git, init_repo
 
     repo = init_repo(tmp_path / "r")
-    (repo / "scripts").mkdir()
-    shutil.copy2(REPO / "scripts/tests-locked.sh", repo / "scripts/tests-locked.sh")
+    (repo / ".sdlc" / "scripts").mkdir(parents=True)
+    shutil.copy2(REPO / ".sdlc/scripts/tests-locked.sh", repo / ".sdlc/scripts/tests-locked.sh")
     commit(repo, "bug: 0003-x", {"changes/0003-x/bug.md": "# bug\n"})
     git(repo, "switch", "-q", "-c", "build/0003-x")
     payload = {"tool_input": {"file_path": str(repo / "tests/test_x.py")}}

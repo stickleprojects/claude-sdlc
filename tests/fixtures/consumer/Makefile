@@ -3,7 +3,7 @@
 
 .PHONY: setup fmt lint test validate check exec-bits new-change status next clauses
 
-SDLC = PYTHONPATH=tools/sdlc/src python3 -m sdlc.cli
+SDLC = PYTHONPATH=.sdlc/src python3 -m sdlc.cli
 
 setup fmt lint test:
 	@true
@@ -28,6 +28,6 @@ status:
 next:
 	@$(SDLC) next $(CHANGE) $(if $(REF),--ref $(REF))
 
-# One block per requirement, for scripts/clause-check.sh.
+# One block per requirement, for .sdlc/scripts/clause-check.sh.
 clauses:
 	@$(SDLC) clauses $(CHANGE) $(if $(REF),--ref $(REF))

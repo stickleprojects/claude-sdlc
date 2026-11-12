@@ -83,7 +83,9 @@ def test_agreeing_roadmap_and_intents_pass(repo: Path) -> None:
 
 def test_the_shipped_template_passes_with_no_changes(repo: Path) -> None:
     (repo / "docs").mkdir()
-    (repo / "docs" / "roadmap.md").write_text((REPO / "templates" / "roadmap.md").read_text())
+    (repo / "docs" / "roadmap.md").write_text(
+        (REPO / ".sdlc" / "templates" / "roadmap.md").read_text()
+    )
     assert messages(repo) == []
 
 

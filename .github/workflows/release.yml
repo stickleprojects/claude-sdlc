@@ -2,7 +2,7 @@
 # release notes grouped by change type (scripts/release-notes.sh). GitHub Releases are the
 # changelog; a CHANGELOG.md file would need a push to the protected main branch.
 # Run from Actions → Release → Run workflow, or: gh workflow run release.yml
-# Framework-only: scripts/sync-sdlc.sh doesn't copy this file to consumer repos.
+# Framework-only: .sdlc/scripts/sync-sdlc.sh doesn't copy this file to consumer repos.
 name: Release
 
 on:

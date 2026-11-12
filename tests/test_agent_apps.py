@@ -1,4 +1,4 @@
-"""scripts/create-agent-apps.py: creating the agent's GitHub App with the manifest flow."""
+""".sdlc/scripts/create-agent-apps.py: creating the agent's GitHub App with the manifest flow."""
 
 import importlib.util
 import json
@@ -16,7 +16,8 @@ from conftest import REPO, run
 
 @pytest.fixture
 def apps(monkeypatch, tmp_path):
-    spec = importlib.util.spec_from_file_location("apps", REPO / "scripts/create-agent-apps.py")
+    script = REPO / ".sdlc/scripts/create-agent-apps.py"
+    spec = importlib.util.spec_from_file_location("apps", script)
     module = importlib.util.module_from_spec(spec)
     monkeypatch.setitem(sys.modules, "apps", module)  # dataclasses look the module up
     spec.loader.exec_module(module)
@@ -152,7 +153,7 @@ def test_repo_key_matches_the_bash_side(apps, tmp_path):
     (tmp_path / "sdlc/stickleprojects_jobhunt-app/agent.env").write_text(
         "SDLC_AGENT_APP_ID=1\nSDLC_AGENT_APP_SLUG=jobhunt-app-claude\n"
     )
-    out = run(["bash", str(REPO / "scripts/agent-identity.sh"), "show"], env=env)
+    out = run(["bash", str(REPO / ".sdlc/scripts/agent-identity.sh"), "show"], env=env)
     assert out.stdout.strip() == "1 jobhunt-app-claude"
 
 

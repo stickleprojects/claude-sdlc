@@ -24,7 +24,7 @@
     "SessionStart": [
       {
         "hooks": [
-          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/scripts/agent-session.sh --hook" }
+          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.sdlc/scripts/agent-session.sh --hook" }
         ]
       }
     ],
@@ -32,13 +32,13 @@
       {
         "matcher": "Edit|Write|MultiEdit|NotebookEdit",
         "hooks": [
-          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/protect-paths.sh" }
+          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.sdlc/hooks/protect-paths.sh" }
         ]
       },
       {
         "matcher": "Bash",
         "hooks": [
-          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/production-gate.sh" }
+          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.sdlc/hooks/production-gate.sh" }
         ]
       }
     ],
@@ -46,7 +46,7 @@
       {
         "matcher": "Edit|Write|MultiEdit",
         "hooks": [
-          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/format.sh" }
+          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.sdlc/hooks/format.sh" }
         ]
       }
     ]

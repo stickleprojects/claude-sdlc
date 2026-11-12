@@ -23,7 +23,7 @@ jobs:
   spec:
     runs-on: ${{ vars.SDLC_RUNNER && !github.event.issue.pull_request && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && vars.SDLC_RUNNER || 'ubuntu-latest' }}
     steps:
-      # Open spec PRs as the agent's App identity when it's set up (docs/agent-identity.md):
+      # Open spec PRs as the agent's App identity when it's set up (.sdlc/docs/agent-identity.md):
       # PRs opened with the default GITHUB_TOKEN don't run CI until someone approves them.
       - name: Agent identity token
         id: agent
@@ -41,7 +41,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          pending=$(scripts/spec-pr.sh pending)
+          pending=$(.sdlc/scripts/spec-pr.sh pending)
           echo "pending<<EOF" >> "$GITHUB_OUTPUT"; echo "$pending" >> "$GITHUB_OUTPUT"; echo "EOF" >> "$GITHUB_OUTPUT"
       - name: Generate specs
         if: steps.find.outputs.pending != ''
@@ -50,16 +50,16 @@ jobs:
           PENDING: ${{ steps.find.outputs.pending }}
         run: |
           npm install -g @anthropic-ai/claude-code
-          { cat prompts/spec-from-intent.md; echo "$PENDING"; } | scripts/agent.sh -
+          { cat .sdlc/prompts/spec-from-intent.md; echo "$PENDING"; } | .sdlc/scripts/agent.sh -
       - name: Open one PR per change
         if: steps.find.outputs.pending != ''
         env:
           GH_TOKEN: ${{ steps.agent.outputs.token || github.token }}
           SDLC_AGENT_APP_SLUG: ${{ steps.agent.outputs.app-slug }}
-          # Opt-in auto-merge for the spec PR (scripts/auto-merge.sh); empty means off.
+          # Opt-in auto-merge for the spec PR (.sdlc/scripts/auto-merge.sh); empty means off.
           SDLC_AUTO_MERGE: ${{ vars.SDLC_AUTO_MERGE }}
           SDLC_AUTO_MERGE_CONFIRMED: ${{ vars.SDLC_AUTO_MERGE_CONFIRMED }}
           PENDING: ${{ steps.find.outputs.pending }}
         run: |
           # shellcheck disable=SC2086  # one change folder per word
-          scripts/spec-pr.sh open $PENDING
+          .sdlc/scripts/spec-pr.sh open $PENDING
