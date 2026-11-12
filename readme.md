@@ -143,15 +143,15 @@ cd <name>
 
 Add the two files that are yours, the stack half of the contract:
 
-- **A `Makefile`** with the targets `setup`, `fmt`, `lint`, `test`, `validate`, `check`, `new-change`, `status` and `next`, plus `sync-sdlc` (`.sdlc/scripts/sync-sdlc.sh $(REF)`) as a shortcut. The pipeline CLI has no dependencies, so `SDLC = PYTHONPATH=.sdlc/src python3 -m sdlc.cli` is enough to run it.
-  - The optional targets (`coverage`, `clauses`, `evals`, `deploy-dev`, `deploy-prod`) switch on what they name. The sync tells you which ones your Makefile lacks.
+- **A `Makefile`** with `include .sdlc/sdlc.mk` and the stack contract: `setup`, `fmt`, `lint`, `test`, `validate` (which runs `$(SDLC) check`) and `check`. `.sdlc/sdlc.mk` brings the pipeline's own targets (`new-change`, `status`, `next`, `clauses`, `exec-bits`, `evals`, `sync-sdlc`), so a new one never means editing your Makefile. The pipeline CLI has no dependencies, and by default it runs with `python3`.
+  - The optional targets (`coverage`, `deploy-dev`, `deploy-prod`) switch on what they name. The sync tells you which ones your Makefile lacks.
   - [tests/fixtures/consumer/Makefile](tests/fixtures/consumer/Makefile) is the smallest Makefile that works. [sdlc-sandbox's](https://github.com/stickleprojects/sdlc-sandbox/blob/main/Makefile) is a real TypeScript stack.
 - **`.github/actions/setup-stack/action.yml`**, which installs your toolchain in CI and runs `make setup`.
 
 ### 2. Pull the framework
 
 ```
-mkdir -p scripts
+mkdir -p .sdlc/scripts
 gh api repos/stickleprojects/claude-sdlc/contents/.sdlc/scripts/sync-sdlc.sh \
   -H "Accept: application/vnd.github.raw" > .sdlc/scripts/sync-sdlc.sh
 git add -A && git commit -m "chore: project skeleton"   # the sync needs a clean tree
@@ -161,7 +161,15 @@ make setup && make check                                 # must end with "ok: N 
 git push -u origin HEAD                                  # before step 3 turns on branch protection
 ```
 
-The sync copies every framework-owned file: hooks, skills, workflows, templates, prompts, `.sdlc/REVIEW.md`, the scripts and the CLI in `tools/sdlc/`. It records the version in `.sdlc-version` and the installed files in `.sdlc-files`. Nothing else comes across, so write your project's own `CLAUDE.md`.
+The framework lives in one folder, `.sdlc/`: hooks, skills, templates, prompts, `REVIEW.md`, the scripts and the CLI. Claude Code and GitHub only look in their own folders, so the sync also writes a few small files there:
+
+- a stub per skill in `.claude/skills/` and for the verifier in `.claude/agents/`, each forwarding to `.sdlc/`;
+- `.claude/settings.json`, whose hooks all call `.sdlc/hooks/dispatch.sh`;
+- the workflows in `.github/workflows/`.
+
+It records the version in `.sdlc/version` and the installed files in `.sdlc/files`. Nothing else comes across, so write your project's own `CLAUDE.md`.
+
+**To change the pipeline for your project,** put your version of a skill, template, prompt or `REVIEW.md` in `.sdlc-local/` at the same path. It can be a whole file, or `<!-- extends -->` with only the blocks you change. The sync never writes there. See [.sdlc/docs/overrides.md](.sdlc/docs/overrides.md).
 
 ### 3. Configure GitHub: one script
 
@@ -246,11 +254,11 @@ Mostly, though, you'll just talk to Claude: `/intent`, `/plan`, `/build`, `/pr`,
 
 ## Guardrails
 
-Rules that must always hold are enforced by hooks and CI, not left to the model's goodwill.
+Rules that must always hold are enforced by hooks and CI, not left to the model's goodwill. Every hook runs through `.sdlc/hooks/dispatch.sh`, which follows `.sdlc/hooks/hooks.tsv` and then the project's own `.sdlc-local/hooks/hooks.tsv`. A project can add hooks, but it can't replace these.
 
 | Guardrail | How |
 |---|---|
-| The agent can't edit its own hooks, settings, lockfiles or `.env*` | `protect-paths.sh` (PreToolUse on every edit) |
+| The agent can't edit its own hooks (the framework's or the project's), settings, lockfiles or `.env*` | `protect-paths.sh` (PreToolUse on every edit) |
 | No `make deploy-prod`, pushes to `main`, force pushes, merges or approvals | `production-gate.sh` (PreToolUse on every shell command) |
 | Edited files are formatted through `make fmt` | `format.sh` (PostToolUse) |
 | A bug's failing test can't be edited once committed | `.sdlc/scripts/tests-locked.sh` |
@@ -272,13 +280,13 @@ flowchart LR
 ```
 
 By hand: run `make sync-sdlc` (latest release) or `make sync-sdlc REF=main`, then review the staged changes in a PR.
-- **Your files are safe.** Files the project added, even inside `.github/workflows/` or `.claude/skills/`, are never touched. Local edits to framework files are never lost either: the sync merges them three ways with the new version and lists the files it merged. A conflict is left unstaged with conflict markers, and the sync exits non-zero.
+- **Your files are safe.** `.sdlc-local/` and files the project added, even inside `.github/workflows/` or `.claude/skills/`, are never touched. The sync lists your overrides of files the update changed, so you can re-read them. Edits made inside `.sdlc/` are never lost either: the sync merges them three ways with the new version and lists the files it merged. A conflict is left unstaged with conflict markers, and the sync exits non-zero.
 - **It tells you what's missing:** the `make` targets your Makefile lacks, and, when `gh` is logged in, the repo secrets and variables the workflows need.
 - **To try framework changes before pushing them,** run `SDLC_SOURCE=../claude-sdlc make sync-sdlc REF=<branch>`.
 
 ## Working on the framework
 
-Clone this repo and run `make setup && make check`. `make check` runs about 600 tests, none of which call Claude:
+Clone this repo and run `make setup && make check`. `make check` runs about 800 tests, none of which call Claude:
 
 | Layer | What | Where |
 |---|---|---|

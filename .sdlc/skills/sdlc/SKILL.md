@@ -10,10 +10,10 @@ The framework's files (skills, hooks, workflows, templates, the `sdlc` CLI) come
 ## 1. Where the repo is
 
 ```
-cat .sdlc-version        # line 1: <owner/repo>@<ref>, line 2: the commit
+cat .sdlc/version 2>/dev/null || cat .sdlc-version   # line 1: <owner/repo>@<ref>, line 2: the commit
 ```
 
-No `.sdlc-version` means the framework was never synced here: point at the readme's *Getting started* in claude-sdlc and stop.
+Versions before v0.11 kept this in `.sdlc-version` at the root. Neither file means the framework was never synced here: point at the readme's *Getting started* in claude-sdlc and stop.
 
 Find the latest release of that repo (`SDLC_REPO` overrides it, default `stickleprojects/claude-sdlc`):
 

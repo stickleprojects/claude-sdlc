@@ -33,6 +33,12 @@ The framework itself. Its changes are tracked as GitHub issues (label `pipeline`
 
 ## Architecture
 
+- **Layout (#133):** everything synced to consumers lives in `.sdlc/`, and `scripts/` holds only the release scripts plus a shim for older syncs. Claude Code and GitHub need a few files in their own folders:
+  - a stub per skill in `.claude/skills/<name>/SKILL.md` (the frontmatter and one line that runs `.sdlc/scripts/resolve.sh`) and for the verifier in `.claude/agents/`. A skill's body lives in `.sdlc/skills/<name>/SKILL.md`, so edit the body there and the name or description in the stub;
+  - `.claude/settings.json`, whose hooks all call `.sdlc/hooks/dispatch.sh <event>`. A new hook is a row in `.sdlc/hooks/hooks.tsv`, never a settings change;
+  - the workflows.
+
+  Framework make targets go in `.sdlc/sdlc.mk`, not in a consumer's Makefile. A consumer changes framework files through overrides in `.sdlc-local/` (`.sdlc/src/sdlc/resolve.py`, `.sdlc/docs/overrides.md`), so anything that reads a skill, template, prompt or `REVIEW.md` must read it through the resolver.
 - **Stack contract:** hooks, CI and evals call only the `make` targets above, never `uv`, `ruff` or `pytest` directly. Language-specific details live only in `Makefile` and `.github/actions/setup-stack/`. Keep it that way.
 - **Agent adapter:** CI and evals call AI only through `.sdlc/scripts/agent.sh`. Don't call `claude -p` from workflows directly. (`claude-code-action` in the review and mention workflows is the one exception.)
 - **Artifact chain:** `changes/NNNN-name/{intent,spec,plan}.md`. The required `##` sections are defined in `.sdlc/src/sdlc/artifacts.py` (`CHAIN`) and must match `.sdlc/templates/`. A test enforces this. Change both together.

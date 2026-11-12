@@ -1378,6 +1378,13 @@ def test_agent_allows_the_make_targets_the_skills_run_first():
     for target in ("make next:*", "make new-change:*", "make validate"):
         assert f"Bash({target})" in allowed
 
+    # Every stub starts by running the resolver (#133): without it no skill loads in CI.
+    assert "Bash(.sdlc/scripts/resolve.sh:*)" in allowed
+    settings = json.loads((REPO / ".claude/settings.json").read_text())
+    assert "Bash(.sdlc/scripts/resolve.sh:*)" in settings["permissions"]["allow"]
+    for stub in [*REPO.glob(".claude/skills/*/SKILL.md"), *REPO.glob(".claude/agents/*.md")]:
+        assert "`.sdlc/scripts/resolve.sh " in stub.read_text(), stub
+
 
 # --- clause check (#47) -------------------------------------------------------------------
 
@@ -2647,3 +2654,15 @@ def test_the_gate_checks_what_the_review_found():
     assert "<!-- review-findings: important=<N> nit=<M> -->" in review
     assert "-f subject_type=file -f path=<file>" in review and "`**Important`" in review
     assert synced(".sdlc/scripts/review-findings.sh")
+
+
+def test_v0_11_0_upgrade_steps_match_what_the_sync_prints():
+    notes = (REPO / "docs/release-notes/v0.11.0.md").read_text()
+    steps = notes.split("## Upgrade steps", 1)[1]
+    sync = (REPO / ".sdlc/scripts/sync-sdlc.sh").read_text()
+    for message in ("still use the old paths", "kept your local changes", "include .sdlc/sdlc.mk"):
+        assert message in steps and message in sync, message
+    assert "your security policy is the project's own" in sync
+    assert ".sdlc-local/skills/security-policy/SKILL.md" in steps
+    assert (REPO / ".sdlc/docs/overrides.md").is_file() and ".sdlc/docs/overrides.md" in notes
+    assert re.findall(r"^(\d)\. ", steps, re.M) == [str(n) for n in range(1, 9)]

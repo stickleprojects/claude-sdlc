@@ -4,7 +4,7 @@ Status: **plan only, not built yet.**
 
 ## Goal
 
-Short animations with CLI commands typed on screen, one per role from [roles.md](roles.md). A viewer should see their part of the loop in under a minute.
+Short animations with CLI commands typed on screen, one per role from [roles.md](../.sdlc/docs/roles.md). A viewer should see their part of the loop in under a minute.
 
 ## Tooling: VHS
 

@@ -206,7 +206,7 @@ The production gate hook (`.sdlc/hooks/production-gate.sh`) blocks Claude from r
 | AI tool adapter | `.sdlc/scripts/agent.sh` |
 | Build-time guardrails | `.claude/settings.json`, `.sdlc/hooks/` |
 | CI and automation | `.github/workflows/` |
-| Framework version and updates | `.sdlc-version`; run `/sdlc` in Claude Code to see what's new and open the sync PR (`make sync-sdlc` by hand) |
+| Framework version and updates | `.sdlc/version`; your changes to the pipeline go in `.sdlc-local/` ([overrides](overrides.md)); run `/sdlc` in Claude Code to see what's new and open the sync PR (`make sync-sdlc` by hand) |
 | Agent evals | `evals/`; run with `make evals` |
 | Words `make validate` reads as "nothing here" (`None.`, `TBD`, …) | defaults in `.sdlc/src/sdlc/placeholders.toml`; a repo adds to them (`additional_keywords`) or replaces them (`keywords`) in `.sdlc.toml`, which the sync never touches |
 | Claude's GitHub identity | `.sdlc/scripts/agent-identity.sh`, `.sdlc/scripts/agent-session.sh`; setup in [agent-identity.md](agent-identity.md) |
@@ -222,4 +222,4 @@ The production gate hook (`.sdlc/hooks/production-gate.sh`) blocks Claude from r
 
 ## Not built yet
 
-- **Service owner (Maintain stage):** monitoring breaches produce a new `intent.md`. See the roadmap in the [readme](../readme.md).
+- **Service owner (Maintain stage):** monitoring breaches produce a new `intent.md`. See the roadmap in the [readme](../../readme.md).
