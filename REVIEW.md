@@ -1,6 +1,6 @@
 # REVIEW.md
 
-The policy for automated PR review (`.github/workflows/claude-review.yml`). Review findings are comments only. They never approve or block a PR: a human merges it (in team mode, after a code owner's approval). The agent that wrote a change never reviews, approves or merges it.
+The policy for automated PR review (`.github/workflows/claude-review.yml`). Review findings are comments and threads. The review never approves a PR; its open Important threads hold the merge until they're resolved, and a human merges it (in team mode, after a code owner's approval). The agent that wrote a change never reviews, approves or merges it.
 
 ## Passes
 
@@ -43,17 +43,27 @@ The product owner and code owners read findings on GitHub, often without the fil
 - **Suggest a fix**, as replacement wording or code where you can.
 - **Say who decides:** *product owner* for intent and spec content, *engineer* for plan and code.
 
+## Posting findings
+
+A finding the summary mentions but no thread holds blocks nothing: conversation resolution only sees threads (spellbound3d#124 merged with three Important findings in its summary and no threads, #130).
+
+- **Every Important finding is its own review thread,** and its first line starts with `**Important`: `**Important:**`, or `**Important (product owner decides):**` to name who decides. Put it on the line it's about with the inline comment tool. When no line in the diff fits (a finding about the whole PR, such as a missing change folder or spec, or a binary file), comment on the most relevant file in the diff instead, with exactly this command: `gh api repos/<repo>/pulls/<N>/comments -f subject_type=file -f path=<file> -f commit_id=<head sha> -f body=<finding>`. Never leave an Important finding only in the summary.
+- **A Nit may get a thread too,** starting with `**Nit:**`. Nits are never counted.
+- **On a re-review,** an earlier Important thread that is still unresolved still counts: don't post it again. A finding whose thread was resolved but which still isn't addressed gets a new thread.
+- **The summary's last line** is a hidden count: `<!-- review-findings: important=<N> nit=<M> -->`, where N is the number of unresolved Important threads once this review is posted (new ones and earlier ones still open). The `claude-review` status fails when the line is missing, or when N isn't the number of unresolved `**Important` threads the reviewer started (`scripts/review-findings.sh`). That's the gate: an approval given before the review posts is safe only because of it.
+
 ## Summary comment
 
 Keep exactly **one** summary comment per PR, and replace it on each new review rather than adding another. It contains:
 
 1. Each **Descope: needs approval** finding, then the descopes, each quoted with who approved it or "not approved", the human checks still to try, and the plan's Risks that need a decision. These come first.
 2. The number of findings per severity, and whether each earlier finding is now resolved.
-3. One line per open finding: a short quote of the text it's about, plus the owner who decides.
+3. One line per open finding: a short quote of the text it's about, the owner who decides, and a link to its thread.
 4. One line on whether the change matches its spec, saying what was compared, and claiming only what was checked. For example: "Every clause of R1–R45 traced to an acceptance criterion and to a plan step and test (112 clauses)", or "IDs only: every acceptance criterion has a Verification row".
 5. How to handle the findings, as a one-line reminder:
    - Whoever decides runs `/pr <N>` in Claude Code: the product owner for `intent:`, `bug:` and `spec:` PRs, the engineer for the rest.
    - Tagging `@claude` on a thread is optional. It hands that finding to the GitHub bot instead, so don't do both for one finding.
+6. Last, the hidden count line from [Posting findings](#posting-findings).
 
 ## Handling findings
 

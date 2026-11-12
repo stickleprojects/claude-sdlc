@@ -2453,3 +2453,146 @@ def test_the_gate_needs_the_summary_not_just_a_green_action():
     assert "if: failure() && steps.done.outputs.reported != 'true'" in failed
     sync = (REPO / "scripts/sync-sdlc.sh").read_text()
     assert '"scripts/review-posted.sh:scripts/review-posted.sh"' in sync
+
+
+# A gh serving the PR's comments and its review threads (GraphQL), applying --jq with real jq.
+FAKE_GH_FINDINGS = r"""#!/usr/bin/env bash
+[[ "$1" == api ]] || exit 1
+echo "$*" >> "$FAKE_CALLS"
+case "$2" in
+  graphql) file="$FAKE_THREADS" ;;
+  repos/o/r/issues/7/comments) file="$FAKE_COMMENTS" ;;
+  *) echo "unexpected: $2" >&2; exit 1 ;;
+esac
+[[ -e "$file" ]] || { echo "gh: HTTP 502" >&2; exit 1; }
+jqx=.
+while (($#)); do [[ "$1" == --jq ]] && jqx="$2"; shift; done
+jq -r "$jqx" "$file"
+"""
+
+# spellbound3d#124's summary (shortened): three Important findings, and no thread for any (#130).
+SB124_SUMMARY = (
+    "## Review of PR #124\n\n**Findings: 3 Important, 0 Nit.** There were no earlier findings.\n"
+    "1. Important: no change folder.\n2. Important: no acceptance criteria.\n"
+    "3. Important: the unapproved descopes above.\n"
+)
+
+
+def summary(important=None, nit=0, text="## Review\n"):
+    if important is None:
+        return text
+    return f"{text}\n<!-- review-findings: important={important} nit={nit} -->\n"
+
+
+def thread(body="**Important:** x", login="claude", resolved=False):
+    return {
+        "isResolved": resolved,
+        "comments": {"nodes": [{"author": {"login": login}, "body": body}]},
+    }
+
+
+@pytest.fixture
+def review_findings(tmp_path):
+    fake = tmp_path / "fakebin"
+    fake.mkdir()
+    (fake / "gh").write_text(FAKE_GH_FINDINGS)
+    (fake / "gh").chmod(0o755)
+    comments, threads = tmp_path / "comments.json", tmp_path / "threads.json"
+
+    def go(bodies, found=(), logins=None, read_threads=True):
+        logins = logins or ["claude[bot]"] * len(bodies)
+        comments.write_text(
+            json.dumps(
+                [{"user": {"login": u}, "body": b} for u, b in zip(logins, bodies, strict=True)]
+            )
+        )
+        if read_threads:
+            page = {"pageInfo": {"hasNextPage": False, "endCursor": None}, "nodes": list(found)}
+            data = {"data": {"repository": {"pullRequest": {"reviewThreads": page}}}}
+            threads.write_text(json.dumps(data))
+        else:
+            threads.unlink(missing_ok=True)
+        env = {
+            "PATH": f"{fake}:{os.environ['PATH']}",
+            "GITHUB_REPOSITORY": "o/r",
+            "FAKE_COMMENTS": str(comments),
+            "FAKE_THREADS": str(threads),
+            "FAKE_CALLS": str(tmp_path / "calls"),
+        }
+        return run(["bash", str(REPO / "scripts/review-findings.sh"), "7"], env=env)
+
+    return go
+
+
+def test_review_findings_fails_spellbound3d_124(review_findings):
+    # No count line: it fails closed.
+    result = review_findings([SB124_SUMMARY])
+    assert result.returncode == 1 and "no findings count line" in result.stdout
+    # With the count line, three findings against no threads.
+    result = review_findings([summary(3, text=SB124_SUMMARY)])
+    assert result.returncode == 1
+    assert "lists 3 Important finding(s) but 0 open Important thread(s)" in result.stdout
+    assert len(result.stdout.strip()) <= 140, "fits a commit status description"
+
+
+def test_review_findings_passes_when_each_finding_has_an_open_thread(review_findings, tmp_path):
+    found = [
+        thread("**Important:** no change folder."),
+        thread("**Important (product owner decides):** no criteria.", login="claude[bot]"),
+        thread("**Important:** fixed earlier.", resolved=True),  # resolved: not counted
+        thread("**Nit:** naming."),  # nits never count
+        thread("**Important:** a person's own note.", login="kieron"),  # not the reviewer's
+    ]
+    result = review_findings([summary(2)], found)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "2 open Important finding(s)" in result.stdout
+    calls = (tmp_path / "calls").read_text()
+    assert "graphql --paginate" in calls and "owner=o" in calls and "name=r" in calls
+
+
+def test_review_findings_passes_a_clean_review(review_findings):
+    assert review_findings([summary(0)]).returncode == 0
+
+
+@pytest.mark.parametrize(
+    "count, found",
+    [
+        (0, [thread()]),  # a thread the count leaves out
+        (2, [thread()]),  # a finding with no thread
+        (1, [thread(resolved=True)]),  # its thread was resolved, the finding still listed
+    ],
+)
+def test_review_findings_fails_when_the_count_and_threads_differ(review_findings, count, found):
+    assert review_findings([summary(count)], found).returncode == 1
+
+
+def test_review_findings_reads_the_latest_summary_from_the_reviewer(review_findings):
+    bodies = [summary(2), summary(0), summary(5)]
+    logins = ["claude[bot]", "claude[bot]", "someone"]  # someone else's count line is ignored
+    assert review_findings(bodies, logins=logins).returncode == 0
+
+
+def test_review_findings_fails_when_it_cannot_read(review_findings):
+    assert review_findings([summary(0)], read_threads=False).returncode == 3
+
+
+def test_the_gate_checks_what_the_review_found():
+    workflow = (REPO / ".github/workflows/claude-review.yml").read_text()
+    steps = workflow.split("\n      - ")
+    step = {s.split("\n", 1)[0].removeprefix("name: "): s for s in steps}
+    done = step["Mark the review as done"]
+    # In order: the claude-*.yml exception, then a summary, then a thread per finding.
+    order = ['"$SKIPPED" == true', "review-posted.sh", 'scripts/review-findings.sh "$PR"']
+    assert [done.index(x) for x in order] == sorted(done.index(x) for x in order)
+    assert done.count('echo "reported=true"') == 2 and done.count("exit 1") == 2
+    action = next(s for s in steps if s.startswith("uses: anthropics/claude-code-action"))
+    assert "classify_inline_comments: false" in action
+    assert (
+        "pulls/${{ github.event.pull_request.number }}/comments -f subject_type=file:*)" in action
+    )
+    assert "<!-- review-findings: important=<N> nit=<M> -->" in action
+    review = (REPO / "REVIEW.md").read_text()
+    assert "## Posting findings" in review
+    assert "<!-- review-findings: important=<N> nit=<M> -->" in review
+    assert "-f subject_type=file -f path=<file>" in review and "`**Important`" in review
+    assert "review-findings.sh" in (REPO / "scripts/sync-sdlc.sh").read_text()
