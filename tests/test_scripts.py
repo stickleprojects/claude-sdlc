@@ -2810,16 +2810,21 @@ PR_PUSH = {
         "event": {"pull_request": {"number": 7}},
     }
 }
-MAIN_PUSH = {"github": {"event_name": "push", "ref": "refs/heads/main", "event": {}}}
+MAIN_PUSH = {
+    "github": {"event_name": "push", "ref": "refs/heads/main", "sha": "abc123", "event": {}}
+}
 
 
 def test_ci_cancels_a_prs_stale_run_but_never_one_on_main():
     group_expr, cancel = concurrency("ci.yml")
     assert group(group_expr, PR_PUSH) == "ci-7"
     assert gh_expr(cancel, PR_PUSH) is True
-    # Every commit on main gets its own result: its runs queue in their own group.
-    assert group(group_expr, MAIN_PUSH) == "ci-refs/heads/main"
+    # Every commit on main gets its own result. A group keeps one pending run, and a newer one
+    # replaces it even without cancel-in-progress, so each push to main has a group of its own.
+    assert group(group_expr, MAIN_PUSH) == "ci-abc123"
     assert gh_expr(cancel, MAIN_PUSH) is False
+    next_merge = {"github": {**MAIN_PUSH["github"], "sha": "def456"}}
+    assert group(group_expr, next_merge) != group(group_expr, MAIN_PUSH)
     # Two PRs never share a group, so one PR's push can't cancel another's CI.
     other = {"github": {**PR_PUSH["github"], "event": {"pull_request": {"number": 8}}}}
     assert group(group_expr, other) != group(group_expr, PR_PUSH)
