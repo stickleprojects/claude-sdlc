@@ -43,13 +43,16 @@ jobs:
         run: |
           pending=$(.sdlc/scripts/spec-pr.sh pending)
           echo "pending<<EOF" >> "$GITHUB_OUTPUT"; echo "$pending" >> "$GITHUB_OUTPUT"; echo "EOF" >> "$GITHUB_OUTPUT"
+      # Into the job's temp folder, never globally (#136): a self-hosted runner keeps its home.
+      - name: Install Claude Code
+        if: steps.find.outputs.pending != ''
+        run: .sdlc/scripts/install-claude.sh
       - name: Generate specs
         if: steps.find.outputs.pending != ''
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           PENDING: ${{ steps.find.outputs.pending }}
         run: |
-          npm install -g @anthropic-ai/claude-code
           { .sdlc/scripts/resolve.sh prompts/spec-from-intent.md; echo "$PENDING"; } | .sdlc/scripts/agent.sh -
       - name: Open one PR per change
         if: steps.find.outputs.pending != ''

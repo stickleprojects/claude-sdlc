@@ -106,8 +106,9 @@ jobs:
           BASE: ${{ github.event.pull_request.base.sha }}
         run: |
           out="$RUNNER_TEMP/clause-check.json"
-          if npm install -g @anthropic-ai/claude-code >/dev/null 2>&1 \
-              && .sdlc/scripts/clause-check.sh --changed-since "$BASE" > "$out" 2> "$RUNNER_TEMP/clause-check.err"; then
+          # Claude Code goes in the job's temp folder, never globally (#136).
+          if bin="$(.sdlc/scripts/install-claude.sh 2> "$RUNNER_TEMP/clause-check.err")" \
+              && PATH="$bin:$PATH" .sdlc/scripts/clause-check.sh --changed-since "$BASE" > "$out" 2> "$RUNNER_TEMP/clause-check.err"; then
             :
           else
             jq -n --arg e "$(tail -n 5 "$RUNNER_TEMP/clause-check.err" 2>/dev/null)" \

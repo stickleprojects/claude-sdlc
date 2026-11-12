@@ -48,8 +48,8 @@ jobs:
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         run: |
-          npm install -g @anthropic-ai/claude-code
-          make evals
+          bin="$(.sdlc/scripts/install-claude.sh)"  # job-local, never global (#136)
+          PATH="$bin:$PATH" make evals
       - name: Tag and publish
         if: ${{ !inputs.dry_run }}
         env:

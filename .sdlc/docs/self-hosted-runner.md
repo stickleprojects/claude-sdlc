@@ -36,7 +36,7 @@ Each of these can run code that nobody with access to the repo wrote. Comments g
 - Linux with `bash`, `git`, `make`, `curl` and `jq`, plus the `gh` CLI (the review and merge scripts call it).
 - **A writable home directory** for the runner's user: toolchains and caches go into `~/.cache` and `~/.local`. This is easy to miss when the runner has its own user, as recommended below.
 - Whatever the repo's `.github/actions/setup-stack/` expects to find rather than installs itself. claude-sdlc's installs `uv` with `astral-sh/setup-uv`, so it needs nothing more. Other stacks differ. For example, one that makes a virtualenv needs `python3` with its `venv` module (on Debian and Ubuntu, the separate `python3-venv` package). One that downloads and checks a toolchain needs `unzip` and `sha512sum`.
-- Nothing for the JavaScript actions: the runner brings its own Node, and `claude-code-action` installs Bun itself.
+- `node` and `npm` on the `PATH`, for the jobs that run Claude Code outside the action (spec from intent, the clause check, agent evals). `.sdlc/scripts/install-claude.sh` installs a pinned version into the job's `$RUNNER_TEMP`, never globally, so it can't collide with the `claude` that `claude-code-action` leaves in `~/.local/bin` or leak into other jobs (#136). The JavaScript actions need nothing: the runner brings its own Node for them, and `claude-code-action` installs Bun itself.
 - `actions/cache` works, but it saves to GitHub's cache service, so the runner still needs to reach GitHub.
 
 Change the runner service's user between jobs, never during one. A job that's running when the service restarts fails with "The runner has received a shutdown signal".
