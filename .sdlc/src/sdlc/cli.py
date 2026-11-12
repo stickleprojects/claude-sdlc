@@ -142,6 +142,25 @@ def check_commits(root: Path) -> list[str]:
     return problems
 
 
+UPGRADE_PENDING = Path(".sdlc/upgrade-pending.md")
+
+
+def check_upgrade(root: Path) -> list[Problem]:
+    """A framework sync left upgrade steps to do (#20): its PR can't merge until they're done."""
+    path = root / UPGRADE_PENDING
+    if not path.is_file():
+        return []
+    releases = re.findall(r"^# (v\S+)$", path.read_text(encoding="utf-8"), re.MULTILINE)
+    which = f" from {', '.join(releases)}" if releases else ""
+    return [
+        Problem(
+            path,
+            f"the framework sync left upgrade steps{which} to do: run /sdlc to work through "
+            "them, then delete this file",
+        )
+    ]
+
+
 def cmd_check(root: Path) -> int:
     words = placeholders(root)
     changed = branch_changes(root)
@@ -154,6 +173,7 @@ def cmd_check(root: Path) -> int:
     problems += check_config(root)
     problems += check_commits(root)
     problems += check_roadmap(root)
+    problems += check_upgrade(root)
     problems += [Problem(path, message) for path, message in check_overrides(root)]
     for problem in problems:
         print(problem, file=sys.stderr)

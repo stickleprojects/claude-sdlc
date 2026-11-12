@@ -200,6 +200,8 @@ def _notes(repo, version="v0.5.0"):
 
 
 def test_release_notes_group_by_type(released):
+    upgrade = {"docs/release-notes/v0.5.0.md": "## Upgrade steps\n\n1. Rename it.\n"}
+    commit(released, "docs: upgrade steps", upgrade)
     commit(released, "Merge pull request #11 from a/b\n\nfeat: add migrate skill")
     commit(released, "fix(hooks): gate false positive (#12)")
     commit(released, "ci: faster checks (#13)")
@@ -228,6 +230,45 @@ def test_release_notes_include_the_versions_hand_written_notes(released):
     assert notes.index("## Features") < notes.index("## Optional: ADRs")
     assert notes.index("How to adopt them.") < notes.index("## Upgrading a consumer repo")
     assert "## Older" not in notes
+
+
+def _notes_result(repo, version="v0.5.0"):
+    return run(["bash", str(REPO / "scripts/release-notes.sh"), version, "o/r"], cwd=repo)
+
+
+def test_a_breaking_release_without_upgrade_steps_fails(released):
+    """#20: a breaking release tells consumers what to change, or it isn't released."""
+    commit(released, "feat!: rename validate target (#14)")
+    commit(released, "fix: unrelated (#15)")
+    result = _notes_result(released)
+    assert result.returncode == 1
+    assert "docs/release-notes/v0.5.0.md has no '## Upgrade steps' section" in result.stderr
+    assert "- rename validate target (#14)" in result.stderr
+    assert "unrelated" not in result.stderr
+
+
+def test_a_breaking_change_in_the_body_needs_upgrade_steps_too(released):
+    commit(released, "feat: new contract (#16)\n\nBREAKING CHANGE: the target is renamed")
+    assert _notes_result(released).returncode == 1
+
+
+def test_notes_without_upgrade_steps_dont_count_for_a_breaking_release(released):
+    notes = {"docs/release-notes/v0.5.0.md": "## Optional: ADRs\n\nNo steps.\n"}
+    commit(released, "feat!: rename (#14)", notes)
+    assert _notes_result(released).returncode == 1
+
+
+def test_a_breaking_release_with_upgrade_steps_is_released(released):
+    notes = {"docs/release-notes/v0.5.0.md": "## Upgrade steps\n\n1. Rename it.\n"}
+    commit(released, "feat!: rename (#14)", notes)
+    result = _notes_result(released)
+    assert result.returncode == 0, result.stderr
+    assert "1. Rename it." in result.stdout
+
+
+def test_a_release_without_breaking_changes_needs_no_upgrade_steps(released):
+    commit(released, "feat: add a thing (#17)")
+    assert _notes_result(released).returncode == 0
 
 
 def test_release_notes_omit_empty_sections(released):
