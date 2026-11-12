@@ -122,11 +122,12 @@ main() {
   # differs is a conflict. Writing in place, never delete-then-copy, matters: this script
   # is one of the files, and deleting an open file on some filesystems (NTFS via FUSE)
   # leaves a stray .fuse_hidden* behind. Files the consumer added are never touched.
-  local previous="" base_sha="" base_ref="" files_list_src="" version_src=""
+  local previous="" base_sha="" base_ref="" files_list_src="" version_src="" upgrading=0
   [[ -f "$files_list" ]] || files_list_src="$old_files_list"
   [[ -f "$version_file" ]] || version_src="$old_version_file"
   [[ -f "${files_list_src:-$files_list}" ]] && previous="$(cat "${files_list_src:-$files_list}")"
   if [[ -f "${version_src:-$version_file}" ]]; then
+    upgrading=1  # an earlier sync installed the framework, so this one is an upgrade
     base_ref="$(sed -n '1s/^[^@]*@//p' "${version_src:-$version_file}")"
     base_sha="$(sed -n '2p' "${version_src:-$version_file}")"
     git -C "$tmp/fw" cat-file -e "${base_sha}^{commit}" 2>/dev/null || base_sha=""
@@ -395,6 +396,54 @@ main() {
   printf '%s@%s\n%s\n' "$repo" "$ref" "$sha" > "$version_file"
   rm -f -- "$old_files_list" "$old_version_file"
 
+  # Upgrades (#20). A release can ship a script for the mechanical part of its upgrade
+  # (.sdlc/migrations/<version>.sh, run here) and steps for Claude (the "## Upgrade steps" in
+  # docs/release-notes/<version>.md, which /sdlc works through). A release counts as new when
+  # its file wasn't in the framework at the previous sync's commit, or at its release tag when
+  # that commit isn't in the framework's history. With neither, every release counts, so
+  # scripts must be safe to run twice. A first install has nothing to upgrade.
+  local pending=".sdlc/upgrade-pending.md" rel_file name ran=() failed=() steps=() since="$base_sha"
+  if [[ -z "$since" && "$base_ref" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    since="$(git -C "$tmp/fw" rev-parse -q --verify "refs/tags/$base_ref^{commit}" 2>/dev/null)" || since=""
+  fi
+  new_since_base() {  # <framework path>
+    [[ -z "$since" ]] || ! git -C "$tmp/fw" cat-file -e "$since:$1" 2>/dev/null
+  }
+  if ((upgrading)); then
+    while IFS= read -r rel_file; do
+      [[ -n "$rel_file" ]] && new_since_base ".sdlc/migrations/$rel_file" || continue
+      if SDLC_UPGRADE_FROM="${base_ref:-unknown}" SDLC_UPGRADE_TO="$ref" \
+        bash ".sdlc/migrations/$rel_file" > "$tmp/migration.log" 2>&1; then
+        ran+=(".sdlc/migrations/$rel_file")
+      else
+        failed+=(".sdlc/migrations/$rel_file")
+      fi
+      sed 's/^/    /' "$tmp/migration.log"
+    done < <(cd "$tmp/fw/.sdlc/migrations" 2>/dev/null && ls v*.sh 2>/dev/null | sort -V)
+    while IFS= read -r rel_file; do
+      [[ -n "$rel_file" ]] && new_since_base "docs/release-notes/$rel_file" || continue
+      grep -qx '## Upgrade steps' "$tmp/fw/docs/release-notes/$rel_file" || continue
+      steps+=("$rel_file")
+    done < <(cd "$tmp/fw/docs/release-notes" 2>/dev/null && ls v*.md 2>/dev/null | sort -V)
+  fi
+  if ((${#steps[@]})); then
+    # Appended, so steps left from an unfinished upgrade stay. make validate fails while the
+    # file exists, so a sync PR can't merge with its upgrade half done.
+    if [[ ! -f "$pending" ]]; then
+      cat > "$pending" <<'EOF'
+# Upgrade steps to do
+
+The framework sync wrote this file. It holds the upgrade steps of each release it brought in, oldest first. Run `/sdlc`, which works through them with you, or work through them with Claude. Then delete this file. `make validate` (so `make check`) fails while it exists.
+EOF
+    fi
+    for rel_file in "${steps[@]}"; do
+      name="${rel_file%.md}"
+      grep -qx "# $name" "$pending" && continue
+      # Release notes use ## headings, so each release's sit under its own # heading.
+      { printf '\n# %s\n\n' "$name"; cat "$tmp/fw/docs/release-notes/$rel_file"; } >> "$pending"
+    done
+  fi
+
   # Git loses the executable bit on some filesystems (NTFS); set it in the index from the
   # framework's modes, so a file executable there is executable here.
   git add -A
@@ -469,8 +518,21 @@ main() {
     echo "kept (the framework dropped these, but you changed them; they're yours now):"
     for f in "${kept[@]}"; do echo "  $f"; done
   fi
-  if ((${#conflicts[@]} + ${#sidecars[@]})); then
+  if ((${#ran[@]})); then
+    echo "ran the upgrade scripts of the new releases (their changes are staged):"
+    for f in "${ran[@]}"; do echo "  $f"; done
+  fi
+  if ((${#steps[@]})); then
+    echo "upgrade steps to do, from ${steps[*]%.md}: run /sdlc, which works through"
+    echo "  $pending with you (make check fails until they're done and the file is deleted)"
+  fi
+  if ((${#conflicts[@]} + ${#sidecars[@]} + ${#failed[@]})); then
     echo
+    if ((${#failed[@]})); then
+      echo "ERROR: these upgrade scripts failed (their output is above):" >&2
+      for f in "${failed[@]}"; do echo "  $f" >&2; done
+      echo "Fix what they report, run each again (bash <file>), git add the result, then run make check." >&2
+    fi
     if ((${#conflicts[@]})); then
       echo "CONFLICT: your local changes clash with the framework's in:" >&2
       for f in "${conflicts[@]}"; do echo "  $f" >&2; done

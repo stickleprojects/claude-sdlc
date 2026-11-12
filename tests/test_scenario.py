@@ -1174,6 +1174,14 @@ def test_an_old_consumer_moves_into_sdlc_in_one_sync(old_consumer, framework_his
     assert "tools/sdlc/src" in (old_consumer / "Makefile").read_text()
     makefile = old_consumer / "Makefile"
     makefile.write_text(makefile.read_text().replace("tools/sdlc/src", ".sdlc/src"))
+
+    # #20: the upgrade steps of the releases since OLD, and only those, wait for /sdlc.
+    pending = (old_consumer / ".sdlc/upgrade-pending.md").read_text()
+    releases = re.findall(r"^# (v\S+)$", pending, re.MULTILINE)
+    assert releases[:2] == ["v0.11.0", "v0.11.1"] and "v0.10.1" not in releases, releases
+    assert "upgrade steps to do, from v0.11.0 v0.11.1" in out
+    assert "upgrade steps from v0.11.0, v0.11.1" in make(old_consumer, "validate").stderr
+    (old_consumer / ".sdlc/upgrade-pending.md").unlink()
     assert make(old_consumer, "validate").returncode == 0
 
 
@@ -1237,3 +1245,92 @@ def test_a_projects_hook_runs_after_the_framework_through_the_settings_it_alread
     blocked = run([".sdlc/hooks/dispatch.sh", "PreToolUse"], cwd=consumer, env=env, input=payload)
     assert blocked.returncode == 2 and "no curl" in blocked.stderr
     assert (consumer / ".claude/settings.json").read_text() == settings_before
+
+
+# --- upgrades: scripts and upgrade steps per release (#20) ----------------------------------
+
+MIGRATION = 'mkdir -p moved && echo "from=$SDLC_UPGRADE_FROM to=$SDLC_UPGRADE_TO" > moved/note\n'
+STEPS = "## Breaking: x\n\nWhat changed.\n\n## Upgrade steps\n\n1. Rename the thing.\n"
+
+
+def test_a_first_install_has_no_upgrade_to_do(consumer):
+    # The snapshot carries every past release's notes, upgrade steps included.
+    assert not (consumer / ".sdlc/upgrade-pending.md").exists()
+    assert make(consumer, "validate").returncode == 0
+
+
+def test_an_upgrade_runs_new_releases_scripts_and_lists_their_steps(consumer, framework_snapshot):
+    commit(
+        framework_snapshot,
+        "feat!: rename",
+        {
+            ".sdlc/migrations/v9.0.0.sh": MIGRATION,
+            "docs/release-notes/v9.0.0.md": STEPS,
+            "docs/release-notes/v9.1.0.md": "## Optional: y\n\nNo steps here.\n",
+        },
+    )
+    result = sync(consumer, framework_snapshot, "main")
+    out = result.stdout + result.stderr
+    assert result.returncode == 0, out
+
+    # The script ran from the consumer's root, and what it changed is staged.
+    assert (consumer / "moved/note").read_text() == "from=v0.0.1 to=main\n"
+    assert "moved/note" in git(consumer, "diff", "--cached", "--name-only")
+    assert "ran the upgrade scripts" in out and ".sdlc/migrations/v9.0.0.sh" in out
+
+    # Only the new release with upgrade steps is listed; the older notes were there at the base.
+    pending = (consumer / ".sdlc/upgrade-pending.md").read_text()
+    assert "# v9.0.0\n" in pending and "1. Rename the thing." in pending
+    assert "v9.1.0" not in pending and "# v0.11.0" not in pending
+    assert "upgrade steps to do, from v9.0.0" in out
+
+    # A half-done upgrade fails the check until the steps are done and the file is deleted.
+    check = make(consumer, "validate")
+    assert check.returncode != 0
+    assert "upgrade steps from v9.0.0 to do" in check.stderr
+    (consumer / ".sdlc/upgrade-pending.md").unlink()
+    assert make(consumer, "validate").returncode == 0
+
+
+def test_an_unfinished_upgrade_keeps_its_steps_when_the_next_sync_adds_more(
+    consumer, framework_snapshot
+):
+    commit(framework_snapshot, "feat!: one", {"docs/release-notes/v9.0.0.md": STEPS})
+    assert sync(consumer, framework_snapshot, "main").returncode == 0
+    commit(consumer, "chore: sync, steps not done yet")
+    commit(framework_snapshot, "feat!: two", {"docs/release-notes/v9.1.0.md": STEPS})
+    result = sync(consumer, framework_snapshot, "main")
+    assert result.returncode == 0, result.stdout + result.stderr
+    pending = (consumer / ".sdlc/upgrade-pending.md").read_text()
+    assert pending.count("# v9.0.0\n") == 1 and "# v9.1.0\n" in pending
+    assert pending.index("# v9.0.0") < pending.index("# v9.1.0")
+
+
+def test_a_failed_upgrade_script_stops_the_sync_with_the_rest_staged(consumer, framework_snapshot):
+    commit(
+        framework_snapshot,
+        "feat!: rename",
+        {
+            ".sdlc/migrations/v9.0.0.sh": "echo 'no override to move' >&2; exit 3\n",
+            ".sdlc/REVIEW.md": "new review rules\n",
+        },
+    )
+    result = sync(consumer, framework_snapshot, "main")
+    assert result.returncode == 1
+    assert "no override to move" in result.stdout
+    assert "these upgrade scripts failed" in result.stderr
+    assert ".sdlc/migrations/v9.0.0.sh" in result.stderr
+    assert ".sdlc/REVIEW.md" in git(consumer, "diff", "--cached", "--name-only")
+
+
+def test_an_upgrade_from_an_unknown_commit_counts_from_its_release_tag(
+    consumer, framework_snapshot
+):
+    version = consumer / ".sdlc/version"
+    repo_line = version.read_text().splitlines()[0]
+    commit(consumer, "chore: history rewritten", {".sdlc/version": f"{repo_line}\n{'0' * 40}\n"})
+    commit(framework_snapshot, "feat!: rename", {"docs/release-notes/v9.0.0.md": STEPS})
+    result = sync(consumer, framework_snapshot, "main")
+    assert result.returncode == 0, result.stdout + result.stderr
+    pending = (consumer / ".sdlc/upgrade-pending.md").read_text()
+    assert "# v9.0.0\n" in pending and "# v0.11.0" not in pending

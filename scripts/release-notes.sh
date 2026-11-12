@@ -5,6 +5,8 @@
 #   Prints Markdown to stdout. Uses the same PR-title rules as next-version.sh.
 #   A hand-written docs/release-notes/<version>.md, if present, goes in after the change list:
 #   for what titles can't say, such as a new optional feature and how to adopt it.
+#   A release with a breaking change must have one, with an "## Upgrade steps" section that
+#   tells /sdlc what to do in a consumer repo (#20): without it this fails, dry runs included.
 set -euo pipefail
 
 version="${1:?usage: release-notes.sh <version> [owner/repo]}"
@@ -38,6 +40,16 @@ while IFS= read -r -d $'\x1e' entry; do
   fi
 done < <(git log --first-parent --format='%s%x1f%b%x1e' "$range")
 
+notes_file="docs/release-notes/$version.md"
+if ((${#breaking[@]})) && ! grep -qx '## Upgrade steps' "$notes_file" 2>/dev/null; then
+  {
+    echo "error: $version has breaking changes but $notes_file has no '## Upgrade steps' section."
+    echo "Write the steps a consumer repo needs (/sdlc follows them during an update) for:"
+    printf '  %s\n' "${breaking[@]}"
+  } >&2
+  exit 1
+fi
+
 section() {
   local title="$1"; shift
   (($#)) || return 0
@@ -56,7 +68,6 @@ section "Pipeline, docs and chores" "${other[@]}"
 if ! ((${#breaking[@]} + ${#features[@]} + ${#fixes[@]} + ${#other[@]})); then
   printf '\nNo changes.\n'
 fi
-notes_file="docs/release-notes/$version.md"
 if [[ -f "$notes_file" ]]; then
   printf '\n'
   cat "$notes_file"
