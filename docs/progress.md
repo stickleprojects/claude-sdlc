@@ -21,10 +21,10 @@ Status as of 2026-11-11 (v0.9.1). This is a living log: update it whenever the p
 ## What works
 
 - **CI** (`make check`): lint, about 600 tests, artifact validation (required sections, approved descopes, a definition of done, readable requirements and criteria in new work), and a check that scripts are committed as executable.
-- **AI PR review**: follows [REVIEW.md](../REVIEW.md). It quotes the text each finding refers to, says who decides, and keeps one summary comment. It also checks every clause of a requirement against the criteria and the plan, with a cheap per-requirement clause check in CI.
+- **AI PR review**: follows [.sdlc/REVIEW.md](../.sdlc/REVIEW.md). It quotes the text each finding refers to, says who decides, and keeps one summary comment. It also checks every clause of a requirement against the criteria and the plan, with a cheap per-requirement clause check in CI.
 - **Skills**: six entry skills (`/intent`, `/plan`, `/build`, `/pr`, `/next`, `/sdlc`) route each change to the right next step.
 - **Guardrail hooks**: protected paths, format on edit, and a production gate (no deploys to production, no pushes to `main`, no merges or approvals by the agent). A bug's failing test locks once it's committed.
-- **GitHub setup**: branch protection, CODEOWNERS, the token secret, Actions permissions, labels, `.gitignore` and the agent's own App identity, all scripted in `scripts/bootstrap-github.sh`.
+- **GitHub setup**: branch protection, CODEOWNERS, the token secret, Actions permissions, labels, `.gitignore` and the agent's own App identity, all scripted in `.sdlc/scripts/bootstrap-github.sh`.
 - **Upgrades**: `/sdlc` syncs with three-way merges of local edits, and carries out each release's upgrade steps with the person.
 
 ## Earlier: product-owner review (since reworked)
@@ -82,7 +82,7 @@ So the artifacts stay short, the reasoning is still kept in version control, and
 Open questions for this work:
 - Is this one session at the spec stage, or does it also run at the intent stage? If both, there would be one set of minutes per meeting.
 - Should `/plan` and the AI review read the minutes as context, or only the outcomes written into the spec?
-- Should `REVIEW.md`'s "who decides" gain an *auto-fix* category, so spec-wording findings never reach the product owner?
+- Should `.sdlc/REVIEW.md`'s "who decides" gain an *auto-fix* category, so spec-wording findings never reach the product owner?
 - Should `sdlc check` validate the minutes, for example that an *Outcomes* section exists?
 
 Until this is designed, try it on a sandbox change rather than in this repo.

@@ -1,0 +1,4 @@
+# The framework's own exceptions (#103, #133), so the project's root .gitignore never has to
+# change for them: a `build/` rule there must not hide the /build skill.
+!/skills/build/
+__pycache__/

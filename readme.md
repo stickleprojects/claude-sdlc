@@ -40,7 +40,7 @@ It's used day to day on real projects, in Python, TypeScript and Godot game repo
 - **📄 Nothing lives only in a chat.** Intents, specs, plans and build plans are markdown files in git, reviewed in PRs. A fresh session, a new teammate or a future you can pick up exactly where the work stopped.
 - **✅ "Done" means done.** Plans name the definition of done they meet. The verifier checks every acceptance criterion, and every clause of every requirement, at the level it describes. It also compares what was built with what the requirement says, so a "3D scene" can't quietly ship as a 2D diagram.
 - **🚫 Silence isn't permission.** Anything left untested, skipped or done by hand is a *descope*. It needs a named person's approval, and every stage shows it first.
-- **🤖 AI review on every PR.** A Claude review follows [REVIEW.md](REVIEW.md): bugs, security, the artifact chain, test level, descopes and clause coverage. It writes findings a non-engineer can act on, quoting the text, saying why it matters and who decides.
+- **🤖 AI review on every PR.** A Claude review follows [.sdlc/REVIEW.md](.sdlc/REVIEW.md): bugs, security, the artifact chain, test level, descopes and clause coverage. It writes findings a non-engineer can act on, quoting the text, saying why it matters and who decides.
 - **🛡️ Guardrails that hold.** Hooks protect the hooks themselves, settings, lockfiles and secrets. They block pushes to `main`, force pushes, merges and approvals. A bug fix's failing test locks once it's committed, so the code gets fixed, not the test.
 - **🔌 Any stack.** The pipeline talks to your project only through `make` targets, and to an AI only through one adapter script. Swap Python for TypeScript or Godot by changing the Makefile.
 - **📦 Upgrades without fear.** `/sdlc` shows what's new and syncs the framework on a branch, merging your local edits three ways, as `git merge` does. It then walks through each release's upgrade steps with you.
@@ -85,18 +85,18 @@ sequenceDiagram
     Eng->>GH: merge 🎉
 ```
 
-**Who does what, step by step:** [docs/roles.md](docs/roles.md).
+**Who does what, step by step:** [.sdlc/docs/roles.md](.sdlc/docs/roles.md).
 
 ## What's inside
 
 | Stage | Artifact | Automation |
 |---|---|---|
-| **Plan** | `changes/NNNN-*/intent.md` (or `bug.md`) | `/intent`; an optional roadmap (`docs/roadmap.md`, [format](docs/roadmap-format.md)) that `/intent` places each change on and `make validate` checks |
+| **Plan** | `changes/NNNN-*/intent.md` (or `bug.md`) | `/intent`; an optional roadmap (`docs/roadmap.md`, [format](.sdlc/docs/roadmap-format.md)) that `/intent` places each change on and `make validate` checks |
 | **Design** | `spec.md` | *Spec from intent* opens the spec PR when an intent merges; `spec` skill; policy skills such as `security-policy` |
 | **Build** | `plan.md`, optional `build.md`, code | plan mode, `/plan`, `/build` with worktrees and milestones; format-on-edit and protected-path hooks |
 | **Architecture** | `docs/adr/NNNN-*.md` (optional) | `/plan` checks each accepted ADR's *Revisit when* triggers; `make validate` checks the ADRs' sections |
 | **Test** | tests, evals | `make check`; the `verifier` subagent; agent evals before every release |
-| **Review** | the PR | *Claude review* follows [REVIEW.md](REVIEW.md), plus your project's own `docs/review-rules.md` if it has one; `@claude` fixes on request; `/pr` walkthroughs |
+| **Review** | the PR | *Claude review* follows [.sdlc/REVIEW.md](.sdlc/REVIEW.md), plus your project's own `docs/review-rules.md` if it has one; `@claude` fixes on request; `/pr` walkthroughs |
 | **Release** | the merge | the production gate hook; optional auto-merge after a person's approval |
 
 ```mermaid
@@ -111,7 +111,7 @@ flowchart TB
         hooks["Hooks (guardrails)"]
         wf["Workflows: review, spec, CI"]
         cli["sdlc CLI: validate, next, clauses"]
-        agent["scripts/agent.sh"]
+        agent[".sdlc/scripts/agent.sh"]
     end
     skills -->|make targets only| mk
     hooks -->|make targets only| mk
@@ -122,7 +122,7 @@ flowchart TB
 
 **Two seams keep it general:**
 - **The stack contract.** Hooks, CI and evals call only `make` targets, so a project's language lives in its `Makefile` and `.github/actions/setup-stack/`, and nowhere else.
-- **The agent adapter.** Every non-interactive AI call goes through [scripts/agent.sh](scripts/agent.sh). Add another agent there; `AGENT=echo` does a dry run without calling a model.
+- **The agent adapter.** Every non-interactive AI call goes through [.sdlc/scripts/agent.sh](.sdlc/scripts/agent.sh). Add another agent there; `AGENT=echo` does a dry run without calling a model.
 
 ## Getting started
 
@@ -143,31 +143,39 @@ cd <name>
 
 Add the two files that are yours, the stack half of the contract:
 
-- **A `Makefile`** with the targets `setup`, `fmt`, `lint`, `test`, `validate`, `check`, `new-change`, `status` and `next`, plus `sync-sdlc` (`scripts/sync-sdlc.sh $(REF)`) as a shortcut. The pipeline CLI has no dependencies, so `SDLC = PYTHONPATH=tools/sdlc/src python3 -m sdlc.cli` is enough to run it.
-  - The optional targets (`coverage`, `clauses`, `evals`, `deploy-dev`, `deploy-prod`) switch on what they name. The sync tells you which ones your Makefile lacks.
+- **A `Makefile`** with `include .sdlc/sdlc.mk` and the stack contract: `setup`, `fmt`, `lint`, `test`, `validate` (which runs `$(SDLC) check`) and `check`. `.sdlc/sdlc.mk` brings the pipeline's own targets (`new-change`, `status`, `next`, `clauses`, `exec-bits`, `evals`, `sync-sdlc`), so a new one never means editing your Makefile. The pipeline CLI has no dependencies, and by default it runs with `python3`.
+  - The optional targets (`coverage`, `deploy-dev`, `deploy-prod`) switch on what they name. The sync tells you which ones your Makefile lacks.
   - [tests/fixtures/consumer/Makefile](tests/fixtures/consumer/Makefile) is the smallest Makefile that works. [sdlc-sandbox's](https://github.com/stickleprojects/sdlc-sandbox/blob/main/Makefile) is a real TypeScript stack.
 - **`.github/actions/setup-stack/action.yml`**, which installs your toolchain in CI and runs `make setup`.
 
 ### 2. Pull the framework
 
 ```
-mkdir -p scripts
-gh api repos/stickleprojects/claude-sdlc/contents/scripts/sync-sdlc.sh \
-  -H "Accept: application/vnd.github.raw" > scripts/sync-sdlc.sh
+mkdir -p .sdlc/scripts
+gh api repos/stickleprojects/claude-sdlc/contents/.sdlc/scripts/sync-sdlc.sh \
+  -H "Accept: application/vnd.github.raw" > .sdlc/scripts/sync-sdlc.sh
 git add -A && git commit -m "chore: project skeleton"   # the sync needs a clean tree
-bash scripts/sync-sdlc.sh                                # latest release; add a ref, e.g. main, to pick another
+bash .sdlc/scripts/sync-sdlc.sh                                # latest release; add a ref, e.g. main, to pick another
 git commit -m "chore: sync pipeline from claude-sdlc"
 make setup && make check                                 # must end with "ok: N change(s) valid"
 git push -u origin HEAD                                  # before step 3 turns on branch protection
 ```
 
-The sync copies every framework-owned file: hooks, skills, workflows, templates, prompts, `REVIEW.md`, the scripts and the CLI in `tools/sdlc/`. It records the version in `.sdlc-version` and the installed files in `.sdlc-files`. Nothing else comes across, so write your project's own `CLAUDE.md`.
+The framework lives in one folder, `.sdlc/`: hooks, skills, templates, prompts, `REVIEW.md`, the scripts and the CLI. Claude Code and GitHub only look in their own folders, so the sync also writes a few small files there:
+
+- a stub per skill in `.claude/skills/` and for the verifier in `.claude/agents/`, each forwarding to `.sdlc/`;
+- `.claude/settings.json`, whose hooks all call `.sdlc/hooks/dispatch.sh`;
+- the workflows in `.github/workflows/`.
+
+It records the version in `.sdlc/version` and the installed files in `.sdlc/files`. Nothing else comes across, so write your project's own `CLAUDE.md`.
+
+**To change the pipeline for your project,** put your version of a skill, template, prompt or `REVIEW.md` in `.sdlc-local/` at the same path. It can be a whole file, or `<!-- extends -->` with only the blocks you change. The sync never writes there. See [.sdlc/docs/overrides.md](.sdlc/docs/overrides.md).
 
 ### 3. Configure GitHub: one script
 
 ```
-scripts/bootstrap-github.sh --dry-run   # show what it would change
-scripts/bootstrap-github.sh             # apply; safe to re-run
+.sdlc/scripts/bootstrap-github.sh --dry-run   # show what it would change
+.sdlc/scripts/bootstrap-github.sh             # apply; safe to re-run
 ```
 
 The script checks and fixes each item below. Every one of them broke the first time this repo was set up.
@@ -184,7 +192,7 @@ The script checks and fixes each item below. Every one of them broke the first t
 | 5 | Actions may create PRs | *Spec from intent* opens the spec PR | *"GitHub Actions is not permitted to create or approve pull requests"* |
 | 6 | Branch protection on `main` | Requires a PR and green `check`, `pr-title` and `claude-review` statuses (the Claude review of the latest commit), with **no admin bypass**, branches up to date with main, stale approvals dismissed on push, and review threads resolved before merging. `--mode solo` (default) needs 0 approvals; `--mode team` needs a code owner's approval (see below). Required checks and settings you add by hand are kept on re-runs | Anyone, including the agent, could push straight to `main` or merge a red PR |
 | 7 | Merged branches deleted | `delete_branch_on_merge` | Old PR branches pile up |
-| 8 | The agent's GitHub App, if you made one | Claude can work under its own identity ([docs/agent-identity.md](docs/agent-identity.md)) | — |
+| 8 | The agent's GitHub App, if you made one | Claude can work under its own identity ([.sdlc/docs/agent-identity.md](.sdlc/docs/agent-identity.md)) | — |
 | 9 | Baseline `.gitignore` lines | A stray `git add -A` once committed ~82,000 dependency and build files | `make validate` fails the branch |
 
 It **can't** do these two; they need you:
@@ -206,21 +214,21 @@ If the script changed any files (items 1, 3 and 9), commit them in a PR.
 | Human gate | **Your merge click.** Merging requires green checks, for admins too | A code owner's approval, then the merge |
 | Agent can't merge or approve | The production-gate hook blocks it | The hook, plus GitHub's own rules |
 
-Switching modes later only means re-running `scripts/bootstrap-github.sh --mode team`.
+Switching modes later only means re-running `.sdlc/scripts/bootstrap-github.sh --mode team`.
 
 <details>
 <summary><b>Optional: auto-merge after a person approves (team mode)</b></summary>
 
-**Auto-merge (optional, team mode only).** By default every PR waits for someone to click *Merge*. To have the pipeline turn on GitHub's auto-merge for the PRs it opens (the spec PR from CI, and the intent, plan, build and sync PRs from sessions), set the repo variable `SDLC_AUTO_MERGE` to `merge`, `squash` or `rebase`, then re-run `scripts/bootstrap-github.sh --mode team`:
+**Auto-merge (optional, team mode only).** By default every PR waits for someone to click *Merge*. To have the pipeline turn on GitHub's auto-merge for the PRs it opens (the spec PR from CI, and the intent, plan, build and sync PRs from sessions), set the repo variable `SDLC_AUTO_MERGE` to `merge`, `squash` or `rebase`, then re-run `.sdlc/scripts/bootstrap-github.sh --mode team`:
 
 ```sh
 gh variable set SDLC_AUTO_MERGE --body merge   # use merge if you use /build: build.md records commit shas
-scripts/bootstrap-github.sh --mode team
+.sdlc/scripts/bootstrap-github.sh --mode team
 ```
 
 Bootstrap then allows auto-merge on the repo, and confirms the protection (variable `SDLC_AUTO_MERGE_CONFIRMED`). The review then runs on every push, not only when the PR opens, because a required check belongs to the latest commit. That uses more of the Claude subscription.
 
-A PR still merges only after a person approves it and every check passes. `scripts/auto-merge.sh` checks this on each PR and skips, with a warning, unless an approval is required, stale approvals are dismissed and the `claude-review` status is required. It never auto-merges a PR that changes a `claude-*.yml` workflow, because the AI review can't run on it. So **solo mode never auto-merges**: there the merge click is the only human gate. The variable is yours: syncing and bootstrap never change it. Delete it, or set it to `off`, to turn the feature off. Without the agent App, the spec PR's auto-merge is enabled by the workflow token, and GitHub doesn't run workflows for pushes made with that token, so workflows triggered by pushes to `main` won't run for that merge.
+A PR still merges only after a person approves it and every check passes. `.sdlc/scripts/auto-merge.sh` checks this on each PR and skips, with a warning, unless an approval is required, stale approvals are dismissed and the `claude-review` status is required. It never auto-merges a PR that changes a `claude-*.yml` workflow, because the AI review can't run on it. So **solo mode never auto-merges**: there the merge click is the only human gate. The variable is yours: syncing and bootstrap never change it. Delete it, or set it to `off`, to turn the feature off. Without the agent App, the spec PR's auto-merge is enabled by the workflow token, and GitHub doesn't run workflows for pushes made with that token, so workflows triggered by pushes to `main` won't run for that merge.
 
 </details>
 
@@ -242,18 +250,18 @@ make next REF=origin/main                    # each change's next step, and the 
 make check                                   # lint + tests + artifact chain
 ```
 
-Mostly, though, you'll just talk to Claude: `/intent`, `/plan`, `/build`, `/pr`, `/next`. Who does what: [docs/roles.md](docs/roles.md).
+Mostly, though, you'll just talk to Claude: `/intent`, `/plan`, `/build`, `/pr`, `/next`. Who does what: [.sdlc/docs/roles.md](.sdlc/docs/roles.md).
 
 ## Guardrails
 
-Rules that must always hold are enforced by hooks and CI, not left to the model's goodwill.
+Rules that must always hold are enforced by hooks and CI, not left to the model's goodwill. Every hook runs through `.sdlc/hooks/dispatch.sh`, which follows `.sdlc/hooks/hooks.tsv` and then the project's own `.sdlc-local/hooks/hooks.tsv`. A project can add hooks, but it can't replace these.
 
 | Guardrail | How |
 |---|---|
-| The agent can't edit its own hooks, settings, lockfiles or `.env*` | `protect-paths.sh` (PreToolUse on every edit) |
+| The agent can't edit its own hooks (the framework's or the project's), settings, lockfiles or `.env*` | `protect-paths.sh` (PreToolUse on every edit) |
 | No `make deploy-prod`, pushes to `main`, force pushes, merges or approvals | `production-gate.sh` (PreToolUse on every shell command) |
 | Edited files are formatted through `make fmt` | `format.sh` (PostToolUse) |
-| A bug's failing test can't be edited once committed | `scripts/tests-locked.sh` |
+| A bug's failing test can't be edited once committed | `.sdlc/scripts/tests-locked.sh` |
 | Artifacts have their required sections, approved descopes, a definition of done and readable requirements | `make validate`, in every `make check` and in CI |
 | Nobody merges on a stale review | the required `claude-review` status: the review posts it on the commit it reviewed, and a later push marks it "Not reviewed" |
 | Nobody merges without the checks, and in team mode without a code owner | branch protection from bootstrap |
@@ -272,13 +280,13 @@ flowchart LR
 ```
 
 By hand: run `make sync-sdlc` (latest release) or `make sync-sdlc REF=main`, then review the staged changes in a PR.
-- **Your files are safe.** Files the project added, even inside `.github/workflows/` or `.claude/skills/`, are never touched. Local edits to framework files are never lost either: the sync merges them three ways with the new version and lists the files it merged. A conflict is left unstaged with conflict markers, and the sync exits non-zero.
+- **Your files are safe.** `.sdlc-local/` and files the project added, even inside `.github/workflows/` or `.claude/skills/`, are never touched. The sync lists your overrides of files the update changed, so you can re-read them. Edits made inside `.sdlc/` are never lost either: the sync merges them three ways with the new version and lists the files it merged. A conflict is left unstaged with conflict markers, and the sync exits non-zero.
 - **It tells you what's missing:** the `make` targets your Makefile lacks, and, when `gh` is logged in, the repo secrets and variables the workflows need.
 - **To try framework changes before pushing them,** run `SDLC_SOURCE=../claude-sdlc make sync-sdlc REF=<branch>`.
 
 ## Working on the framework
 
-Clone this repo and run `make setup && make check`. `make check` runs about 600 tests, none of which call Claude:
+Clone this repo and run `make setup && make check`. `make check` runs about 800 tests, none of which call Claude:
 
 | Layer | What | Where |
 |---|---|---|
@@ -319,7 +327,7 @@ gh workflow run release.yml -f dry_run=false   # check, run evals, tag, publish 
 - [ ] Scheduled security scans whose findings become intents or fix PRs.
 - [ ] Managed settings for guardrails engineers can't override.
 - [ ] Identity federation with API billing for CI, so evals can run on every config change.
-- [ ] More agent adapters in `scripts/agent.sh`, and a second sample stack to prove the stack contract.
+- [ ] More agent adapters in `.sdlc/scripts/agent.sh`, and a second sample stack to prove the stack contract.
 - [ ] Terminal demo animations for each role: see [docs/demo-animation-plan.md](docs/demo-animation-plan.md).
 
 Current status and paused work: [docs/progress.md](docs/progress.md).

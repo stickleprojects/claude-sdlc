@@ -20,7 +20,7 @@ def run(cmd, cwd=REPO, env=None, input=None, check=False):
 def hook(name, payload, env=None, cwd=REPO):
     """Invoke a Claude Code hook script with a JSON payload on stdin."""
     return run(
-        ["bash", str(REPO / ".claude" / "hooks" / name)],
+        ["bash", str(REPO / ".sdlc" / "hooks" / name)],
         cwd=cwd,
         env={"CLAUDE_PROJECT_DIR": str(cwd), **(env or {})},
         input=json.dumps(payload),
@@ -49,10 +49,8 @@ def commit(path, message, files=None):
     git(path, "commit", "-q", "--allow-empty", "-m", message)
 
 
-@pytest.fixture
-def framework_snapshot(tmp_path):
-    """A git repo holding the framework's current working tree, tagged v0.0.1."""
-    snap = init_repo(tmp_path / "framework")
+def copy_working_tree(snap: Path) -> None:
+    """Copy the framework's working tree into snap, with the modes git records."""
     files = run(["git", "ls-files", "-co", "--exclude-standard", "-z"], check=True).stdout
     # Modes come from git's index, not the disk: on NTFS every file looks executable.
     staged = run(["git", "ls-files", "-s", "-z"], check=True).stdout
@@ -66,6 +64,13 @@ def framework_snapshot(tmp_path):
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(src, dst)
             dst.chmod(0o755 if rel in executable else 0o644)
+
+
+@pytest.fixture
+def framework_snapshot(tmp_path):
+    """A git repo holding the framework's current working tree, tagged v0.0.1."""
+    snap = init_repo(tmp_path / "framework")
+    copy_working_tree(snap)
     commit(snap, "snapshot")
     git(snap, "tag", "v0.0.1")
     return snap

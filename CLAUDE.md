@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-This repo implements the AI-native SDLC playbook: changes flow intent.md → spec.md → plan.md → code → PR. See `readme.md` for the overview and `docs/roles.md` for who does what.
+This repo implements the AI-native SDLC playbook: changes flow intent.md → spec.md → plan.md → code → PR. See `readme.md` for the overview and `.sdlc/docs/roles.md` for who does what.
 
 ## Commands
 
@@ -26,24 +26,30 @@ A healthy `make check` ends with `ok: N change(s) valid`.
 
 Change tracking: issues
 
-The framework itself. Its changes are tracked as GitHub issues (label `pipeline`), not `changes/` folders; REVIEW.md reads the line above. Product work happens in consumer repos (e.g. stickleprojects/sdlc-sandbox), which pull framework-owned files with `scripts/sync-sdlc.sh`. The list of framework-owned paths is in that script. Changing a framework-owned path, a `make` target name or an artifact's required sections affects every consumer: say so in the PR, and use a `!` title if it's a breaking change.
+The framework itself. Its changes are tracked as GitHub issues (label `pipeline`), not `changes/` folders; .sdlc/REVIEW.md reads the line above. Product work happens in consumer repos (e.g. stickleprojects/sdlc-sandbox), which pull framework-owned files with `.sdlc/scripts/sync-sdlc.sh`. The list of framework-owned paths is in that script. Changing a framework-owned path, a `make` target name or an artifact's required sections affects every consumer: say so in the PR, and use a `!` title if it's a breaking change.
 
 - Tests: `tests/test_hooks.py` and `tests/test_scripts.py` are unit tests for the hooks and scripts. `tests/test_scenario.py` installs the framework into a throwaway consumer repo (`tests/fixtures/consumer/`) and runs a change through it. When you change a hook, script, skill or the sync manifest, add a case there.
 - PR titles follow conventional commits (`feat:`, `fix:`, `ci:`, …, `!` for breaking changes). They drive the version and the release notes.
 
 ## Architecture
 
+- **Layout (#133):** everything synced to consumers lives in `.sdlc/`, and `scripts/` holds only the release scripts plus a shim for older syncs. Claude Code and GitHub need a few files in their own folders:
+  - a stub per skill in `.claude/skills/<name>/SKILL.md` (the frontmatter and one line that runs `.sdlc/scripts/resolve.sh`) and for the verifier in `.claude/agents/`. A skill's body lives in `.sdlc/skills/<name>/SKILL.md`, so edit the body there and the name or description in the stub;
+  - `.claude/settings.json`, whose hooks all call `.sdlc/hooks/dispatch.sh <event>`. A new hook is a row in `.sdlc/hooks/hooks.tsv`, never a settings change;
+  - the workflows.
+
+  Framework make targets go in `.sdlc/sdlc.mk`, not in a consumer's Makefile. A consumer changes framework files through overrides in `.sdlc-local/` (`.sdlc/src/sdlc/resolve.py`, `.sdlc/docs/overrides.md`), so anything that reads a skill, template, prompt or `REVIEW.md` must read it through the resolver.
 - **Stack contract:** hooks, CI and evals call only the `make` targets above, never `uv`, `ruff` or `pytest` directly. Language-specific details live only in `Makefile` and `.github/actions/setup-stack/`. Keep it that way.
-- **Agent adapter:** CI and evals call AI only through `scripts/agent.sh`. Don't call `claude -p` from workflows directly. (`claude-code-action` in the review and mention workflows is the one exception.)
-- **Artifact chain:** `changes/NNNN-name/{intent,spec,plan}.md`. The required `##` sections are defined in `src/sdlc/artifacts.py` (`CHAIN`) and must match `templates/`. A test enforces this. Change both together.
-- **Optional build plan:** `changes/NNNN-name/build.md`, written by `/build` for builds of more than one session. It sits outside `CHAIN`; `check_build` validates it when present (sections from `templates/build.md`, no approval with open questions). Small plans are built without one.
-- **Skills:** six entry skills people remember (`intent`, `plan`, `build`, `pr`, `next`, and `sdlc` for updating the pipeline itself) route by a change's state (`src/sdlc/routing.py`, `.claude/skills/routing.md`) to internal ones (`spec`, `po-review`, `review-findings`, `agent-identity`, `security-policy`, all `user-invocable: false`). A new skill is one or the other; `tests/test_routing.py` enforces it. Policy skills (e.g. `security-policy`) are advisory; rules that must always hold need a hook or CI check.
-- **Scope rules:** `.claude/skills/scope.md` (silence is not permission, a rule's scope is a minimum, descopes need a person's approval, test at the criterion's level) is shared by the plan, build, spec and review skills, the verifier and `REVIEW.md`. Change it there, not in each one.
+- **Agent adapter:** CI and evals call AI only through `.sdlc/scripts/agent.sh`. Don't call `claude -p` from workflows directly. (`claude-code-action` in the review and mention workflows is the one exception.)
+- **Artifact chain:** `changes/NNNN-name/{intent,spec,plan}.md`. The required `##` sections are defined in `.sdlc/src/sdlc/artifacts.py` (`CHAIN`) and must match `.sdlc/templates/`. A test enforces this. Change both together.
+- **Optional build plan:** `changes/NNNN-name/build.md`, written by `/build` for builds of more than one session. It sits outside `CHAIN`; `check_build` validates it when present (sections from `.sdlc/templates/build.md`, no approval with open questions). Small plans are built without one.
+- **Skills:** six entry skills people remember (`intent`, `plan`, `build`, `pr`, `next`, and `sdlc` for updating the pipeline itself) route by a change's state (`.sdlc/src/sdlc/routing.py`, `.sdlc/skills/routing.md`) to internal ones (`spec`, `po-review`, `review-findings`, `agent-identity`, `security-policy`, all `user-invocable: false`). A new skill is one or the other; `tests/test_routing.py` enforces it. Policy skills (e.g. `security-policy`) are advisory; rules that must always hold need a hook or CI check.
+- **Scope rules:** `.sdlc/skills/scope.md` (silence is not permission, a rule's scope is a minimum, descopes need a person's approval, test at the criterion's level) is shared by the plan, build, spec and review skills, the verifier and `.sdlc/REVIEW.md`. Change it there, not in each one.
 
 ## Guardrails (hooks in .claude/settings.json)
 
-- You can't edit `.claude/hooks/*`, `.claude/settings.json`, lockfiles or `.env*`. Propose those changes for a human instead.
-- A bug fix's failing test locks once it's committed (`test(<slug>): …` on a change with `bug.md`): the files that commit touched can't be edited, while new tests elsewhere still can (`scripts/tests-locked.sh`). `SDLC_LOCK_TESTS=1` locks every test file. Fix the code, not the test.
+- You can't edit `.sdlc/hooks/*`, `.claude/settings.json`, lockfiles or `.env*`. Propose those changes for a human instead.
+- A bug fix's failing test locks once it's committed (`test(<slug>): …` on a change with `bug.md`): the files that commit touched can't be edited, while new tests elsewhere still can (`.sdlc/scripts/tests-locked.sh`). `SDLC_LOCK_TESTS=1` locks every test file. Fix the code, not the test.
 - `make deploy-prod`, `git push` to main and force pushes are blocked. Push a branch and open a PR.
 - Merging and approving PRs (`gh pr merge`, `gh pr review --approve`, the merge and review APIs) are blocked: a human merges. When a PR is ready, say so and stop.
 - Edited files are auto-formatted after each edit through `make fmt FILES=...`.

@@ -1,0 +1,3 @@
+# The framework's own exception (#103, #133): a project's `build/` rule must not hide the
+# /build skill. It lives here so the project's root .gitignore never has to change for it.
+!build/

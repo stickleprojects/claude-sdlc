@@ -134,7 +134,7 @@ def test_production_gate(command, blocked):
     ("rel_path", "env", "blocked"),
     [
         (".claude/settings.json", {}, True),
-        (".claude/hooks/production-gate.sh", {}, True),
+        (".sdlc/hooks/production-gate.sh", {}, True),
         (".git/config", {}, True),
         ("uv.lock", {}, True),
         (".env", {}, True),
@@ -142,9 +142,9 @@ def test_production_gate(command, blocked):
         ("certs/server.pem", {}, True),
         ("tests/test_x.py", {"SDLC_LOCK_TESTS": "1"}, True),
         ("tests/test_x.py", {}, False),
-        ("src/sdlc/cli.py", {"SDLC_LOCK_TESTS": "1"}, False),
-        (".claude/skills/intent/SKILL.md", {}, False),
-        ("docs/roles.md", {}, False),
+        (".sdlc/src/sdlc/cli.py", {"SDLC_LOCK_TESTS": "1"}, False),
+        (".sdlc/skills/intent/SKILL.md", {}, False),
+        (".sdlc/docs/roles.md", {}, False),
     ],
 )
 def test_protect_paths(rel_path, env, blocked):
@@ -191,26 +191,26 @@ AUTO = "enablePullRequest" + "AutoMerge"
         (f"{MERGE} 21 --auto --merge", True),
         (f"gh api graphql -f query='mutation {{ {AUTO}(input: {{pullRequestId: 1}}) }}'", True),
         (f"gh api graphql -f query='\n  mutation {{\n    {AUTO}(input: {{}})\n  }}'", True),
-        ("scripts/auto-merge.sh 21", False),
-        (f"grep -n {AUTO} scripts/auto-merge.sh", False),
+        (".sdlc/scripts/auto-merge.sh 21", False),
+        (f"grep -n {AUTO} .sdlc/scripts/auto-merge.sh", False),
     ],
 )
 def test_agent_cannot_merge_or_approve(command, blocked):
     result = hook("production-gate.sh", {"tool_input": {"command": command}})
     assert result.returncode == (2 if blocked else 0), result.stderr
     if blocked:
-        assert "human decision" in result.stderr or "scripts/auto-merge.sh" in result.stderr
+        assert "human decision" in result.stderr or ".sdlc/scripts/auto-merge.sh" in result.stderr
 
 
 def test_protect_paths_locks_a_bug_fixes_tests_after_its_failing_test(tmp_path):
-    # The hook asks scripts/tests-locked.sh, so nobody has to set SDLC_LOCK_TESTS=1.
+    # The hook asks .sdlc/scripts/tests-locked.sh, so nobody has to set SDLC_LOCK_TESTS=1.
     import shutil
 
     from conftest import commit, git, init_repo
 
     repo = init_repo(tmp_path / "r")
-    (repo / "scripts").mkdir()
-    shutil.copy2(REPO / "scripts/tests-locked.sh", repo / "scripts/tests-locked.sh")
+    (repo / ".sdlc" / "scripts").mkdir(parents=True)
+    shutil.copy2(REPO / ".sdlc/scripts/tests-locked.sh", repo / ".sdlc/scripts/tests-locked.sh")
     commit(repo, "bug: 0003-x", {"changes/0003-x/bug.md": "# bug\n"})
     git(repo, "switch", "-q", "-c", "build/0003-x")
     payload = {"tool_input": {"file_path": str(repo / "tests/test_x.py")}}
@@ -221,3 +221,117 @@ def test_protect_paths_locks_a_bug_fixes_tests_after_its_failing_test(tmp_path):
     assert locked.returncode == 2 and "bug fix" in locked.stderr
     code = {"tool_input": {"file_path": str(repo / "src/x.py")}}
     assert hook("protect-paths.sh", code, env=env, cwd=repo).returncode == 0
+
+
+# --- one entry point for every hook (#133) ---------------------------------------------------
+
+
+def dispatch(event, payload, root=REPO):
+    import json
+
+    from conftest import run
+
+    return run(
+        ["bash", str(root / ".sdlc/hooks/dispatch.sh"), event],
+        cwd=root,
+        env={"CLAUDE_PROJECT_DIR": str(root)},
+        input=json.dumps(payload),
+    )
+
+
+def test_settings_only_call_the_dispatcher():
+    import json
+
+    hooks = json.loads((REPO / ".claude/settings.json").read_text())["hooks"]
+    for event, entries in hooks.items():
+        commands = [h["command"] for e in entries for h in e["hooks"]]
+        assert commands == [f'"$CLAUDE_PROJECT_DIR"/.sdlc/hooks/dispatch.sh {event}'], event
+        assert all("matcher" not in e for e in entries), "the table matches tools, not settings"
+
+
+def test_every_row_of_the_table_runs_an_executable_for_an_event_settings_send():
+    import json
+    import subprocess
+
+    events = set(json.loads((REPO / ".claude/settings.json").read_text())["hooks"])
+    modes = subprocess.run(
+        ["git", "ls-files", "-s"], cwd=REPO, capture_output=True, text=True, check=True
+    ).stdout
+    executable = {line.split("\t")[1] for line in modes.splitlines() if line.startswith("100755")}
+    rows = [
+        line.split("\t")
+        for line in (REPO / ".sdlc/hooks/hooks.tsv").read_text().splitlines()
+        if line and not line.startswith("#")
+    ]
+    assert rows
+    for event, _, command in rows:
+        assert event in events, event
+        assert command.split()[0] in executable, command
+
+
+@pytest.mark.parametrize(
+    ("event", "payload", "code"),
+    [
+        ("PreToolUse", {"tool_name": "Bash", "tool_input": {"command": "git push origin main"}}, 2),
+        ("PreToolUse", {"tool_name": "Bash", "tool_input": {"command": "git status"}}, 0),
+        ("PreToolUse", {"tool_name": "Edit", "tool_input": {"file_path": "uv.lock"}}, 2),
+        (
+            "PreToolUse",
+            {"tool_name": "Edit", "tool_input": {"file_path": ".sdlc-local/hooks/x"}},
+            2,
+        ),
+        ("PreToolUse", {"tool_name": "Read", "tool_input": {"file_path": "uv.lock"}}, 0),
+        ("Stop", {}, 0),
+    ],
+)
+def test_the_dispatcher_routes_by_event_and_tool(event, payload, code):
+    assert dispatch(event, payload).returncode == code
+
+
+def project_with_local_hooks(tmp_path, rows, scripts):
+    import shutil
+
+    from conftest import init_repo
+
+    root = init_repo(tmp_path / "p")
+    shutil.copytree(REPO / ".sdlc/hooks", root / ".sdlc/hooks")
+    (root / ".sdlc/scripts").mkdir(parents=True)
+    shutil.copy2(REPO / ".sdlc/scripts/tests-locked.sh", root / ".sdlc/scripts/tests-locked.sh")
+    (root / ".sdlc-local/hooks").mkdir(parents=True)
+    (root / ".sdlc-local/hooks/hooks.tsv").write_text("".join(r + "\n" for r in rows))
+    for name, body in scripts.items():
+        script = root / ".sdlc-local/hooks" / name
+        script.write_text("#!/usr/bin/env bash\n" + body)
+        script.chmod(0o755)
+    return root
+
+
+def test_a_projects_hooks_run_after_the_framework_and_cant_unblock(tmp_path):
+    root = project_with_local_hooks(
+        tmp_path,
+        ["PreToolUse\tBash\t.sdlc-local/hooks/ours.sh"],
+        {"ours.sh": 'echo ran >> "$CLAUDE_PROJECT_DIR/ran"\nexit 0\n'},
+    )
+    allowed = dispatch("PreToolUse", {"tool_name": "Bash", "tool_input": {"command": "ls"}}, root)
+    assert allowed.returncode == 0 and (root / "ran").read_text() == "ran\n"
+    push = {"tool_name": "Bash", "tool_input": {"command": "git push origin main"}}
+    blocked = dispatch("PreToolUse", push, root)
+    assert blocked.returncode == 2 and (root / "ran").read_text() == "ran\n", "stopped first"
+
+
+def test_a_projects_hook_can_block_and_a_failing_one_doesnt(tmp_path):
+    root = project_with_local_hooks(
+        tmp_path,
+        [
+            "PreToolUse\tBash\t.sdlc-local/hooks/broken.sh",
+            "PreToolUse\tBash\t.sdlc-local/hooks/no-curl.sh",
+        ],
+        {
+            "broken.sh": "exit 1\n",
+            "no-curl.sh": 'grep -q curl && { echo "no curl here" >&2; exit 2; }\nexit 0\n',
+        },
+    )
+    ls = dispatch("PreToolUse", {"tool_name": "Bash", "tool_input": {"command": "ls"}}, root)
+    assert ls.returncode == 1, "a broken hook is reported, not a block"
+    curl = dispatch("PreToolUse", {"tool_name": "Bash", "tool_input": {"command": "curl x"}}, root)
+    assert curl.returncode == 2 and "no curl here" in curl.stderr

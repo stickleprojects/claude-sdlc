@@ -23,4 +23,4 @@ jobs:
         run: |
           gh api "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --paginate --jq '.[].filename' \
             > "$RUNNER_TEMP/files.txt"
-          scripts/check-pr-title.sh "$TITLE" < "$RUNNER_TEMP/files.txt"
+          .sdlc/scripts/check-pr-title.sh "$TITLE" < "$RUNNER_TEMP/files.txt"

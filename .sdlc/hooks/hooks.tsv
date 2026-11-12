@@ -1,0 +1,11 @@
+# Which hook runs for which event and tool (#133). .claude/settings.json calls
+# .sdlc/hooks/dispatch.sh <event> once per event, and the dispatcher runs each matching row
+# in order, so a new or changed hook is a change here, never in the project's settings.
+#
+# Columns, tab-separated: event, tool (a regex for the tool's name, or * for any), command
+# (relative to the repo root). A project adds its own rows in .sdlc-local/hooks/hooks.tsv,
+# which run after these; it can't remove or replace these.
+SessionStart	*	.sdlc/scripts/agent-session.sh --hook
+PreToolUse	Edit|Write|MultiEdit|NotebookEdit	.sdlc/hooks/protect-paths.sh
+PreToolUse	Bash	.sdlc/hooks/production-gate.sh
+PostToolUse	Edit|Write|MultiEdit	.sdlc/hooks/format.sh

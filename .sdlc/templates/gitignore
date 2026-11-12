@@ -1,0 +1,35 @@
+# claude-sdlc baseline .gitignore for the node and python stacks.
+# .sdlc/scripts/bootstrap-github.sh appends any line here that's missing from the repo's .gitignore.
+# Dependencies and build output must never be committed: `make validate` fails on a tracked
+# node_modules path, or on a branch that changes more files than SDLC_MAX_CHANGED_FILES.
+
+# Node
+node_modules/
+dist/
+build/
+# (The framework's /build skill stays tracked through .gitignore files in its own folders.)
+coverage/
+.expo/
+.next/
+npm-debug.log*
+yarn-error.log*
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Secrets and local settings
+.env
+.env.*
+!.env.example
+.claude/settings.local.json
+
+# OS and editors
+.DS_Store
+Thumbs.db

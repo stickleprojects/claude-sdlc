@@ -4,11 +4,4 @@ description: Organisational security policy (placeholder, owned by the security 
 user-invocable: false
 ---
 
-# Security policy (starter set: replace with your organisation's)
-
-- Secrets never go in the repo, in logs or in prompts. Code reads them from the environment at runtime.
-- Every external input is validated at the boundary it enters through.
-- A new third-party dependency needs a stated reason in the spec and a pinned version.
-- Personal data is collected only when a requirement names it, and the spec says how long it is kept.
-
-Skills are advisory. A rule that must always hold also needs a hook (`.claude/hooks/`) or a CI check behind it. Note in the spec which rules have no such enforcement yet.
+This skill is part of the claude-sdlc framework. Run `.sdlc/scripts/resolve.sh skills/security-policy/SKILL.md` and follow what it prints: the skill with this project's overrides (in .sdlc-local/) applied. Read any other file under .sdlc/ that it names the same way, with resolve.sh. Paths are relative to the repo root.

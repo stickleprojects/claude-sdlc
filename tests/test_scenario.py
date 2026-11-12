@@ -11,7 +11,7 @@ import shutil
 
 import pytest
 
-from conftest import REPO, commit, git, hook, init_repo, run
+from conftest import REPO, commit, copy_working_tree, git, hook, init_repo, run
 from sdlc.artifacts import CHAIN
 
 FIXTURE = REPO / "tests" / "fixtures" / "consumer"
@@ -19,7 +19,7 @@ FIXTURE = REPO / "tests" / "fixtures" / "consumer"
 
 def sync(consumer, source, *ref):
     return run(
-        ["bash", "scripts/sync-sdlc.sh", *ref], cwd=consumer, env={"SDLC_SOURCE": str(source)}
+        ["bash", ".sdlc/scripts/sync-sdlc.sh", *ref], cwd=consumer, env={"SDLC_SOURCE": str(source)}
     )
 
 
@@ -27,8 +27,10 @@ def sync(consumer, source, *ref):
 def consumer(tmp_path, framework_snapshot):
     repo = init_repo(tmp_path / "consumer")
     shutil.copy(FIXTURE / "Makefile", repo / "Makefile")
-    (repo / "scripts").mkdir()
-    shutil.copy(REPO / "scripts" / "sync-sdlc.sh", repo / "scripts" / "sync-sdlc.sh")
+    (repo / ".sdlc" / "scripts").mkdir(parents=True)
+    shutil.copy(
+        REPO / ".sdlc" / "scripts" / "sync-sdlc.sh", repo / ".sdlc" / "scripts" / "sync-sdlc.sh"
+    )
     commit(repo, "chore: consumer skeleton")
     result = sync(repo, framework_snapshot)
     assert result.returncode == 0, result.stdout + result.stderr
@@ -47,26 +49,26 @@ def make(repo, *args):
 
 def test_sync_installs_framework_owned_files(consumer):
     for rel in [
-        ".claude/hooks/production-gate.sh",
-        ".claude/skills/intent/SKILL.md",
-        ".claude/skills/review-findings/SKILL.md",
-        ".claude/skills/build/SKILL.md",
-        ".claude/skills/pr/SKILL.md",
-        ".claude/skills/next/SKILL.md",
-        ".claude/skills/sdlc/SKILL.md",
-        ".claude/skills/routing.md",
-        "templates/build.md",
-        "templates/adr.md",
+        ".sdlc/hooks/production-gate.sh",
+        ".sdlc/skills/intent/SKILL.md",
+        ".sdlc/skills/review-findings/SKILL.md",
+        ".sdlc/skills/build/SKILL.md",
+        ".sdlc/skills/pr/SKILL.md",
+        ".sdlc/skills/next/SKILL.md",
+        ".sdlc/skills/sdlc/SKILL.md",
+        ".sdlc/skills/routing.md",
+        ".sdlc/templates/build.md",
+        ".sdlc/templates/adr.md",
         ".claude/settings.json",
         ".github/workflows/claude-review.yml",
         ".github/workflows/pr-title.yml",
-        "templates/intent.md",
-        "REVIEW.md",
-        "tools/sdlc/src/sdlc/cli.py",
-        "scripts/sync-sdlc.sh",
-        "scripts/spec-pr.sh",
-        "scripts/agent-identity.sh",
-        "scripts/tests-locked.sh",
+        ".sdlc/templates/intent.md",
+        ".sdlc/REVIEW.md",
+        ".sdlc/src/sdlc/cli.py",
+        ".sdlc/scripts/sync-sdlc.sh",
+        ".sdlc/scripts/spec-pr.sh",
+        ".sdlc/scripts/agent-identity.sh",
+        ".sdlc/scripts/tests-locked.sh",
     ]:
         assert (consumer / rel).exists(), rel
     assert not (consumer / ".github/workflows/release.yml").exists(), "framework-only workflow"
@@ -75,7 +77,7 @@ def test_sync_installs_framework_owned_files(consumer):
 
 
 def test_sync_records_version_and_keeps_consumer_files(consumer, framework_snapshot):
-    repo_line, sha = (consumer / ".sdlc-version").read_text().split()
+    repo_line, sha = (consumer / ".sdlc/version").read_text().split()
     assert repo_line.endswith("@v0.0.1"), "defaults to the latest release tag"
     assert sha == git(framework_snapshot, "rev-parse", "v0.0.1")
     assert (consumer / "Makefile").read_text() == (FIXTURE / "Makefile").read_text()
@@ -88,35 +90,37 @@ def test_sync_marks_scripts_executable(consumer):
 
 def test_sync_copies_the_frameworks_executable_bit(consumer, framework_snapshot):
     # #79: the framework's mode decides, not the extension.
-    assert git(consumer, "ls-files", "-s", "scripts/create-agent-apps.py").startswith("100755")
-    assert git(consumer, "ls-files", "-s", "REVIEW.md").startswith("100644")
+    assert git(consumer, "ls-files", "-s", ".sdlc/scripts/create-agent-apps.py").startswith(
+        "100755"
+    )
+    assert git(consumer, "ls-files", "-s", ".sdlc/REVIEW.md").startswith("100644")
     # A consumer's own script isn't touched, whatever its name.
     commit(consumer, "chore: own script", {"scripts/ours.sh": "echo ours\n"})
     git(consumer, "update-index", "--chmod=-x", "scripts/ours.sh")
     commit(consumer, "chore: not executable")
     # Like NTFS: git can't see modes on disk, so only the sync can set the bit.
     git(consumer, "config", "core.fileMode", "false")
-    hook_py = framework_snapshot / ".claude/hooks/new-hook.py"
+    hook_py = framework_snapshot / ".sdlc/hooks/new-hook.py"
     hook_py.write_text("print('hi')\n")
     hook_py.chmod(0o755)
     commit(framework_snapshot, "feat: python hook")
     result = sync(consumer, framework_snapshot, "main")
     assert result.returncode == 0, result.stdout + result.stderr
-    assert git(consumer, "ls-files", "-s", ".claude/hooks/new-hook.py").startswith("100755")
+    assert git(consumer, "ls-files", "-s", ".sdlc/hooks/new-hook.py").startswith("100755")
     assert git(consumer, "ls-files", "-s", "scripts/ours.sh").startswith("100644")
 
 
 def test_sync_defaults_to_tag_not_main(consumer, framework_snapshot):
-    commit(framework_snapshot, "feat: unreleased", {"REVIEW.md": "unreleased\n"})
+    commit(framework_snapshot, "feat: unreleased", {".sdlc/REVIEW.md": "unreleased\n"})
     assert sync(consumer, framework_snapshot).returncode == 0
-    assert "unreleased" not in (consumer / "REVIEW.md").read_text()
+    assert "unreleased" not in (consumer / ".sdlc/REVIEW.md").read_text()
     assert "already up to date" in sync(consumer, framework_snapshot).stdout
 
 
 def test_sync_ref_main_pulls_unreleased(consumer, framework_snapshot):
-    commit(framework_snapshot, "feat: unreleased", {"REVIEW.md": "unreleased\n"})
+    commit(framework_snapshot, "feat: unreleased", {".sdlc/REVIEW.md": "unreleased\n"})
     assert sync(consumer, framework_snapshot, "main").returncode == 0
-    assert (consumer / "REVIEW.md").read_text() == "unreleased\n"
+    assert (consumer / ".sdlc/REVIEW.md").read_text() == "unreleased\n"
 
 
 LINES = "".join(f"line {i}\n" for i in range(1, 11))
@@ -131,68 +135,72 @@ def synced_with(consumer, framework_snapshot, files):
 
 
 def test_sync_takes_new_version_of_files_unchanged_locally(consumer, framework_snapshot):
-    synced_with(consumer, framework_snapshot, {"REVIEW.md": LINES})
-    commit(framework_snapshot, "fix: change", {"REVIEW.md": LINES.replace("line 9", "new 9")})
+    synced_with(consumer, framework_snapshot, {".sdlc/REVIEW.md": LINES})
+    commit(framework_snapshot, "fix: change", {".sdlc/REVIEW.md": LINES.replace("line 9", "new 9")})
     result = sync(consumer, framework_snapshot, "main")
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "new 9" in (consumer / "REVIEW.md").read_text()
+    assert "new 9" in (consumer / ".sdlc/REVIEW.md").read_text()
     assert "kept your local changes" not in result.stdout
 
 
 def test_sync_keeps_local_edits_and_merges_framework_changes(consumer, framework_snapshot):
-    synced_with(consumer, framework_snapshot, {"REVIEW.md": LINES})
-    commit(consumer, "chore: local tweak", {"REVIEW.md": LINES.replace("line 2", "mine 2")})
-    commit(framework_snapshot, "fix: change", {"REVIEW.md": LINES.replace("line 9", "new 9")})
+    synced_with(consumer, framework_snapshot, {".sdlc/REVIEW.md": LINES})
+    commit(consumer, "chore: local tweak", {".sdlc/REVIEW.md": LINES.replace("line 2", "mine 2")})
+    commit(framework_snapshot, "fix: change", {".sdlc/REVIEW.md": LINES.replace("line 9", "new 9")})
     result = sync(consumer, framework_snapshot, "main")
     assert result.returncode == 0, result.stdout + result.stderr
-    text = (consumer / "REVIEW.md").read_text()
+    text = (consumer / ".sdlc/REVIEW.md").read_text()
     assert "mine 2" in text and "new 9" in text
-    assert "kept your local changes" in result.stdout and "REVIEW.md" in result.stdout
+    assert "kept your local changes" in result.stdout and ".sdlc/REVIEW.md" in result.stdout
 
 
 def test_sync_keeps_local_edits_the_framework_did_not_change(consumer, framework_snapshot):
-    commit(consumer, "chore: local tweak", {"REVIEW.md": "local edit\n", "notes.md": "mine\n"})
+    commit(
+        consumer, "chore: local tweak", {".sdlc/REVIEW.md": "local edit\n", "notes.md": "mine\n"}
+    )
     commit(framework_snapshot, "fix: other file", {"NOTES.md": "x\n"})
     assert sync(consumer, framework_snapshot, "main").returncode == 0
-    assert (consumer / "REVIEW.md").read_text() == "local edit\n"
+    assert (consumer / ".sdlc/REVIEW.md").read_text() == "local edit\n"
     assert (consumer / "notes.md").read_text() == "mine\n"
 
 
 def test_sync_conflict_keeps_both_sides_and_fails(consumer, framework_snapshot):
-    synced_with(consumer, framework_snapshot, {"REVIEW.md": LINES})
-    commit(consumer, "chore: local tweak", {"REVIEW.md": LINES.replace("line 5", "mine 5")})
-    commit(framework_snapshot, "fix: change", {"REVIEW.md": LINES.replace("line 5", "new 5")})
+    synced_with(consumer, framework_snapshot, {".sdlc/REVIEW.md": LINES})
+    commit(consumer, "chore: local tweak", {".sdlc/REVIEW.md": LINES.replace("line 5", "mine 5")})
+    commit(framework_snapshot, "fix: change", {".sdlc/REVIEW.md": LINES.replace("line 5", "new 5")})
     result = sync(consumer, framework_snapshot, "main")
     assert result.returncode == 1
-    assert "CONFLICT" in result.stderr and "REVIEW.md" in result.stderr
-    text = (consumer / "REVIEW.md").read_text()
+    assert "CONFLICT" in result.stderr and ".sdlc/REVIEW.md" in result.stderr
+    text = (consumer / ".sdlc/REVIEW.md").read_text()
     assert "<<<<<<< yours" in text and "mine 5" in text and "new 5" in text
     staged = git(consumer, "diff", "--cached", "--name-only").split()
-    assert "REVIEW.md" not in staged, "a conflicted file stays unstaged"
-    assert ".sdlc-version" in staged, "the rest of the sync is staged"
+    assert ".sdlc/REVIEW.md" not in staged, "a conflicted file stays unstaged"
+    assert ".sdlc/version" in staged, "the rest of the sync is staged"
 
 
 def test_sync_unmergeable_file_is_left_alone_with_new_version_beside_it(
     consumer, framework_snapshot
 ):
     binary = "\x00base\n"
-    synced_with(consumer, framework_snapshot, {"REVIEW.md": binary})
-    commit(consumer, "chore: local tweak", {"REVIEW.md": "\x00mine\n"})
-    commit(framework_snapshot, "fix: change", {"REVIEW.md": "\x00new\n"})
+    synced_with(consumer, framework_snapshot, {".sdlc/REVIEW.md": binary})
+    commit(consumer, "chore: local tweak", {".sdlc/REVIEW.md": "\x00mine\n"})
+    commit(framework_snapshot, "fix: change", {".sdlc/REVIEW.md": "\x00new\n"})
     result = sync(consumer, framework_snapshot, "main")
     assert result.returncode == 1
-    assert (consumer / "REVIEW.md").read_text() == "\x00mine\n", "local file untouched"
-    assert (consumer / "REVIEW.md.sdlc-new").read_text() == "\x00new\n"
-    assert "REVIEW.md.sdlc-new" in result.stderr and "by hand" in result.stderr
+    assert (consumer / ".sdlc/REVIEW.md").read_text() == "\x00mine\n", "local file untouched"
+    assert (consumer / ".sdlc/REVIEW.md.sdlc-new").read_text() == "\x00new\n"
+    assert ".sdlc/REVIEW.md.sdlc-new" in result.stderr and "by hand" in result.stderr
     staged = git(consumer, "diff", "--cached", "--name-only").split()
-    assert "REVIEW.md.sdlc-new" not in staged and "REVIEW.md" not in staged
+    assert ".sdlc/REVIEW.md.sdlc-new" not in staged and ".sdlc/REVIEW.md" not in staged
 
 
 def test_first_sync_never_overwrites_a_file_the_consumer_has(tmp_path, framework_snapshot):
     repo = init_repo(tmp_path / "existing")
     shutil.copy(FIXTURE / "Makefile", repo / "Makefile")
-    (repo / "scripts").mkdir()
-    shutil.copy(REPO / "scripts" / "sync-sdlc.sh", repo / "scripts" / "sync-sdlc.sh")
+    (repo / ".sdlc" / "scripts").mkdir(parents=True)
+    shutil.copy(
+        REPO / ".sdlc" / "scripts" / "sync-sdlc.sh", repo / ".sdlc" / "scripts" / "sync-sdlc.sh"
+    )
     commit(repo, "chore: existing repo", {".github/workflows/ci.yml": "name: our own ci\n"})
     result = sync(repo, framework_snapshot)
     assert result.returncode == 1
@@ -230,7 +238,7 @@ def test_bug_change_in_consumer(consumer):
     assert not (folder / "intent.md").exists()
     assert make(consumer, "validate").returncode == 0
     assert make(consumer, "status").stdout.strip() == "0001-export-hangs\tbug"
-    assert (consumer / "templates" / "bug-spec.md").exists()
+    assert (consumer / ".sdlc" / "templates" / "bug-spec.md").exists()
 
 
 def test_build_plan_in_consumer(consumer):
@@ -245,7 +253,7 @@ def test_build_plan_in_consumer(consumer):
     plan.write_text(
         text.replace("## Verification\n\n", "## Verification\n\n- **Definition of done:** UI\n\n")
     )
-    draft = (consumer / "templates" / "build.md").read_text()
+    draft = (consumer / ".sdlc" / "templates" / "build.md").read_text()
     (change / "build.md").write_text(draft)
     assert make(consumer, "validate").returncode == 0
     assert make(consumer, "status").stdout.strip() == (
@@ -269,7 +277,7 @@ def test_plan_descopes_in_consumer(consumer):
     change = consumer / "changes" / "0001-dock"
     for name in ("intent.md", "spec.md"):
         (change / name).write_text("# T\n\n" + artifact(CHAIN[name]))
-    template = (consumer / "templates" / "plan.md").read_text()
+    template = (consumer / ".sdlc" / "templates" / "plan.md").read_text()
     plan = change / "plan.md"
     plan.write_text(template)
     refused = make(consumer, "validate")
@@ -291,7 +299,7 @@ def test_plan_descopes_in_consumer(consumer):
 def test_definition_of_done_in_consumer(consumer, framework_snapshot):
     """The framework's rows arrive with the sync, the consumer's own file adds a kind a plan can
     name, and a later sync leaves that file alone (#95)."""
-    assert (consumer / "templates" / "definition-of-done.md").exists()
+    assert (consumer / ".sdlc" / "templates" / "definition-of-done.md").exists()
     own = consumer / "docs" / "definition-of-done.md"
     own.parent.mkdir(parents=True, exist_ok=True)
     own.write_text("| Kind of work | Done means |\n|---|---|\n| Godot scene | Loads headless. |\n")
@@ -323,7 +331,7 @@ def test_adr_in_consumer(consumer, framework_snapshot):
     """The consumer's ADRs are validated by make validate, and the sync never touches them."""
     adrs = consumer / "docs" / "adr"
     adrs.mkdir(parents=True)
-    template = (consumer / "templates" / "adr.md").read_text()
+    template = (consumer / ".sdlc" / "templates" / "adr.md").read_text()
     accepted = template.replace("proposed <!--", "accepted (Sam, 2026-11-06) <!--", 1)
     (adrs / "0001-client-stack.md").write_text(
         accepted.replace("- <trigger>", "- a plan hand-builds navigation state")
@@ -343,10 +351,10 @@ def test_adr_in_consumer(consumer, framework_snapshot):
 def test_placeholder_words_in_consumer(consumer, framework_snapshot):
     """The framework's words arrive with the CLI; the repo's .sdlc.toml overrides them and the
     sync leaves it alone."""
-    assert (consumer / "tools/sdlc/src/sdlc/placeholders.toml").exists()
+    assert (consumer / ".sdlc/src/sdlc/placeholders.toml").exists()
     adrs = consumer / "docs" / "adr"
     adrs.mkdir(parents=True)
-    template = (consumer / "templates" / "adr.md").read_text()
+    template = (consumer / ".sdlc" / "templates" / "adr.md").read_text()
     accepted = template.replace("proposed <!--", "accepted (Sam, 2026-11-06) <!--", 1)
     (adrs / "0001-client-stack.md").write_text(accepted.replace("- <trigger>", "- pending"))
     assert make(consumer, "validate").returncode == 0, "'pending' isn't a framework placeholder"
@@ -376,52 +384,67 @@ def test_hooks_guard_the_consumer(consumer):
 def test_sync_keeps_files_the_consumer_added(consumer, framework_snapshot):
     own = {
         ".github/workflows/deploy.yml": "name: deploy\n",
-        ".claude/skills/streaming-policy/SKILL.md": "consumer skill\n",
+        ".sdlc/skills/streaming-policy/SKILL.md": "consumer skill\n",
     }
     commit(consumer, "ci: consumer's own workflow and skill", own)
-    commit(framework_snapshot, "fix: change", {"REVIEW.md": "changed\n"})
+    commit(framework_snapshot, "fix: change", {".sdlc/REVIEW.md": "changed\n"})
     assert sync(consumer, framework_snapshot, "main").returncode == 0
     for rel, content in own.items():
         assert (consumer / rel).read_text() == content, rel
-    assert (consumer / "REVIEW.md").read_text() == "changed\n"
+    assert (consumer / ".sdlc/REVIEW.md").read_text() == "changed\n"
 
 
 def test_sync_removes_files_the_framework_dropped(consumer, framework_snapshot):
-    dropped = ".claude/skills/po-review/SKILL.md"
+    dropped = ".sdlc/skills/po-review/SKILL.md"
     assert (consumer / dropped).exists()
     (framework_snapshot / dropped).unlink()
     commit(framework_snapshot, "feat!: drop po-review skill")
     assert sync(consumer, framework_snapshot, "main").returncode == 0
     assert not (consumer / dropped).exists()
-    assert dropped not in (consumer / ".sdlc-files").read_text()
+    assert dropped not in (consumer / ".sdlc/files").read_text()
 
 
 def test_sync_keeps_a_dropped_file_the_consumer_changed(consumer, framework_snapshot):
-    dropped = ".claude/skills/po-review/SKILL.md"
+    dropped = ".sdlc/skills/po-review/SKILL.md"
     commit(consumer, "chore: our po-review", {dropped: "our version\n"})
     (framework_snapshot / dropped).unlink()
     commit(framework_snapshot, "feat!: drop po-review skill")
     result = sync(consumer, framework_snapshot, "main")
     assert result.returncode == 0, result.stdout + result.stderr
     assert (consumer / dropped).read_text() == "our version\n"
-    assert dropped not in (consumer / ".sdlc-files").read_text(), "it's the consumer's now"
+    assert dropped not in (consumer / ".sdlc/files").read_text(), "it's the consumer's now"
     assert "kept (the framework dropped these" in result.stdout
 
 
 def test_sync_reports_make_targets_the_consumer_lacks(consumer, framework_snapshot):
-    makefile = (consumer / "Makefile").read_text().replace("status", "nostatus")
-    commit(consumer, "chore: drop status target", {"Makefile": makefile})
-    commit(framework_snapshot, "fix: change", {"REVIEW.md": "changed\n"})
+    makefile = (consumer / "Makefile").read_text().replace(" fmt ", " ")  # its rule and .PHONY
+    commit(consumer, "chore: drop fmt target", {"Makefile": makefile})
+    commit(framework_snapshot, "fix: change", {".sdlc/REVIEW.md": "changed\n"})
     out = sync(consumer, framework_snapshot, "main").stdout
-    assert "make status  (stack contract" in out
-    assert "make evals  (optional" in out
+    assert "make fmt  (stack contract" in out
+    assert "make coverage  (optional" in out
     assert "make check  (" not in out
+    assert "make status" not in out, ".sdlc/sdlc.mk brings it"
+    assert "include the pipeline's targets" not in out
+
+
+def test_sync_asks_for_the_include_and_names_targets_it_replaces(consumer, framework_snapshot):
+    makefile = (consumer / "Makefile").read_text().replace("include .sdlc/sdlc.mk\n", "")
+    makefile += "\nstatus:\n\t@echo ours\n"
+    commit(consumer, "chore: an older Makefile", {"Makefile": makefile})
+    commit(framework_snapshot, "fix: change", {".sdlc/REVIEW.md": "changed\n"})
+    out = sync(consumer, framework_snapshot, "main").stdout
+    assert "your Makefile doesn't include the pipeline's targets" in out
+    assert "  include .sdlc/sdlc.mk\n" in out
+    assert (
+        "your Makefile defines targets .sdlc/sdlc.mk now provides; delete yours:\n  status\n" in out
+    )
 
 
 def test_sdlc_files_lists_what_was_installed(consumer):
-    files = (consumer / ".sdlc-files").read_text().split()
-    assert ".claude/hooks/production-gate.sh" in files
-    assert "tools/sdlc/src/sdlc/cli.py" in files
+    files = (consumer / ".sdlc/files").read_text().split()
+    assert ".sdlc/hooks/production-gate.sh" in files
+    assert ".sdlc/src/sdlc/cli.py" in files
     assert ".github/workflows/release.yml" not in files
     assert "Makefile" not in files
     assert all((consumer / f).is_file() for f in files)
@@ -430,9 +453,9 @@ def test_sdlc_files_lists_what_was_installed(consumer):
 def test_sync_overwrites_files_in_place(consumer, framework_snapshot):
     # The sync script replaces itself while running; deleting it first leaves a
     # .fuse_hidden* file behind on NTFS-over-FUSE checkouts. Same inode = no delete.
-    script = consumer / "scripts" / "sync-sdlc.sh"
+    script = consumer / ".sdlc" / "scripts" / "sync-sdlc.sh"
     before = script.stat().st_ino
-    commit(framework_snapshot, "fix: change", {"REVIEW.md": "changed\n"})
+    commit(framework_snapshot, "fix: change", {".sdlc/REVIEW.md": "changed\n"})
     assert sync(consumer, framework_snapshot, "main").returncode == 0
     assert script.stat().st_ino == before
 
@@ -440,11 +463,16 @@ def test_sync_overwrites_files_in_place(consumer, framework_snapshot):
 def test_a_new_framework_file_arrives_in_the_same_sync(consumer, framework_snapshot):
     # The file list lives in the sync script, so a version that adds a path must be run by
     # its own (new) script, or the new file only arrives on the next sync.
-    script = framework_snapshot / "scripts" / "sync-sdlc.sh"
+    script = framework_snapshot / ".sdlc" / "scripts" / "sync-sdlc.sh"
     text = script.read_text().replace(
-        '    "REVIEW.md:REVIEW.md"\n', '    "REVIEW.md:REVIEW.md"\n    "NEW.md:NEW.md"\n'
+        '    ".sdlc:.sdlc"\n',
+        '    ".sdlc:.sdlc"\n    "NEW.md:NEW.md"\n',
     )
-    commit(framework_snapshot, "feat: new file", {"NEW.md": "new\n", "scripts/sync-sdlc.sh": text})
+    commit(
+        framework_snapshot,
+        "feat: new file",
+        {"NEW.md": "new\n", ".sdlc/scripts/sync-sdlc.sh": text},
+    )
     result = sync(consumer, framework_snapshot, "main")
     assert result.returncode == 0, result.stdout + result.stderr
     assert "running the new one" in result.stdout
@@ -487,9 +515,9 @@ def sync_with_gh(consumer, framework_snapshot, tmp_path, secrets="", variables="
     (fake / "gh").write_text(FAKE_GH)
     (fake / "gh").chmod(0o755)
     git(consumer, "remote", "add", "origin", "git@github.com:o/r.git")
-    commit(framework_snapshot, "fix: change", {"REVIEW.md": "changed\n"})
+    commit(framework_snapshot, "fix: change", {".sdlc/REVIEW.md": "changed\n"})
     return run(
-        ["bash", "scripts/sync-sdlc.sh", "main"],
+        ["bash", ".sdlc/scripts/sync-sdlc.sh", "main"],
         cwd=consumer,
         env={
             "SDLC_SOURCE": str(framework_snapshot),
@@ -502,7 +530,7 @@ def sync_with_gh(consumer, framework_snapshot, tmp_path, secrets="", variables="
 
 
 def test_sync_lists_every_secret_and_variable_the_workflows_use():
-    script = (REPO / "scripts" / "sync-sdlc.sh").read_text()
+    script = (REPO / ".sdlc" / "scripts" / "sync-sdlc.sh").read_text()
     for wf in (REPO / ".github" / "workflows").glob("*.yml"):
         if wf.name == "release.yml":  # framework-only, never synced
             continue
@@ -614,7 +642,7 @@ def test_sync_warns_when_a_public_repo_runs_fork_prs_on_the_runner_without_appro
         f"without approval ({policy})" in out
     )
     assert "Require approval for all external contributors" in out
-    assert (consumer / "docs/self-hosted-runner.md").is_file()
+    assert (consumer / ".sdlc/docs/self-hosted-runner.md").is_file()
 
 
 def test_sync_is_quiet_when_every_fork_pr_needs_approval(consumer, framework_snapshot, tmp_path):
@@ -681,7 +709,7 @@ def test_sync_installs_auto_merge_and_is_quiet_when_not_opted_in(
 ):
     out = sync_with_gh(consumer, framework_snapshot, tmp_path, variables=APP_VARS, **ALL_SET)
     assert "SDLC_AUTO_MERGE" not in out.stdout
-    staged = git(consumer, "ls-files", "-s", "scripts/auto-merge.sh")
+    staged = git(consumer, "ls-files", "-s", ".sdlc/scripts/auto-merge.sh")
     assert staged.startswith("100755"), staged
 
 
@@ -725,22 +753,22 @@ def test_numbered_criteria_fail_on_the_consumer_spec_pr(consumer):
     scope rules (#95) reach the consumer with the skills that read them."""
     assert make(consumer, "new-change", "NAME=menus").returncode == 0
     folder = consumer / "changes" / "0001-menus"
-    spec = (consumer / "templates" / "spec.md").read_text()
+    spec = (consumer / ".sdlc" / "templates" / "spec.md").read_text()
     (folder / "spec.md").write_text(spec.replace("- AC1 (R1): ", "1. "))
     broken = make(consumer, "validate")
     assert broken.returncode != 0
     assert "numbered list" in broken.stderr
     (folder / "spec.md").write_text(spec)
     assert make(consumer, "validate").returncode == 0
-    assert (consumer / ".claude" / "skills" / "scope.md").exists()
+    assert (consumer / ".sdlc" / "skills" / "scope.md").exists()
 
 
 def test_clause_check_in_consumer(consumer, framework_snapshot):
     """The clause check (#47) arrives with the sync and splits a consumer's spec, and a
     consumer without the `clauses` target is told it's optional."""
-    script = consumer / "scripts" / "clause-check.sh"
+    script = consumer / ".sdlc" / "scripts" / "clause-check.sh"
     assert os.access(script, os.X_OK)
-    assert (consumer / "prompts" / "clause-check.md").exists()
+    assert (consumer / ".sdlc" / "prompts" / "clause-check.md").exists()
     fixture = REPO / "evals" / "fixtures" / "clause-coverage" / "0001-role-search"
     folder = consumer / "changes" / "0001-role-search"
     folder.mkdir(parents=True)
@@ -752,12 +780,6 @@ def test_clause_check_in_consumer(consumer, framework_snapshot):
     dry = run([str(script), "--stage", "plan", "0001"], cwd=consumer, env={"AGENT": "echo"})
     assert dry.returncode == 0, dry.stderr
     assert [f["requirement"] for f in json.loads(dry.stdout)] == ["R1", "R2"]
-
-    shutil.rmtree(folder)
-    makefile = (consumer / "Makefile").read_text().replace("clauses", "noclauses")
-    commit(consumer, "chore: drop clauses target", {"Makefile": makefile})
-    commit(framework_snapshot, "fix: change", {"REVIEW.md": "changed\n"})
-    assert "make clauses  (optional" in sync(consumer, framework_snapshot, "main").stdout
 
 
 def test_clause_check_finds_the_changed_specs_and_plans_in_consumer(consumer):
@@ -789,7 +811,7 @@ def test_clause_check_finds_the_changed_specs_and_plans_in_consumer(consumer):
     git(consumer, "checkout", "-q", "amend")
 
     result = run(
-        ["scripts/clause-check.sh", "--changed-since", "main"],
+        [".sdlc/scripts/clause-check.sh", "--changed-since", "main"],
         cwd=consumer,
         env={"AGENT": "echo"},
     )
@@ -808,7 +830,7 @@ def test_clause_check_finds_the_changed_specs_and_plans_in_consumer(consumer):
 
 def test_delivery_check_in_consumer(consumer):
     """Stage build (#106) arrives with the sync and reads the consumer's build.md."""
-    assert (consumer / "prompts" / "delivery-check.md").exists()
+    assert (consumer / ".sdlc" / "prompts" / "delivery-check.md").exists()
     fixture = REPO / "evals" / "fixtures" / "delivery-gap" / "0001-floor-mode"
     shutil.copytree(fixture, consumer / "changes" / "0001-floor-mode")
     out = make(consumer, "clauses", "CHANGE=0001")
@@ -818,7 +840,7 @@ def test_delivery_check_in_consumer(consumer):
         b["text"] for b in r1["build"]
     ]
     dry = run(
-        ["scripts/clause-check.sh", "--stage", "build", "0001"],
+        [".sdlc/scripts/clause-check.sh", "--stage", "build", "0001"],
         cwd=consumer,
         env={"AGENT": "echo"},
     )
@@ -846,7 +868,7 @@ def test_delivery_check_reads_approvals_from_a_change_named_by_number(consumer, 
     (bin_dir / "claude").write_text(f"#!/usr/bin/env bash\ncat '{tmp_path / 'answer.txt'}'\n")
     (bin_dir / "claude").chmod(0o755)
     result = run(
-        ["scripts/clause-check.sh", "--stage", "build", "0001"],
+        [".sdlc/scripts/clause-check.sh", "--stage", "build", "0001"],
         cwd=consumer,
         env={"PATH": f"{bin_dir}:{os.environ['PATH']}"},
     )
@@ -890,12 +912,13 @@ def test_readable_requirements_hold_new_specs_and_leave_merged_ones(consumer):
 
 
 def test_request_review_arrives_with_the_sync(consumer):
-    """#105: the review skills call scripts/request-review.sh, so the sync installs it runnable."""
-    script = consumer / "scripts" / "request-review.sh"
+    """#105: the review skills call .sdlc/scripts/request-review.sh, so the sync installs it
+    runnable."""
+    script = consumer / ".sdlc" / "scripts" / "request-review.sh"
     assert os.access(script, os.X_OK)
-    assert "scripts/request-review.sh" in (consumer / ".sdlc-files").read_text()
-    skill = (consumer / ".claude" / "skills" / "review-findings" / "SKILL.md").read_text()
-    assert "scripts/request-review.sh <N>" in skill
+    assert ".sdlc/scripts/request-review.sh" in (consumer / ".sdlc/files").read_text()
+    skill = (consumer / ".sdlc" / "skills" / "review-findings" / "SKILL.md").read_text()
+    assert ".sdlc/scripts/request-review.sh <N>" in skill
 
 
 def test_sync_reports_the_repos_own_scripts_that_arent_executable(consumer, framework_snapshot):
@@ -909,18 +932,18 @@ def test_sync_reports_the_repos_own_scripts_that_arent_executable(consumer, fram
     (consumer / "tools/ok.sh").chmod(0o755)  # executable on disk and in git, as on Linux
     git(consumer, "update-index", "--chmod=+x", "tools/ok.sh")
     commit(consumer, "chore: ok.sh is executable")
-    commit(framework_snapshot, "fix: change", {"REVIEW.md": "changed\n"})
+    commit(framework_snapshot, "fix: change", {".sdlc/REVIEW.md": "changed\n"})
     out = sync(consumer, framework_snapshot, "main").stdout
     report = out[out.index("your own scripts that aren't executable") :]
     assert "  .github/actions/deploy.sh" in report
-    assert "tools/ok.sh" not in report and "scripts/sync-sdlc.sh" not in report
+    assert "tools/ok.sh" not in report and ".sdlc/scripts/sync-sdlc.sh" not in report
     assert "git update-index --chmod=+x" in report
     mode = git(consumer, "ls-files", "-s", ".github/actions/deploy.sh").split()[0]
     assert mode == "100644", "reported, not changed"
 
 
 def test_sync_is_quiet_when_the_repos_scripts_are_executable(consumer, framework_snapshot):
-    commit(framework_snapshot, "fix: change", {"REVIEW.md": "changed\n"})
+    commit(framework_snapshot, "fix: change", {".sdlc/REVIEW.md": "changed\n"})
     assert "aren't executable" not in sync(consumer, framework_snapshot, "main").stdout
 
 
@@ -928,7 +951,7 @@ def test_sync_is_quiet_when_the_repos_scripts_are_executable(consumer, framework
 def test_sync_says_nothing_about_auto_merge_when_it_is_off(
     consumer, framework_snapshot, tmp_path, value
 ):
-    # #101 finding 7: `off` is off (THE RULE in scripts/auto-merge.sh), so no warnings.
+    # #101 finding 7: `off` is off (THE RULE in .sdlc/scripts/auto-merge.sh), so no warnings.
     out = sync_with_gh(
         consumer,
         framework_snapshot,
@@ -983,14 +1006,16 @@ def test_stale_review_and_title_checks_arrive_with_the_sync(consumer):
     """#46: the workflows call these scripts, so the sync installs them runnable."""
     scripts = ("review-current.sh", "review-posted.sh", "review-findings.sh", "check-pr-title.sh")
     for name in scripts:
-        assert os.access(consumer / "scripts" / name, os.X_OK), name
+        assert os.access(consumer / ".sdlc" / "scripts" / name, os.X_OK), name
     bad = run(
-        ["scripts/check-pr-title.sh", "docs: tidy"], cwd=consumer, input="changes/0001-x/spec.md\n"
+        [".sdlc/scripts/check-pr-title.sh", "docs: tidy"],
+        cwd=consumer,
+        input="changes/0001-x/spec.md\n",
     )
     assert bad.returncode == 1 and "use spec" in bad.stdout
     assert (
         run(
-            ["scripts/check-pr-title.sh", "spec(0001-x): amend"],
+            [".sdlc/scripts/check-pr-title.sh", "spec(0001-x): amend"],
             cwd=consumer,
             input="changes/0001-x/spec.md\n",
         ).returncode
@@ -999,27 +1024,29 @@ def test_stale_review_and_title_checks_arrive_with_the_sync(consumer):
 
 
 def test_a_consumers_review_rules_survive_the_sync(consumer, framework_snapshot):
-    """The project's docs/review-rules.md is its own: a sync that changes REVIEW.md leaves it."""
-    assert (consumer / "templates" / "review-rules.md").exists()
+    """The project's docs/review-rules.md is its own: a sync that changes .sdlc/REVIEW.md
+    leaves it."""
+    assert (consumer / ".sdlc" / "templates" / "review-rules.md").exists()
     rules = "# Review rules\n\n- **Architecture:** core/ never touches scenes. Important.\n"
     commit(consumer, "docs: our review rules", {"docs/review-rules.md": rules})
-    commit(framework_snapshot, "fix: review", {"REVIEW.md": "changed\n"})
+    commit(framework_snapshot, "fix: review", {".sdlc/REVIEW.md": "changed\n"})
     result = sync(consumer, framework_snapshot, "main")
     assert result.returncode == 0, result.stdout + result.stderr
     assert (consumer / "docs" / "review-rules.md").read_text() == rules
-    assert "docs/review-rules.md" not in (consumer / ".sdlc-files").read_text()
+    assert "docs/review-rules.md" not in (consumer / ".sdlc/files").read_text()
 
 
 def test_a_consumer_adopts_a_roadmap_and_validate_checks_it(consumer, framework_snapshot):
     """#81: no roadmap, no check; once docs/roadmap.md exists, intents and rows must agree,
     and the sync leaves the project's roadmap alone."""
-    assert (consumer / "docs" / "roadmap-format.md").is_file()
+    assert (consumer / ".sdlc" / "docs" / "roadmap-format.md").is_file()
     assert make(consumer, "new-change", "NAME=phone-access").returncode == 0
     intent = consumer / "changes" / "0001-phone-access" / "intent.md"
     intent.write_text(intent.read_text().replace("<name>", "Sam"))
     assert make(consumer, "validate").returncode == 0, "no roadmap: nothing to check"
 
-    roadmap = (consumer / "templates" / "roadmap.md").read_text()
+    roadmap = (consumer / ".sdlc" / "templates" / "roadmap.md").read_text()
+    (consumer / "docs").mkdir(exist_ok=True)  # the framework's docs are in .sdlc/docs now
     (consumer / "docs" / "roadmap.md").write_text(roadmap)
     result = make(consumer, "validate")
     assert result.returncode != 0
@@ -1038,8 +1065,175 @@ def test_a_consumer_adopts_a_roadmap_and_validate_checks_it(consumer, framework_
 
     commit(consumer, "intent(0001-phone-access): phone access")
     kept = (consumer / "docs" / "roadmap.md").read_text()
-    commit(framework_snapshot, "fix: roadmap template", {"templates/roadmap.md": "changed\n"})
+    commit(framework_snapshot, "fix: roadmap template", {".sdlc/templates/roadmap.md": "changed\n"})
     result = sync(consumer, framework_snapshot, "main")
     assert result.returncode == 0, result.stdout + result.stderr
     assert (consumer / "docs" / "roadmap.md").read_text() == kept
-    assert "docs/roadmap.md\n" not in (consumer / ".sdlc-files").read_text()
+    assert "docs/roadmap.md\n" not in (consumer / ".sdlc/files").read_text()
+
+
+# --- the move into .sdlc/ (#133) -------------------------------------------------------------
+
+OLD = "v0.10.1"  # the last release with the framework spread across the repo
+
+
+@pytest.fixture
+def framework_history(tmp_path):
+    """A framework repo whose history is the real OLD release, then this working tree."""
+    snap = init_repo(tmp_path / "framework")
+    run(["bash", "-c", f'git archive {OLD} | tar -x -C "$0"', str(snap)], check=True)
+    commit(snap, f"release {OLD}")
+    git(snap, "tag", OLD)
+    git(snap, "rm", "-rq", ".")
+    copy_working_tree(snap)
+    commit(snap, "the move into .sdlc/")
+    return snap
+
+
+@pytest.fixture
+def old_consumer(tmp_path, framework_history):
+    """A consumer on OLD, with local edits to two framework files."""
+    repo = init_repo(tmp_path / "consumer")
+    makefile = git(REPO, "show", f"{OLD}:tests/fixtures/consumer/Makefile") + "\n"
+    old_sync = git(REPO, "show", f"{OLD}:scripts/sync-sdlc.sh") + "\n"
+    commit(
+        repo, "chore: consumer skeleton", {"Makefile": makefile, "scripts/sync-sdlc.sh": old_sync}
+    )
+    env = {"SDLC_SOURCE": str(framework_history)}
+    result = run(["bash", "scripts/sync-sdlc.sh", OLD], cwd=repo, env=env)
+    assert result.returncode == 0, result.stdout + result.stderr
+    commit(repo, f"chore: sync {OLD}")
+    for rel, line in [
+        ("templates/intent.md", "\nOur own line in the intent template.\n"),
+        (".claude/skills/build/SKILL.md", "\nOur own build rule.\n"),
+        (".claude/skills/security-policy/SKILL.md", "\nNo secrets in Godot scenes.\n"),
+    ]:
+        path = repo / rel
+        path.write_text(path.read_text() + line)
+    commit(repo, "chore: our edits")
+    return repo
+
+
+def test_an_old_consumer_moves_into_sdlc_in_one_sync(old_consumer, framework_history):
+    # The consumer's own copy of the old sync script finds the new one through the shim.
+    env = {"SDLC_SOURCE": str(framework_history)}
+    result = run(["bash", "scripts/sync-sdlc.sh", "main"], cwd=old_consumer, env=env)
+    out = result.stdout + result.stderr
+    assert result.returncode == 0, out
+    assert "running the new one" in out
+
+    for gone in (
+        "templates",
+        "prompts",
+        "tools",
+        ".claude/hooks",
+        "REVIEW.md",
+        "evals",
+        ".sdlc-files",
+        ".sdlc-version",
+        "docs/roles.md",
+    ):
+        assert not (old_consumer / gone).exists(), gone
+    assert not (old_consumer / "scripts").exists(), "the old sync script went too"
+    assert "kept (the framework dropped these" not in out, "nothing was left behind"
+
+    # Local edits moved with their files, merged into the new versions.
+    intent = (old_consumer / ".sdlc/templates/intent.md").read_text()
+    assert "Our own line in the intent template." in intent
+    build = (old_consumer / ".sdlc/skills/build/SKILL.md").read_text()
+    assert "Our own build rule." in build and not build.startswith("---"), (
+        "frontmatter is in the stub"
+    )
+    stub = old_consumer / ".claude/skills/build/SKILL.md"
+    assert stub.read_text() == (REPO / ".claude/skills/build/SKILL.md").read_text()
+
+    # The security policy is the project's: it becomes the override, not a merge.
+    policy = (old_consumer / ".sdlc-local/skills/security-policy/SKILL.md").read_text()
+    assert "No secrets in Godot scenes." in policy and not policy.startswith("---")
+    framework_policy = REPO / ".sdlc/skills/security-policy/SKILL.md"
+    assert (old_consumer / ".sdlc/skills/security-policy/SKILL.md").read_text() == (
+        framework_policy.read_text()
+    )
+    assert "your security policy is the project's own" in out
+    resolved = run(
+        [".sdlc/scripts/resolve.sh", "skills/security-policy/SKILL.md"], cwd=old_consumer
+    )
+    assert "No secrets in Godot scenes." in resolved.stdout
+
+    files = (old_consumer / ".sdlc/files").read_text().splitlines()
+    assert ".sdlc/scripts/agent.sh" in files and ".claude/skills/build/SKILL.md" in files
+    assert (old_consumer / ".sdlc/version").read_text().split("\n")[1] == git(
+        framework_history, "rev-parse", "HEAD"
+    ).strip()
+    modes = git(old_consumer, "ls-files", "-s", ".sdlc/scripts/agent.sh", ".sdlc/hooks/format.sh")
+    assert all(line.startswith("100755") for line in modes.splitlines()), modes
+
+    # The consumer's Makefile is theirs: the sync names the line to change, never edits it.
+    assert "these lines of yours still use the old paths" in out
+    assert "Makefile:" in out and "tools/sdlc/src" in out
+    assert "tools/sdlc/src" in (old_consumer / "Makefile").read_text()
+    makefile = old_consumer / "Makefile"
+    makefile.write_text(makefile.read_text().replace("tools/sdlc/src", ".sdlc/src"))
+    assert make(old_consumer, "validate").returncode == 0
+
+
+def test_the_next_sync_after_the_move_has_nothing_to_move(old_consumer, framework_history):
+    env = {"SDLC_SOURCE": str(framework_history)}
+    assert run(["bash", "scripts/sync-sdlc.sh", "main"], cwd=old_consumer, env=env).returncode == 0
+    makefile = old_consumer / "Makefile"
+    makefile.write_text(makefile.read_text().replace("tools/sdlc/src", ".sdlc/src"))
+    commit(old_consumer, "chore: sync the move")
+    again = sync(old_consumer, framework_history, "main")
+    assert again.returncode == 0, again.stdout + again.stderr
+    assert "already up to date" in again.stdout
+    assert "old paths" not in again.stdout
+
+
+def test_a_projects_override_shapes_new_changes_and_the_sync_flags_it(consumer, framework_snapshot):
+    """#133: .sdlc-local/ wins over .sdlc/, the sync never writes it, and when the framework
+    changes the file under an override, the sync says so and validate checks it still applies."""
+    override = consumer / ".sdlc-local/templates/intent.md"
+    override.parent.mkdir(parents=True)
+    override.write_text(
+        "<!-- extends -->\n<!-- append: header -->\nMilestone: M<n>\n<!-- /append -->\n"
+    )
+    commit(consumer, "chore: our intent header")
+    assert make(consumer, "new-change", "NAME=phone-access").returncode == 0
+    intent = (consumer / "changes/0001-phone-access/intent.md").read_text()
+    assert intent.index("Product owner: <name>") < intent.index("\nMilestone: M<n>\n")
+    assert intent.index("Milestone: M<n>") < intent.index("## Problem") and "block:" not in intent
+    shutil.rmtree(consumer / "changes")  # never committed: the sync needs a clean tree
+
+    # The framework renames the block the override aims at.
+    template = framework_snapshot / ".sdlc/templates/intent.md"
+    template.write_text(template.read_text().replace("block: header", "block: top"))
+    commit(framework_snapshot, "feat: rename the header block")
+    result = sync(consumer, framework_snapshot, "main")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "your overrides of files this update changed" in result.stdout
+    assert ".sdlc-local/templates/intent.md" in result.stdout
+    assert "these overrides no longer apply" in result.stdout
+    assert override.read_text().startswith("<!-- extends -->"), "the sync never writes it"
+    check = make(consumer, "validate")
+    assert check.returncode != 0
+    assert (
+        ".sdlc-local/templates/intent.md: the base file has no block named 'header'" in check.stderr
+    )
+
+
+def test_a_projects_hook_runs_after_the_framework_through_the_settings_it_already_has(
+    consumer,
+):
+    settings_before = (consumer / ".claude/settings.json").read_text()
+    local = consumer / ".sdlc-local/hooks"
+    local.mkdir(parents=True)
+    (local / "hooks.tsv").write_text("PreToolUse\tBash\t.sdlc-local/hooks/no-curl.sh\n")
+    (local / "no-curl.sh").write_text(
+        '#!/usr/bin/env bash\ngrep -q curl && { echo "no curl" >&2; exit 2; }\nexit 0\n'
+    )
+    (local / "no-curl.sh").chmod(0o755)
+    payload = json.dumps({"tool_name": "Bash", "tool_input": {"command": "curl example.com"}})
+    env = {"CLAUDE_PROJECT_DIR": str(consumer)}
+    blocked = run([".sdlc/hooks/dispatch.sh", "PreToolUse"], cwd=consumer, env=env, input=payload)
+    assert blocked.returncode == 2 and "no curl" in blocked.stderr
+    assert (consumer / ".claude/settings.json").read_text() == settings_before

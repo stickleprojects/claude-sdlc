@@ -72,15 +72,15 @@ def test_next_slug_increments(tmp_path: Path) -> None:
 )
 def test_templates_satisfy_their_own_rules(kind: str, name: str) -> None:
     rules = CHAIN if kind == "feature" else BUG_CHAIN
-    text = (REPO / "templates" / TEMPLATES[kind][name]).read_text()
+    text = (REPO / ".sdlc" / "templates" / TEMPLATES[kind][name]).read_text()
     for section in rules[name]:
         assert f"## {section}" in text
 
 
 def test_new_then_check_round_trip(tmp_path: Path) -> None:
-    (tmp_path / "templates").mkdir()
-    template = (REPO / "templates" / "intent.md").read_text()
-    (tmp_path / "templates" / "intent.md").write_text(template)
+    (tmp_path / ".sdlc" / "templates").mkdir(parents=True)
+    template = (REPO / ".sdlc" / "templates" / "intent.md").read_text()
+    (tmp_path / ".sdlc" / "templates" / "intent.md").write_text(template)
     assert main(["--root", str(tmp_path), "new", "add-login"]) == 0
     assert (tmp_path / "changes" / "0001-add-login" / "intent.md").exists()
     assert main(["--root", str(tmp_path), "check"]) == 0
@@ -186,9 +186,11 @@ def test_intent_and_bug_together_are_reported(change: Path) -> None:
 
 
 def _templates(root: Path) -> None:
-    (root / "templates").mkdir()
+    (root / ".sdlc" / "templates").mkdir(parents=True)
     for name in ("intent.md", "bug.md"):
-        (root / "templates" / name).write_text((REPO / "templates" / name).read_text())
+        (root / ".sdlc" / "templates" / name).write_text(
+            (REPO / ".sdlc" / "templates" / name).read_text()
+        )
 
 
 def test_new_bug_round_trip(tmp_path: Path) -> None:
@@ -215,7 +217,7 @@ def test_new_rejects_unknown_type(tmp_path: Path) -> None:
 
 # --- build.md: the optional build plan -------------------------------------------------
 
-BUILD_TEMPLATE = (REPO / "templates" / "build.md").read_text()
+BUILD_TEMPLATE = (REPO / ".sdlc" / "templates" / "build.md").read_text()
 
 
 def planned(change: Path) -> Path:
@@ -334,7 +336,7 @@ def test_status_shows_build_progress(tmp_path: Path, capsys: pytest.CaptureFixtu
     ]
 
 
-ADR_TEMPLATE = (REPO / "templates" / "adr.md").read_text()
+ADR_TEMPLATE = (REPO / ".sdlc" / "templates" / "adr.md").read_text()
 
 
 def accepted_adr(trigger: str = "- a plan hand-builds navigation state") -> str:
@@ -568,7 +570,7 @@ def test_criteria_of_a_planned_spec_are_left_as_merged(change: Path) -> None:
 
 def test_spec_templates_show_a_readable_criterion() -> None:
     for name in ("spec.md", "bug-spec.md"):
-        text = (REPO / "templates" / name).read_text()
+        text = (REPO / ".sdlc" / "templates" / name).read_text()
         assert "\n- AC1 (R1): " in text
 
 
@@ -578,12 +580,12 @@ def test_spec_templates_show_a_readable_criterion() -> None:
 @pytest.mark.parametrize(
     "path",
     [
-        ".claude/agents/verifier.md",
-        ".claude/skills/plan/SKILL.md",
-        ".claude/skills/build/SKILL.md",
-        ".claude/skills/spec/SKILL.md",
-        ".claude/skills/review-findings/SKILL.md",
-        "REVIEW.md",
+        ".sdlc/agents/verifier.md",
+        ".sdlc/skills/plan/SKILL.md",
+        ".sdlc/skills/build/SKILL.md",
+        ".sdlc/skills/spec/SKILL.md",
+        ".sdlc/skills/review-findings/SKILL.md",
+        ".sdlc/REVIEW.md",
     ],
 )
 def test_guardrails_read_the_scope_rules(path: str) -> None:
@@ -591,14 +593,14 @@ def test_guardrails_read_the_scope_rules(path: str) -> None:
 
 
 def test_worker_blocks_on_an_unapproved_descope() -> None:
-    build = (REPO / ".claude/skills/build/SKILL.md").read_text()
+    build = (REPO / ".sdlc/skills/build/SKILL.md").read_text()
     worker = build[build.index("## Worker mode") :]
     assert "**A descope nobody approved:**" in worker and "return `BLOCKED`" in worker
     assert "Descopes:" in worker  # the report carries them back to the orchestrator
 
 
 def test_plan_template_says_how_a_descope_is_approved() -> None:
-    text = (REPO / "templates/plan.md").read_text()
+    text = (REPO / ".sdlc/templates/plan.md").read_text()
     assert "Descope: <what> because <reason>. Approved: <name>, <date>." in text
 
 
@@ -607,10 +609,10 @@ def test_plan_template_says_how_a_descope_is_approved() -> None:
 
 def with_dod(root: Path) -> None:
     """The framework's definition of done, where the repo's sync would put it."""
-    target = root / "templates" / "definition-of-done.md"
+    target = root / ".sdlc" / "templates" / "definition-of-done.md"
     if not target.exists():
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text((REPO / "templates/definition-of-done.md").read_text())
+        target.write_text((REPO / ".sdlc/templates/definition-of-done.md").read_text())
 
 
 def plan_with(descopes: str | None, risks: str = "text") -> str:
@@ -709,7 +711,7 @@ def test_bug_plan_needs_descopes_too(change: Path) -> None:
 
 
 def test_plan_template_fails_until_descopes_are_filled(change: Path) -> None:
-    template = (REPO / "templates/plan.md").read_text()
+    template = (REPO / ".sdlc/templates/plan.md").read_text()
     problems = " | ".join(edited_plan(change, template))
     assert "Definition of done names no kind" in problems
     assert "still has the template's text" in problems
@@ -751,35 +753,35 @@ def test_validate_requires_descopes_only_in_plans_the_branch_edits(branch_repo: 
 
 
 def test_guardrails_point_at_the_descopes_section() -> None:
-    scope = (REPO / ".claude/skills/scope.md").read_text()
+    scope = (REPO / ".sdlc/skills/scope.md").read_text()
     assert "under **Descopes**" in scope and "- Human check:" in scope
-    plan = (REPO / ".claude/skills/plan/SKILL.md").read_text()
+    plan = (REPO / ".sdlc/skills/plan/SKILL.md").read_text()
     assert "Fill **Descopes**" in plan and "Human check:" in plan
-    for path in (".claude/skills/build/SKILL.md", ".claude/agents/verifier.md", "REVIEW.md"):
+    for path in (".sdlc/skills/build/SKILL.md", ".sdlc/agents/verifier.md", ".sdlc/REVIEW.md"):
         text = (REPO / path).read_text()
         assert "Descopes" in text, path
         assert "plan.md's Risks" not in text and "in its Risks" not in text, path
 
 
 def test_human_checks_are_pending_and_listed_for_the_owner() -> None:
-    verifier = (REPO / ".claude/agents/verifier.md").read_text()
+    verifier = (REPO / ".sdlc/agents/verifier.md").read_text()
     assert "PENDING, never PASS" in verifier
     assert "`VERDICT: PENDING (<k> human checks)`" in verifier
-    build = (REPO / ".claude/skills/build/SKILL.md").read_text()
+    build = (REPO / ".sdlc/skills/build/SKILL.md").read_text()
     assert "**To check by hand**" in build and "`VERDICT: PENDING`" in build
-    assert "**To check by hand**" in (REPO / "REVIEW.md").read_text()
+    assert "**To check by hand**" in (REPO / ".sdlc/REVIEW.md").read_text()
 
 
 # --- definition of done (#95) ---------------------------------------------------------------
 
-DOD_TEMPLATE = (REPO / "templates/definition-of-done.md").read_text()
+DOD_TEMPLATE = (REPO / ".sdlc/templates/definition-of-done.md").read_text()
 
 
 def dod_root(tmp_path: Path, project: str | None = None) -> Path:
-    (tmp_path / "templates").mkdir(exist_ok=True)
-    (tmp_path / "templates/definition-of-done.md").write_text(DOD_TEMPLATE)
+    (tmp_path / ".sdlc" / "templates").mkdir(parents=True, exist_ok=True)
+    (tmp_path / ".sdlc/templates/definition-of-done.md").write_text(DOD_TEMPLATE)
     if project is not None:
-        (tmp_path / "docs").mkdir(exist_ok=True)
+        (tmp_path / "docs").mkdir(parents=True, exist_ok=True)
         (tmp_path / "docs/definition-of-done.md").write_text(project)
     return tmp_path
 
@@ -869,16 +871,16 @@ def test_validate_reports_a_bad_project_table(tmp_path: Path) -> None:
 
 def test_stages_hold_work_to_the_definition_of_done() -> None:
     for path in (
-        ".claude/skills/scope.md",
-        ".claude/skills/plan/SKILL.md",
-        ".claude/skills/build/SKILL.md",
-        ".claude/agents/verifier.md",
-        "REVIEW.md",
+        ".sdlc/skills/scope.md",
+        ".sdlc/skills/plan/SKILL.md",
+        ".sdlc/skills/build/SKILL.md",
+        ".sdlc/agents/verifier.md",
+        ".sdlc/REVIEW.md",
     ):
         text = (REPO / path).read_text()
         assert "definition-of-done.md" in text, path
         assert "Definition of done:" in text, path
-    assert "- **Definition of done:**" in (REPO / "templates/plan.md").read_text()
+    assert "- **Definition of done:**" in (REPO / ".sdlc/templates/plan.md").read_text()
 
 
 def test_an_edited_plan_fails_without_a_definition_of_done(change: Path) -> None:
@@ -889,7 +891,8 @@ def test_an_edited_plan_fails_without_a_definition_of_done(change: Path) -> None
     plan.write_text(plan_with("None.").replace("Any code", "Banana"))
     [problem] = check_change(change, changed={plan})
     assert (
-        problem.message == "no definition of done found: expected templates/definition-of-done.md"
+        problem.message
+        == "no definition of done found: expected .sdlc/templates/definition-of-done.md"
     )
     assert check_change(change, changed=set()) == []  # a merged plan isn't held to it
 
@@ -1078,18 +1081,18 @@ def test_clauses_with_a_ref_keeps_only_what_changed(tmp_path: Path, capsys) -> N
 
 def test_clause_coverage_reaches_every_stage() -> None:
     for path in (
-        ".claude/skills/spec/SKILL.md",
-        ".claude/skills/plan/SKILL.md",
-        ".claude/agents/verifier.md",
-        "REVIEW.md",
+        ".sdlc/skills/spec/SKILL.md",
+        ".sdlc/skills/plan/SKILL.md",
+        ".sdlc/agents/verifier.md",
+        ".sdlc/REVIEW.md",
     ):
         text = (REPO / path).read_text()
         assert "clause" in text.lower(), path
-    review = (REPO / "REVIEW.md").read_text()
-    assert "scripts/clause-check.sh" in review
+    review = (REPO / ".sdlc/REVIEW.md").read_text()
+    assert ".sdlc/scripts/clause-check.sh" in review
     assert "IDs only" in review, "the spec-match line states its basis"
-    assert "Untestable (R<n>)" in (REPO / "templates/spec.md").read_text()
-    assert "make clauses CHANGE=" in (REPO / ".claude/agents/verifier.md").read_text()
+    assert "Untestable (R<n>)" in (REPO / ".sdlc/templates/spec.md").read_text()
+    assert "make clauses CHANGE=" in (REPO / ".sdlc/agents/verifier.md").read_text()
 
 
 def test_clauses_with_a_ref_whose_spec_cant_be_read_checks_everything(
@@ -1158,17 +1161,17 @@ def test_clauses_with_a_ref_notices_a_changed_build_plan(tmp_path: Path, capsys)
 
 def test_delivery_gaps_reach_every_stage_and_escalate_only_when_unapproved() -> None:
     for path in (
-        ".claude/agents/verifier.md",
-        ".claude/skills/build/SKILL.md",
-        ".claude/skills/scope.md",
-        "REVIEW.md",
+        ".sdlc/agents/verifier.md",
+        ".sdlc/skills/build/SKILL.md",
+        ".sdlc/skills/scope.md",
+        ".sdlc/REVIEW.md",
     ):
         assert "Descope: needs approval" in (REPO / path).read_text(), path
-    verifier = (REPO / ".claude/agents/verifier.md").read_text()
-    assert "scripts/clause-check.sh --stage build" in verifier
+    verifier = (REPO / ".sdlc/agents/verifier.md").read_text()
+    assert ".sdlc/scripts/clause-check.sh --stage build" in verifier
     assert "Wording drift" in verifier and "main verb or noun" in verifier
-    assert "no routine human sign-off" in (REPO / ".claude/skills/scope.md").read_text()
-    build = (REPO / ".claude/skills/build/SKILL.md").read_text()
+    assert "no routine human sign-off" in (REPO / ".sdlc/skills/scope.md").read_text()
+    build = (REPO / ".sdlc/skills/build/SKILL.md").read_text()
     assert "check each milestone's Goal and Demo against the requirements" in build
 
 
@@ -1247,5 +1250,5 @@ def test_the_spec_templates_show_a_requirement_the_checks_read() -> None:
     from sdlc.clauses import blocks, unreadable
 
     for name in ("spec.md", "bug-spec.md"):
-        text = (REPO / "templates" / name).read_text()
+        text = (REPO / ".sdlc" / "templates" / name).read_text()
         assert [b.id for b in blocks(text)] == ["R1"] and unreadable(text) == [], name
