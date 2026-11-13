@@ -133,7 +133,72 @@ jobs:
           if git cat-file -e "$BASE:.sdlc-local" 2>/dev/null; then paths+=(.sdlc-local); fi
           git archive "$BASE" "${paths[@]}" | tar -x -C "$base"
           "$base/.sdlc/scripts/resolve.sh" REVIEW.md > .review-rules.md
-      - uses: anthropics/claude-code-action@v1
+      - name: Review
+        id: review
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # PRs and pushes from the agent's own App identity (.sdlc/docs/agent-identity.md) are reviewed
+          # like a person's, and so are spec PRs opened with the default token when there's no
+          # App (github-actions[bot], #82). The review only comments, so it can't start a loop.
+          # SDLC_REVIEW_EXTRA_BOTS adds the project's dependency bots (#142), e.g. `renovate` or
+          # `renovate,dependabot`, so their PRs get reviewed and can pass the required check.
+          # An unset variable leaves a blank entry, which the action ignores.
+          allowed_bots: ${{ format('{0},github-actions,{1}', vars.SDLC_AGENT_APP_SLUG, vars.SDLC_REVIEW_EXTRA_BOTS) }}
+          # The action holds inline comments back and drops any it judges to be tests once the
+          # session ends. A dropped finding is a finding nothing blocks on (#130), so post them all.
+          classify_inline_comments: false
+          prompt: |
+            Review PR #${{ github.event.pull_request.number }} in ${{ github.repository }}.
+            Follow the review rules in .review-rules.md exactly (.sdlc/REVIEW.md with this
+            project's overrides applied). Check the diff against the spec.md and plan.md
+            of the change it implements (under changes/).
+
+            If the file .clause-check.json exists in the workspace, it is the clause check's
+            output for the specs and plans this PR changes: start clause coverage from it, as
+            the rules' "Where the clauses come from" says. If it doesn't exist, the PR changes
+            no spec.md or plan.md.
+
+            This PR may have been reviewed before. First read the existing inline comments:
+              gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments
+            Post an inline comment only for a finding that is new or still not addressed
+            in a different way; never repeat one that is already there.
+
+            Every Important finding is its own thread starting with **Important (the rules'
+            "Posting findings"), never only in the summary. When no line in the diff fits it,
+            comment on the most relevant file with exactly:
+              gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments -f subject_type=file -f path=<file> -f commit_id=${{ github.event.pull_request.head.sha }} -f body=<finding>
+
+            Keep exactly one summary comment on the PR. If you posted one before, replace it:
+              gh pr comment ${{ github.event.pull_request.number }} --edit-last --body "..."
+            Only if that fails because there is none, create it with `gh pr comment`.
+            End it with the hidden count line, <!-- review-findings: important=<N> nit=<M> -->:
+            the job checks N against the open Important threads, and fails if they differ.
+          # Automation mode allows only the tools listed here: read the PR, comment on it.
+          claude_args: >-
+            --max-turns 30
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments),Bash(gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments -f subject_type=file:*),Read,Grep,Glob"
+      # The action can end "successfully" having posted nothing: four tool calls refused on #129,
+      # #147 and #155 (#157). Say in the log which calls were refused, keep that run's output,
+      # and review once more before failing. The retry is the same step: keep the two identical
+      # (tests/test_scripts.py checks it).
+      - name: Check the review posted its summary
+        id: posted
+        if: steps.workflow_change.outputs.skipped != 'true'
+        env:
+          SINCE: ${{ steps.start.outputs.since }}
+        run: |
+          if .sdlc/scripts/review-posted.sh "$PR" "$SINCE"; then
+            echo "posted=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "posted=false" >> "$GITHUB_OUTPUT"
+            .sdlc/scripts/review-denials.sh "$RUNNER_TEMP/claude-execution-output.json" "the first review"
+            cp "$RUNNER_TEMP/claude-execution-output.json" "$RUNNER_TEMP/review-attempt-1.json" 2>/dev/null || true
+          fi
+      - name: Review once more
+        id: retry
+        if: steps.posted.outputs.posted == 'false'
+        uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # PRs and pushes from the agent's own App identity (.sdlc/docs/agent-identity.md) are reviewed
@@ -224,6 +289,21 @@ jobs:
         run: >-
           gh api "repos/$GITHUB_REPOSITORY/statuses/$HEAD_SHA" --silent -f state=failure
           -f context=claude-review -f description="The Claude review failed: add the review label to run it again"
+      # The evidence for #157: what the review was refused, in the log and as a 7-day artifact
+      # (the session's tool calls and their output: the PR's own diff and comments, no secrets).
+      - name: Show why the review stopped
+        if: failure()
+        run: .sdlc/scripts/review-denials.sh "$RUNNER_TEMP/claude-execution-output.json" "the review"
+      - name: Keep the review's output
+        if: always() && (failure() || steps.posted.outputs.posted == 'false')
+        uses: actions/upload-artifact@v4
+        with:
+          name: claude-review-output-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/claude-execution-output.json
+            ${{ runner.temp }}/review-attempt-1.json
+          if-no-files-found: ignore
+          retention-days: 7
 
   # A push the review doesn't cover (auto-merge off): mark its commit as not reviewed, so the
   # required `claude-review` status says why and what to do instead of "Expected" (#46). No
