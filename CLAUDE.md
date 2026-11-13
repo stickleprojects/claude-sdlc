@@ -9,6 +9,7 @@ This repo implements the AI-native SDLC playbook: changes flow intent.md → spe
 ```
 make setup       # install deps (uv sync)
 make check       # lint + test + validate; the one command that must exit 0 before a PR
+                 # (a docs-only branch skips test; FULL=1 runs everything)
 make fmt         # format; FILES="a.py b.py" limits it to those files
 make test        # uv run pytest -q
 uv run pytest tests/test_artifacts.py::test_next_slug_increments   # a single test
@@ -33,7 +34,7 @@ The framework itself. Its changes are tracked as GitHub issues (label `pipeline`
 
 ## Architecture
 
-- **Layout (#133):** everything synced to consumers lives in `.sdlc/`, and `scripts/` holds only the release scripts plus a shim for older syncs. Claude Code and GitHub need a few files in their own folders:
+- **Layout (#133):** everything synced to consumers lives in `.sdlc/`, and `scripts/` holds only the framework's own scripts (release, `docs-only.sh` for `make check`) plus a shim for older syncs. Claude Code and GitHub need a few files in their own folders:
   - a stub per skill in `.claude/skills/sdlc-<name>/SKILL.md` (the frontmatter and one line that runs `.sdlc/scripts/resolve.sh`) and for the verifier in `.claude/agents/sdlc-verifier.md`. A skill's body lives in `.sdlc/skills/<name>/SKILL.md`, so edit the body there and the name or description in the stub;
   - `.claude/settings.json`, whose hooks all call `.sdlc/hooks/dispatch.sh <event>`. A new hook is a row in `.sdlc/hooks/hooks.tsv`, never a settings change;
   - the workflows.

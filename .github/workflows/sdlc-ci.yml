@@ -19,6 +19,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # make validate compares the branch with main (changed-file limit)
+          fetch-depth: 0  # make validate and the docs-only check compare the branch with main
       - uses: ./.github/actions/setup-stack
-      - run: make check
+      # Pushes to main pass FULL=1, so every commit there is fully tested. This repo's own
+      # `check` skips the tests on a docs-only PR (#140); a consumer's `check` decides for itself,
+      # and on a PR gets no FULL at all, so its own default stands.
+      - run: make check ${{ github.event_name == 'push' && 'FULL=1' || '' }}

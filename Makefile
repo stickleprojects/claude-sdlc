@@ -11,9 +11,10 @@
 #   status    show the stage each change has reached
 #   next      each change's next step and the skill that owns it (CHANGE=, REF=origin/main)
 #   clauses   a spec as one JSON block per requirement, for the clause check (CHANGE=, REF=)
-#   check     everything CI requires; exits non-zero on any failure
+#   check     everything CI requires; exits non-zero on any failure. A docs-only branch skips
+#             `test` (scripts/docs-only.sh, compared with CHECK_BASE); FULL=1 runs everything
 
-.PHONY: setup fmt lint test validate check deploy-dev deploy-prod
+.PHONY: setup fmt lint test check-test validate check deploy-dev deploy-prod
 
 # How to run the pipeline's own CLI (Python, via uv). Repos on another stack point this
 # at their copy of the tool, e.g. `uv run --project tools/sdlc sdlc`.
@@ -45,7 +46,18 @@ validate:
 	$(SDLC) check
 # ----------------------------------------------------------------------------------
 
-check: lint test validate exec-bits
+CHECK_BASE ?= origin/main
+
+check: lint check-test validate exec-bits
+
+# The test suite, unless the branch changes only documentation (#140). FULL=1 always runs it,
+# and CI sets FULL on pushes to main, so every commit there is fully tested.
+check-test:
+	@if [ -z "$(FULL)" ] && why="$$(bash scripts/docs-only.sh $(CHECK_BASE))"; then \
+		echo "test: skipped, $$why (FULL=1 runs it)"; \
+	else \
+		$(MAKE) --no-print-directory test; \
+	fi
 
 # Placeholders until there is something to deploy. The production gate hook
 # (.sdlc/hooks/production-gate.sh) stops the agent from ever running deploy-prod.
