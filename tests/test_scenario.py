@@ -502,6 +502,11 @@ case "$1 $2" in
   "api repos/o/r/branches/main/protection")
     [[ -n "${FAKE_GH_PROTECTION:-}" ]] || exit 1; echo "$FAKE_GH_PROTECTION" ;;
   "api repos/o/r") echo "${FAKE_GH_PRIVATE-false}" ;;
+  "api repos/o/r/actions/variables/SDLC_REVIEW_EXTRA_BOTS")
+    [[ "${FAKE_GH_EXTRA_BOTS-}" != unreadable ]] || exit 1; echo "${FAKE_GH_EXTRA_BOTS-}" ;;
+  "api repos/o/r/dependabot/secrets")
+    [[ "${FAKE_GH_DEPENDABOT_SECRETS-}" != forbidden ]] || exit 1
+    printf '%s\\n' $FAKE_GH_DEPENDABOT_SECRETS ;;
   "api repos/o/r/actions/permissions/fork-pr-contributor-approval")
     [[ -n "${FAKE_GH_FORK_POLICY:-}" ]] || exit 1; echo "$FAKE_GH_FORK_POLICY" ;;
   *) exit 1 ;;
@@ -684,6 +689,79 @@ def test_sync_says_nothing_about_the_runner_when_sdlc_runner_is_unset(
         FAKE_GH_FORK_POLICY="first_time_contributors",
     )
     assert "SDLC_RUNNER" not in out
+
+
+# --- SDLC_REVIEW_EXTRA_BOTS: dependency-bot PRs get reviewed (#142) -------------------------
+
+
+def bots_sync(consumer, framework_snapshot, tmp_path, bots, **env):
+    return sync_with_gh(
+        consumer,
+        framework_snapshot,
+        tmp_path,
+        variables=f"{APP_VARS} SDLC_REVIEW_EXTRA_BOTS",
+        FAKE_GH_EXTRA_BOTS=bots,
+        **ALL_SET,
+        **env,
+    ).stdout
+
+
+@pytest.mark.parametrize("bots", ["dependabot", "renovate, dependabot", "dependabot[bot]"])
+def test_sync_warns_when_dependabot_is_reviewed_without_its_own_token(
+    consumer, framework_snapshot, tmp_path, bots
+):
+    out = bots_sync(consumer, framework_snapshot, tmp_path, bots, FAKE_GH_DEPENDABOT_SECRETS="")
+    assert "WARNING: SDLC_REVIEW_EXTRA_BOTS names Dependabot, but CLAUDE_CODE_OAUTH_TOKEN" in out
+    assert "gh secret set CLAUDE_CODE_OAUTH_TOKEN --app dependabot" in out
+
+
+def test_sync_is_quiet_when_dependabot_has_the_token(consumer, framework_snapshot, tmp_path):
+    out = bots_sync(
+        consumer,
+        framework_snapshot,
+        tmp_path,
+        "renovate,dependabot",
+        FAKE_GH_DEPENDABOT_SECRETS="OTHER CLAUDE_CODE_OAUTH_TOKEN",
+    )
+    assert "secrets and variables" not in out
+
+
+@pytest.mark.parametrize("bots", ["renovate", "dependabot-preview-ish", ""])
+def test_sync_skips_the_dependabot_check_for_other_bots(
+    consumer, framework_snapshot, tmp_path, bots
+):
+    out = bots_sync(consumer, framework_snapshot, tmp_path, bots, FAKE_GH_DEPENDABOT_SECRETS="")
+    assert "SDLC_REVIEW_EXTRA_BOTS" not in out
+
+
+def test_sync_says_when_it_cant_read_the_bots_or_dependabot_secrets(
+    consumer, framework_snapshot, tmp_path
+):
+    out = bots_sync(consumer, framework_snapshot, tmp_path, "unreadable")
+    assert "not checked: SDLC_REVIEW_EXTRA_BOTS is set, but can't read its value" in out
+    assert "WARNING" not in out
+
+
+def test_sync_says_when_it_cant_read_dependabot_secrets(consumer, framework_snapshot, tmp_path):
+    out = bots_sync(
+        consumer, framework_snapshot, tmp_path, "dependabot", FAKE_GH_DEPENDABOT_SECRETS="forbidden"
+    )
+    assert "not checked: SDLC_REVIEW_EXTRA_BOTS names Dependabot, but can't read" in out
+    assert "WARNING" not in out
+
+
+def test_sync_says_nothing_about_bots_when_the_variable_is_unset(
+    consumer, framework_snapshot, tmp_path
+):
+    out = sync_with_gh(
+        consumer,
+        framework_snapshot,
+        tmp_path,
+        variables=APP_VARS,
+        FAKE_GH_EXTRA_BOTS="dependabot",
+        **ALL_SET,
+    ).stdout
+    assert "SDLC_REVIEW_EXTRA_BOTS" not in out
 
 
 # --- opt-in auto-merge (#89) ----------------------------------------------------------------
