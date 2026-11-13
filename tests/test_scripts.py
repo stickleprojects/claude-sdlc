@@ -1404,6 +1404,7 @@ def test_sdlc_skill_matches_what_the_sync_prints():
         "your Makefile doesn't define these targets",
         "your Makefile doesn't include the pipeline's targets",
         "your Makefile defines targets .sdlc/sdlc.mk now provides",
+        "allowed actions leave out",
     ]:
         assert message in sync, f"the sync no longer prints {message!r}"
         assert message in skill, f"/sdlc doesn't handle {message!r}"

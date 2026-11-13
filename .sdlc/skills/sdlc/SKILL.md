@@ -73,7 +73,7 @@ Commit what the sync staged, plus the files you resolved, by explicit path (`git
   - files where local edits were merged, and each conflict with how it was resolved
   - make targets added
   - each upgrade step: what it changed here, the PRs it opened or pushed to for in-flight work, and what it found that waits on a decision
-  - the secrets and variables report: anything required that's missing (and that the PR is a draft until it's set), a half-set-up App, the optional ones not set, an auto-merge warning (main no longer qualifies; the fix is `.sdlc/scripts/bootstrap-github.sh --mode team`), or that it wasn't checked
+  - the secrets and variables report: anything required that's missing (and that the PR is a draft until it's set), a half-set-up App, the optional ones not set, an auto-merge warning (main no longer qualifies; the fix is `.sdlc/scripts/bootstrap-github.sh --mode team`), any action the repo's allowed actions leave out (those workflows fail at startup until a person adds it under Settings > Actions > General, so the PR is a draft until then), or that it wasn't checked
   - the optional features in these releases: adopted, declined (with the reason from `.sdlc.toml`), or neither, so the team can decide
   - `make check` passing
 

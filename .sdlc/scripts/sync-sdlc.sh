@@ -337,6 +337,43 @@ main() {
         fi
       fi
     fi
+    # A repo that allows only selected actions fails a workflow at startup when it uses one
+    # that isn't listed (#157: actions/upload-artifact). Check every action the synced
+    # workflows use, plus oven-sh/setup-bun, which claude-code-action uses inside. A pattern
+    # allows an action when the part before its `@` matches the action's name.
+    local perms selected needed blocked="" action pattern ok
+    if perms="$(gh api "repos/$gh_repo/actions/permissions" 2>/dev/null)"; then
+      needed="$( { cat .github/workflows/sdlc-*.yml 2>/dev/null \
+        | sed -nE 's#^\s*(- )?uses: ([A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+)@.*#\2#p'
+        echo oven-sh/setup-bun; } | sort -u)"
+      case "$(jq -r .allowed_actions <<<"$perms" 2>/dev/null)" in
+        all) ;;
+        local_only) blocked="$(paste -sd ' ' <<<"$needed")" ;;
+        selected)
+          if selected="$(gh api "repos/$gh_repo/actions/permissions/selected-actions" 2>/dev/null)"; then
+            while IFS= read -r action; do
+              [[ -n "$action" ]] || continue
+              ok=""
+              [[ "$action" == actions/* && "$(jq -r .github_owned_allowed <<<"$selected")" == true ]] && ok=1
+              [[ "$action" != actions/* && "$(jq -r .verified_allowed <<<"$selected")" == true ]] && ok=1  # can't tell
+              while IFS= read -r pattern; do
+                # shellcheck disable=SC2053  # the pattern is a glob on purpose
+                [[ -n "$pattern" && "$action" == ${pattern%%@*} ]] && ok=1
+              done < <(jq -r '.patterns_allowed[]?' <<<"$selected")
+              [[ -n "$ok" ]] || blocked+=" $action"
+            done <<<"$needed"
+            blocked="${blocked# }"
+          else
+            out+="  not checked: $gh_repo allows only selected actions, but can't read which (needs admin). The workflows need: $(paste -sd ' ' <<<"$needed") (.sdlc/docs/self-hosted-runner.md)."$'\n'
+          fi
+          ;;
+      esac
+      if [[ -n "$blocked" ]]; then
+        out+="  ERROR: $gh_repo's allowed actions leave out $blocked, so the workflows that use them fail at startup. Add each as <name>@* in Settings > Actions > General (.sdlc/docs/self-hosted-runner.md)."$'\n'
+      fi
+    else
+      out+="  not checked: can't read which actions $gh_repo allows (needs admin)."$'\n'
+    fi
     local bots dependabot_secrets
     if set_in variable SDLC_REVIEW_EXTRA_BOTS; then
       if ! bots="$(gh api "repos/$gh_repo/actions/variables/SDLC_REVIEW_EXTRA_BOTS" --jq .value 2>/dev/null)"; then

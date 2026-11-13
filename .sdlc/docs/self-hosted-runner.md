@@ -46,12 +46,14 @@ Change the runner service's user between jobs, never during one. A job that's ru
 If Settings → Actions → General → Actions permissions limits which actions may run, list every action the workflows use, **including the ones used inside other actions**. A blocked action fails the job at startup ("This run likely failed because of a workflow file issue"). The framework's workflows need:
 
 ```
-actions/checkout@*, actions/create-github-app-token@*, anthropics/claude-code-action@*, oven-sh/setup-bun@*, astral-sh/setup-uv@*
+actions/checkout@*, actions/create-github-app-token@*, actions/upload-artifact@*, anthropics/claude-code-action@*, oven-sh/setup-bun@*, astral-sh/setup-uv@*
 ```
 
 - `oven-sh/setup-bun` is used inside `claude-code-action`, so without it both Claude jobs fail.
+- `actions/upload-artifact` keeps a failed Claude review's output (#157). Without it the review workflow doesn't start.
+- The sync checks this list against the workflows it installs and names any action that's missing.
 - `astral-sh/setup-uv` is only needed if your `setup-stack` uses it.
-- Add the actions your repo's own workflows and `setup-stack` use (for example `actions/cache`, `actions/upload-artifact`).
+- Add the actions your repo's own workflows and `setup-stack` use (for example `actions/cache`).
 - Your repo's own composite actions (`./.github/actions/*`) count as the owner's, so the owner's actions must be allowed.
 
 "Local actions only" blocks `actions/checkout` too, so every job fails.

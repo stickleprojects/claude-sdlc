@@ -502,6 +502,11 @@ case "$1 $2" in
   "api repos/o/r/branches/main/protection")
     [[ -n "${FAKE_GH_PROTECTION:-}" ]] || exit 1; echo "$FAKE_GH_PROTECTION" ;;
   "api repos/o/r") echo "${FAKE_GH_PRIVATE-false}" ;;
+  "api repos/o/r/actions/permissions")
+    [[ "${FAKE_GH_ACTIONS-}" != unreadable ]] || exit 1
+    echo "{\\"allowed_actions\\": \\"${FAKE_GH_ACTIONS:-all}\\"}" ;;
+  "api repos/o/r/actions/permissions/selected-actions")
+    [[ -n "${FAKE_GH_SELECTED:-}" ]] || exit 1; echo "$FAKE_GH_SELECTED" ;;
   "api repos/o/r/actions/variables/SDLC_REVIEW_EXTRA_BOTS")
     [[ "${FAKE_GH_EXTRA_BOTS-}" != unreadable ]] || exit 1; echo "${FAKE_GH_EXTRA_BOTS-}" ;;
   "api repos/o/r/dependabot/secrets")
@@ -689,6 +694,95 @@ def test_sync_says_nothing_about_the_runner_when_sdlc_runner_is_unset(
         FAKE_GH_FORK_POLICY="first_time_contributors",
     )
     assert "SDLC_RUNNER" not in out
+
+
+# --- allowed actions: a missing one stops a workflow at startup (#157) -----------------------
+
+FRAMEWORK_ACTIONS = [
+    "actions/checkout@*",
+    "actions/create-github-app-token@*",
+    "actions/upload-artifact@*",
+    "anthropics/claude-code-action@*",
+    "oven-sh/setup-bun@*",
+]
+
+
+def actions_sync(consumer, framework_snapshot, tmp_path, allowed="selected", patterns=None, **env):
+    selected = (
+        {}
+        if patterns is None
+        else {
+            "FAKE_GH_SELECTED": json.dumps(
+                {
+                    "github_owned_allowed": False,
+                    "verified_allowed": False,
+                    "patterns_allowed": patterns,
+                }
+            )
+        }
+    )
+    return sync_with_gh(
+        consumer,
+        framework_snapshot,
+        tmp_path,
+        variables=APP_VARS,
+        **ALL_SET,
+        FAKE_GH_ACTIONS=allowed,
+        **selected,
+        **env,
+    ).stdout
+
+
+def test_sync_names_an_action_the_allowlist_leaves_out(consumer, framework_snapshot, tmp_path):
+    before_157 = [p for p in FRAMEWORK_ACTIONS if "upload-artifact" not in p]
+    out = actions_sync(consumer, framework_snapshot, tmp_path, patterns=before_157)
+    assert "ERROR: o/r's allowed actions leave out actions/upload-artifact, so the workflows" in out
+    assert "fail at startup" in out and "<name>@*" in out
+
+
+@pytest.mark.parametrize(
+    "patterns",
+    [
+        FRAMEWORK_ACTIONS,
+        ["actions/*", "anthropics/claude-code-action@v1", "oven-sh/*"],  # wider patterns
+        ["*"],
+    ],
+    ids=["each", "wider", "everything"],
+)
+def test_sync_is_quiet_when_the_allowlist_has_every_action(
+    consumer, framework_snapshot, tmp_path, patterns
+):
+    out = actions_sync(consumer, framework_snapshot, tmp_path, patterns=patterns)
+    assert "allowed actions" not in out and "secrets and variables" not in out
+
+
+def test_sync_counts_github_owned_actions_when_allowed(consumer, framework_snapshot, tmp_path):
+    selected = json.dumps(
+        {
+            "github_owned_allowed": True,
+            "verified_allowed": False,
+            "patterns_allowed": ["anthropics/claude-code-action@*", "oven-sh/setup-bun@*"],
+        }
+    )
+    out = actions_sync(consumer, framework_snapshot, tmp_path, FAKE_GH_SELECTED=selected)
+    assert "leave out" not in out
+
+
+def test_sync_says_local_only_blocks_every_framework_action(consumer, framework_snapshot, tmp_path):
+    out = actions_sync(consumer, framework_snapshot, tmp_path, allowed="local_only")
+    assert "leave out actions/checkout actions/create-github-app-token" in out
+
+
+def test_sync_says_when_it_cant_read_the_allowlist(consumer, framework_snapshot, tmp_path):
+    out = actions_sync(consumer, framework_snapshot, tmp_path)  # selected, list unreadable
+    assert "not checked: o/r allows only selected actions, but can't read which" in out
+    assert "actions/upload-artifact" in out
+
+
+def test_sync_says_when_it_cant_read_the_actions_setting(consumer, framework_snapshot, tmp_path):
+    unreadable = actions_sync(consumer, framework_snapshot, tmp_path, allowed="unreadable")
+    assert "not checked: can't read which actions o/r allows (needs admin)" in unreadable
+    assert "ERROR" not in unreadable
 
 
 # --- SDLC_REVIEW_EXTRA_BOTS: dependency-bot PRs get reviewed (#142) -------------------------
