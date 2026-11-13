@@ -51,6 +51,7 @@ The framework itself. Its changes are tracked as GitHub issues (label `pipeline`
 
 - You can't edit `.sdlc/hooks/*`, `.claude/settings.json`, lockfiles or `.env*`. Propose those changes for a human instead.
 - A bug fix's failing test locks once it's committed (`test(<slug>): …` on a change with `bug.md`): the files that commit touched can't be edited, while new tests elsewhere still can (`.sdlc/scripts/tests-locked.sh`). `SDLC_LOCK_TESTS=1` locks every test file. Fix the code, not the test.
+- No code before the plan (`.sdlc/hooks/plan-gate.sh`): on a branch or worktree named after a change, code edits wait until `changes/<slug>/plan.md` is committed (a bug with `bug.md` and `spec.md` committed on `build/<slug>` is the exception, #148). On `main`, only `changes/`, `docs/` and top-level `*.md` can be edited: start a branch first. `SDLC_PLAN_GATE=0` turns it off.
 - `make deploy-prod`, `git push` to main and force pushes are blocked. Push a branch and open a PR.
 - Merging and approving PRs (`gh pr merge`, `gh pr review --approve`, the merge and review APIs) are blocked: a human merges. When a PR is ready, say so and stop.
 - Edited files are auto-formatted after each edit through `make fmt FILES=...`.

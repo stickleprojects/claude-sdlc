@@ -1511,3 +1511,31 @@ def test_a_declined_feature_survives_a_sync(consumer, framework_snapshot):
     assert (consumer / ".sdlc.toml").read_text() == declined
     assert ".sdlc.toml" not in git(consumer, "diff", "--cached", "--name-only")
     assert make(consumer, "validate").returncode == 0
+
+
+def test_the_plan_gate_guards_the_consumer(consumer):
+    """#44: through the synced dispatcher, code waits for a committed plan."""
+    code = {"tool_name": "Edit", "tool_input": {"file_path": str(consumer / "src/app.ts")}}
+    env = {"CLAUDE_PROJECT_DIR": str(consumer), "SDLC_PLAN_GATE": "", "SDLC_CHANGE": ""}
+
+    def edit(payload=code):
+        return run(
+            [".sdlc/hooks/dispatch.sh", "PreToolUse"],
+            cwd=consumer,
+            env=env,
+            input=json.dumps(payload),
+        )
+
+    on_main = edit()
+    assert on_main.returncode == 2 and "code isn't written on main" in on_main.stderr
+    spec = {
+        "tool_name": "Write",
+        "tool_input": {"file_path": str(consumer / "changes/0001-a/spec.md")},
+    }
+    assert edit(spec).returncode == 0
+    commit(consumer, "spec(0001-a): spec", {"changes/0001-a/spec.md": "# spec\n"})
+    git(consumer, "switch", "-q", "-c", "build/0001-a")
+    waiting = edit()
+    assert waiting.returncode == 2 and "/sdlc-plan" in waiting.stderr
+    commit(consumer, "plan(0001-a): plan", {"changes/0001-a/plan.md": "# plan\n"})
+    assert edit().returncode == 0

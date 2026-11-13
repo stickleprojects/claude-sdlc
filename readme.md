@@ -43,7 +43,7 @@ It's used day to day on real projects, in Python, TypeScript and Godot game repo
 - **✅ "Done" means done.** Plans name the definition of done they meet. The verifier checks every acceptance criterion, and every clause of every requirement, at the level it describes. It also compares what was built with what the requirement says, so a "3D scene" can't quietly ship as a 2D diagram.
 - **🚫 Silence isn't permission.** Anything left untested, skipped or done by hand is a *descope*. It needs a named person's approval, and every stage shows it first.
 - **🤖 AI review on every PR.** A Claude review follows [.sdlc/REVIEW.md](.sdlc/REVIEW.md): bugs, security, the artifact chain, test level, descopes and clause coverage. It writes findings a non-engineer can act on, quoting the text, saying why it matters and who decides.
-- **🛡️ Guardrails that hold.** Hooks protect the hooks themselves, settings, lockfiles and secrets. They block pushes to `main`, force pushes, merges and approvals. A bug fix's failing test locks once it's committed, so the code gets fixed, not the test.
+- **🛡️ Guardrails that hold.** Hooks protect the hooks themselves, settings, lockfiles and secrets. They block pushes to `main`, force pushes, merges and approvals. A bug fix's failing test locks once it's committed, so the code gets fixed, not the test. No code is written before the plan is committed, whichever button the plan-mode dialog offers.
 - **🔌 Any stack.** The pipeline talks to your project only through `make` targets, and to an AI only through one adapter script. Swap Python for TypeScript or Godot by changing the Makefile.
 - **📦 Upgrades without fear.** `/sdlc` shows what's new and syncs the framework on a branch, merging your local edits three ways, as `git merge` does. It then walks through each release's upgrade steps with you.
 
@@ -276,6 +276,7 @@ Rules that must always hold are enforced by hooks and CI, not left to the model'
 |---|---|
 | The agent can't edit its own hooks (the framework's or the project's), settings, lockfiles or `.env*` | `protect-paths.sh` (PreToolUse on every edit) |
 | No `make deploy-prod`, pushes to `main`, force pushes, merges or approvals | `production-gate.sh` (PreToolUse on every shell command) |
+| No code before the plan: on a change's branch, code waits for a committed `plan.md` (a small bug's `bug.md` and `spec.md` on `build/<slug>` will do), and nothing but docs and artifacts is edited on `main` | `plan-gate.sh` (PreToolUse on every edit; `SDLC_PLAN_GATE=0` overrides) |
 | Edited files are formatted through `make fmt` | `format.sh` (PostToolUse) |
 | A bug's failing test can't be edited once committed | `.sdlc/scripts/tests-locked.sh` |
 | Artifacts have their required sections, approved descopes, a definition of done and readable requirements | `make validate`, in every `make check` and in CI |

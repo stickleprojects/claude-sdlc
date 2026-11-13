@@ -335,3 +335,160 @@ def test_a_projects_hook_can_block_and_a_failing_one_doesnt(tmp_path):
     assert ls.returncode == 1, "a broken hook is reported, not a block"
     curl = dispatch("PreToolUse", {"tool_name": "Bash", "tool_input": {"command": "curl x"}}, root)
     assert curl.returncode == 2 and "no curl here" in curl.stderr
+
+
+# --- no code before the plan is committed (#44) ----------------------------------------------
+
+
+@pytest.fixture
+def plan_repo(tmp_path):
+    """A project on main with change 0003-x whose spec is merged and plan isn't."""
+    from conftest import commit, git, init_repo
+
+    repo = init_repo(tmp_path / "r")
+    commit(repo, "spec(0003-x): spec", {"changes/0003-x/spec.md": "# spec\n", "src/x.py": "x\n"})
+    git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+    git(repo, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+    return repo
+
+
+def plan_gate(repo, rel, env=None):
+    payload = {"tool_name": "Edit", "tool_input": {"file_path": str(repo / rel)}}
+    return hook(
+        "plan-gate.sh",
+        payload,
+        env={"SDLC_PLAN_GATE": "", "SDLC_CHANGE": "", **(env or {})},
+        cwd=repo,
+    )
+
+
+@pytest.mark.parametrize("branch", ["build/0003-x", "plan/0003-x", "fix/0003-x"])
+def test_plan_gate_blocks_code_until_the_plan_is_committed(plan_repo, branch):
+    from conftest import commit, git
+
+    git(plan_repo, "switch", "-q", "-c", branch)
+    blocked = plan_gate(plan_repo, "src/x.py")
+    assert blocked.returncode == 2
+    assert "0003-x has no committed plan.md" in blocked.stderr and "/sdlc-plan" in blocked.stderr
+    (plan_repo / "changes/0003-x/plan.md").write_text("# a draft, not committed\n")
+    assert plan_gate(plan_repo, "src/x.py").returncode == 2, "a draft doesn't count"
+    commit(plan_repo, "plan(0003-x): plan")
+    assert plan_gate(plan_repo, "src/x.py").returncode == 0
+
+
+@pytest.mark.parametrize(
+    "rel",
+    [
+        "changes/0003-x/plan.md",
+        "changes/0003-x/build.md",
+        "docs/roadmap.md",
+        "readme.md",
+        "CLAUDE.md",
+    ],
+)
+def test_plan_gate_always_allows_the_artifacts_and_docs(plan_repo, rel):
+    from conftest import git
+
+    for branch in ("main", "plan/0003-x"):
+        git(plan_repo, "switch", "-q", "-C", branch)
+        assert plan_gate(plan_repo, rel).returncode == 0, (branch, rel)
+
+
+def test_plan_gate_allows_paths_outside_the_repo(plan_repo, tmp_path):
+    payload = {"tool_name": "Write", "tool_input": {"file_path": str(tmp_path / "scratch.py")}}
+    assert hook("plan-gate.sh", payload, cwd=plan_repo).returncode == 0
+
+
+def test_plan_gate_blocks_code_on_main(plan_repo):
+    blocked = plan_gate(plan_repo, "src/x.py")
+    assert blocked.returncode == 2 and "code isn't written on main" in blocked.stderr
+    assert "Start a branch first" in blocked.stderr
+    nested = plan_gate(plan_repo, "tests/readme.md")  # only top-level *.md is documentation
+    assert nested.returncode == 2
+
+
+def test_plan_gate_finds_main_without_origin_head(plan_repo):
+    from conftest import git
+
+    git(plan_repo, "symbolic-ref", "--delete", "refs/remotes/origin/HEAD")
+    assert plan_gate(plan_repo, "src/x.py").returncode == 2
+    git(plan_repo, "branch", "-m", "master")
+    assert plan_gate(plan_repo, "src/x.py").returncode == 2
+
+
+@pytest.mark.parametrize("branch", ["chore/bump-ruff", "fix/flaky-test", "docs/logo"])
+def test_plan_gate_leaves_maintenance_branches_alone(plan_repo, branch):
+    from conftest import git
+
+    git(plan_repo, "switch", "-q", "-c", branch)
+    assert plan_gate(plan_repo, "src/x.py").returncode == 0
+
+
+def test_plan_gate_reads_the_change_from_the_worktree_or_sdlc_change(plan_repo, tmp_path):
+    from conftest import git
+
+    worktree = tmp_path / "0003-x"
+    git(plan_repo, "worktree", "add", "-q", "-b", "wip", str(worktree))
+    assert plan_gate(worktree, "src/x.py").returncode == 2  # the worktree's name
+    git(plan_repo, "switch", "-q", "-c", "spike")
+    assert plan_gate(plan_repo, "src/x.py").returncode == 0
+    named = plan_gate(plan_repo, "src/x.py", env={"SDLC_CHANGE": "0003-x"})
+    assert named.returncode == 2
+
+
+def test_plan_gate_before_the_spec_points_to_the_next_step(plan_repo):
+    from conftest import commit, git
+
+    commit(plan_repo, "intent: 0004-y", {"changes/0004-y/intent.md": "# intent\n"})
+    git(plan_repo, "switch", "-q", "-c", "build/0004-y")
+    blocked = plan_gate(plan_repo, "src/x.py")
+    assert blocked.returncode == 2 and "no committed spec.md or plan.md" in blocked.stderr
+    assert "/sdlc-next" in blocked.stderr
+
+
+def test_plan_gate_lets_a_small_bug_be_fixed_without_a_plan(plan_repo):
+    # #148's fast path: bug.md and spec.md committed on build/<slug>.
+    from conftest import commit, git
+
+    commit(plan_repo, "bug: 0005-z", {"changes/0005-z/bug.md": "# bug\n"})
+    git(plan_repo, "switch", "-q", "-c", "build/0005-z")
+    assert plan_gate(plan_repo, "src/x.py").returncode == 2, "no spec yet"
+    (plan_repo / "changes/0005-z/spec.md").write_text("# short spec\n")
+    assert plan_gate(plan_repo, "src/x.py").returncode == 2, "the spec isn't committed"
+    commit(plan_repo, "spec(0005-z): short spec")
+    assert plan_gate(plan_repo, "src/x.py").returncode == 0
+    git(plan_repo, "switch", "-q", "-c", "plan/0005-z")
+    assert plan_gate(plan_repo, "src/x.py").returncode == 2, "only on build/<slug>"
+
+
+def test_plan_gate_is_not_a_fast_path_for_a_feature(plan_repo):
+    from conftest import git
+
+    git(plan_repo, "switch", "-q", "-c", "build/0003-x")  # spec.md, but intent-based: no bug.md
+    assert plan_gate(plan_repo, "src/x.py").returncode == 2
+
+
+def test_plan_gate_can_be_turned_off_and_skips_a_detached_head(plan_repo):
+    from conftest import git
+
+    assert plan_gate(plan_repo, "src/x.py", env={"SDLC_PLAN_GATE": "0"}).returncode == 0
+    git(plan_repo, "switch", "-q", "--detach")
+    assert plan_gate(plan_repo, "src/x.py").returncode == 0
+
+
+def test_plan_gate_reads_notebook_path_and_ignores_tools_without_one(plan_repo):
+    notebook = {"tool_input": {"notebook_path": str(plan_repo / "src/n.ipynb")}}
+    assert hook("plan-gate.sh", notebook, env={"SDLC_PLAN_GATE": ""}, cwd=plan_repo).returncode == 2
+    assert hook("plan-gate.sh", {"tool_input": {}}, cwd=plan_repo).returncode == 0
+
+
+def test_the_dispatcher_runs_the_plan_gate(plan_repo):
+    import shutil
+
+    shutil.copytree(REPO / ".sdlc/hooks", plan_repo / ".sdlc/hooks")
+    (plan_repo / ".sdlc/scripts").mkdir(parents=True)
+    shutil.copy2(
+        REPO / ".sdlc/scripts/tests-locked.sh", plan_repo / ".sdlc/scripts/tests-locked.sh"
+    )
+    payload = {"tool_name": "Write", "tool_input": {"file_path": str(plan_repo / "src/x.py")}}
+    assert dispatch("PreToolUse", payload, plan_repo).returncode == 2
