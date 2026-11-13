@@ -234,6 +234,20 @@ A PR still merges only after a person approves it and every check passes. `.sdlc
 
 </details>
 
+<details>
+<summary><b>Optional: review dependency-bot PRs (Renovate, Dependabot)</b></summary>
+
+The Claude review only runs on PRs from people, the agent App and `github-actions`. It refuses a PR opened by any other bot, so the required `claude-review` check never passes and the PR can't merge. To review your dependency bot's PRs, which is where checking the changelog for breaking changes helps, name it in the repo variable `SDLC_REVIEW_EXTRA_BOTS`, comma-separated and without `[bot]`:
+
+```sh
+gh variable set SDLC_REVIEW_EXTRA_BOTS --body renovate               # or renovate,dependabot
+gh secret set CLAUDE_CODE_OAUTH_TOKEN --app dependabot              # Dependabot only, see below
+```
+
+Dependabot's PRs get only the repo's *Dependabot* secrets, not its Actions secrets, so the review's token has to be set there too. The sync warns when it isn't. Renovate's PRs get the usual secrets. The variable is yours: syncing and bootstrap never change it.
+
+</details>
+
 ### 4. Check it works
 
 Open any small PR. **check**, **pr-title**, **review** and **claude-review** should pass, and Claude should post a single *Review summary* comment. Then merge it yourself; in solo mode no approval is needed, and no bypass either. Two things to expect:

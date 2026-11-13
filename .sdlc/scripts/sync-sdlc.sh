@@ -79,6 +79,11 @@ main() {
   local runner_settings=(
     "variable SDLC_RUNNER"
   )
+  # Optional dependency bots the Claude review accepts (#142). Not reported when unset. A
+  # Dependabot PR's workflows get only Dependabot secrets, so the review's token must be one too.
+  local review_bot_settings=(
+    "variable SDLC_REVIEW_EXTRA_BOTS"
+  )
 
   cd "$(git rev-parse --show-toplevel)"
   if [[ -n "$(git status --porcelain)" ]]; then
@@ -329,6 +334,18 @@ main() {
           out+="  not checked: SDLC_RUNNER is set, but can't read whether fork PR workflows need approval (needs admin). Check Settings > Actions > General (.sdlc/docs/self-hosted-runner.md)."$'\n'
         elif [[ "$policy" != all_external_contributors ]]; then
           out+="  WARNING: SDLC_RUNNER is set on a public repo, but some fork PRs run their workflows without approval ($policy). A fork PR can edit its workflow to run on your runner. In Settings > Actions > General, choose 'Require approval for all external contributors' (.sdlc/docs/self-hosted-runner.md)."$'\n'
+        fi
+      fi
+    fi
+    local bots dependabot_secrets
+    if set_in variable SDLC_REVIEW_EXTRA_BOTS; then
+      if ! bots="$(gh api "repos/$gh_repo/actions/variables/SDLC_REVIEW_EXTRA_BOTS" --jq .value 2>/dev/null)"; then
+        out+="  not checked: SDLC_REVIEW_EXTRA_BOTS is set, but can't read its value, so can't tell whether it names Dependabot."$'\n'
+      elif [[ ",${bots// /}," == *",dependabot,"* || ",${bots// /}," == *",dependabot[bot],"* ]]; then
+        if ! dependabot_secrets="$(gh api "repos/$gh_repo/dependabot/secrets" --jq '.secrets[].name' 2>/dev/null)"; then
+          out+="  not checked: SDLC_REVIEW_EXTRA_BOTS names Dependabot, but can't read $gh_repo's Dependabot secrets (needs admin). Dependabot PRs get only those, so the review needs CLAUDE_CODE_OAUTH_TOKEN there too."$'\n'
+        elif ! grep -qxF CLAUDE_CODE_OAUTH_TOKEN <<<"$dependabot_secrets"; then
+          out+="  WARNING: SDLC_REVIEW_EXTRA_BOTS names Dependabot, but CLAUDE_CODE_OAUTH_TOKEN isn't a Dependabot secret in $gh_repo, and Dependabot PRs get only those. Their review fails until it is: gh secret set CLAUDE_CODE_OAUTH_TOKEN --app dependabot (an organization's Dependabot secret also works)."$'\n'
         fi
       fi
     fi

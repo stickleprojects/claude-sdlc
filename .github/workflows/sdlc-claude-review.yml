@@ -139,8 +139,10 @@ jobs:
           # PRs and pushes from the agent's own App identity (.sdlc/docs/agent-identity.md) are reviewed
           # like a person's, and so are spec PRs opened with the default token when there's no
           # App (github-actions[bot], #82). The review only comments, so it can't start a loop.
-          # An empty slug leaves a blank entry, which the action ignores.
-          allowed_bots: ${{ format('{0},github-actions', vars.SDLC_AGENT_APP_SLUG) }}
+          # SDLC_REVIEW_EXTRA_BOTS adds the project's dependency bots (#142), e.g. `renovate` or
+          # `renovate,dependabot`, so their PRs get reviewed and can pass the required check.
+          # An unset variable leaves a blank entry, which the action ignores.
+          allowed_bots: ${{ format('{0},github-actions,{1}', vars.SDLC_AGENT_APP_SLUG, vars.SDLC_REVIEW_EXTRA_BOTS) }}
           # The action holds inline comments back and drops any it judges to be tests once the
           # session ends. A dropped finding is a finding nothing blocks on (#130), so post them all.
           classify_inline_comments: false
