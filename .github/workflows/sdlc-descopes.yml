@@ -1,0 +1,41 @@
+# A "Descope: needs approval" thread waits for a person's decision (#132). The review job checks
+# it when it posts the `claude-review` status; this re-checks when the decision can change: a
+# reply in a review thread, or a review of the PR (an approval, say). GitHub has no event for a
+# thread being resolved, so the rule reads replies only (.sdlc/scripts/descopes-decided.sh).
+# No model call.
+#
+# It only moves the status between "posted" and "a descope waits": a commit that isn't reviewed
+# yet, or whose review failed, keeps the status it has.
+name: Descope decisions
+
+on:
+  pull_request_review:
+    types: [submitted, dismissed]
+  pull_request_review_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: read
+  statuses: write
+
+# A newer reply or review on the same PR replaces a check still running.
+concurrency:
+  group: descopes-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  descopes:
+    # Fork PRs get a read-only token, and their review job doesn't run either. A comment from
+    # a bot (the review itself, the agent's App) can't decide a descope, so it changes nothing.
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (github.event_name != 'pull_request_review_comment' || github.event.comment.user.type == 'User')
+    runs-on: ${{ vars.SDLC_RUNNER && !github.event.issue.pull_request && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && vars.SDLC_RUNNER || 'ubuntu-latest' }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR: ${{ github.event.pull_request.number }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: .sdlc/scripts/descopes-status.sh "$PR" "$HEAD_SHA"

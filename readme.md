@@ -280,6 +280,7 @@ Rules that must always hold are enforced by hooks and CI, not left to the model'
 | Edited files are formatted through `make fmt` | `format.sh` (PostToolUse) |
 | A bug's failing test can't be edited once committed | `.sdlc/scripts/tests-locked.sh` |
 | Artifacts have their required sections, approved descopes, a definition of done and readable requirements | `make validate`, in every `make check` and in CI |
+| A descope merges only once a person decides it: an `Approved: <name>, <date>` reply, or a reply sending it back and a review after it. A bot's or the agent's reply doesn't count, and resolving the thread isn't enough | the `claude-review` status, set by the review and re-checked on each reply and PR review (`sdlc-descopes.yml`, `.sdlc/scripts/descopes-decided.sh`) |
 | Nobody merges on a stale review | the required `claude-review` status: the review posts it on the commit it reviewed, and a later push marks it "Not reviewed" |
 | Nobody merges without the checks, and in team mode without a code owner | branch protection from bootstrap |
 
