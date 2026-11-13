@@ -41,7 +41,7 @@ jobs:
             echo; echo "### Release notes preview"; cat notes.md; } >> "$GITHUB_STEP_SUMMARY"
       - uses: ./.github/actions/setup-stack
         if: ${{ !inputs.dry_run }}
-      - run: make check
+      - run: make check FULL=1  # a release always runs every test (#140)
         if: ${{ !inputs.dry_run }}
       - name: Agent evals
         if: ${{ !inputs.dry_run && inputs.run_evals }}
