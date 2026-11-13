@@ -1,6 +1,8 @@
 # PR titles become the commit messages that drive semantic versioning
 # (scripts/next-version.sh) and the release notes, so they must follow the convention. A PR that
 # changes a gate artifact (intent, bug, spec or plan) must also say so in its type (#46).
+# The same job holds "no code before the plan" (#44): a change's branch that changes code needs
+# its plan.md, which the plan-gate hook alone can't guarantee.
 name: PR title
 
 on:
@@ -29,3 +31,7 @@ jobs:
           gh api "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --paginate --jq '.[].filename' \
             > "$RUNNER_TEMP/files.txt"
           .sdlc/scripts/check-pr-title.sh "$TITLE" < "$RUNNER_TEMP/files.txt"
+      - name: No code before the plan
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: .sdlc/scripts/check-plan-first.sh "$HEAD_REF" < "$RUNNER_TEMP/files.txt"

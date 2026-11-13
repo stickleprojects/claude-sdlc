@@ -109,6 +109,7 @@ To regenerate a spec by hand, run `claude`, then `/sdlc-next NNNN`: when the spe
    ```
    Iterate until you'd be happy implementing the plan yourself, then approve it. Claude checks the plan against the repo's architecture decisions (`docs/adr/`). If it meets one's *Revisit when* trigger, or builds by hand something a common library provides, it asks you to keep the current architecture (and say why) or take it to the tech lead before the plan merges.
 2. Save the plan and commit it first: `> /sdlc-plan`
+   When the plan is ready, Claude Code's plan-mode dialog offers to leave plan mode and start implementing. Choose **keep planning**, switch the mode selector to *ask before edits* (Shift+Tab), and run `/sdlc-plan`. If you press the other button, nothing is lost: the `plan-gate` hook blocks code edits until `plan.md` is committed, and says to run `/sdlc-plan`.
 3. Once the plan is merged, build it in a dedicated worktree. You can run two or three of these in parallel:
    ```
    claude --worktree NNNN-<name>

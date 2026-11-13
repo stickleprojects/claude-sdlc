@@ -16,6 +16,8 @@ Follow `.sdlc/skills/routing.md`. The candidates are the changes whose next step
 
 Planning happens in plan mode, with the change's `intent.md` (or `bug.md`) and `spec.md`. If this session isn't in plan mode, enter it (or ask the person to press Shift+Tab until it says plan mode). Read CLAUDE.md, the intent or bug, the spec, the code involved and every architecture decision record in `docs/adr/` (if there are any), then propose the plan. The engineer iterates with you until it can be implemented, then approves it.
 
+Plan mode can't write `plan.md`, and its approval dialog offers to start implementing at once. Tell the engineer before asking for approval: choose **keep planning**, switch the mode selector to *ask before edits*, then run `/sdlc-plan` again to save it. Never start writing code from the dialog: the `plan-gate` hook blocks code edits until `plan.md` is committed.
+
 ### Scope check
 
 Follow `.sdlc/skills/scope.md`: silence is not permission, and a rule's scope is a minimum. Before proposing, and again before saving:

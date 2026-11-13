@@ -7,5 +7,6 @@
 # which run after these; it can't remove or replace these.
 SessionStart	*	.sdlc/scripts/agent-session.sh --hook
 PreToolUse	Edit|Write|MultiEdit|NotebookEdit	.sdlc/hooks/protect-paths.sh
+PreToolUse	Edit|Write|MultiEdit|NotebookEdit	.sdlc/hooks/plan-gate.sh
 PreToolUse	Bash	.sdlc/hooks/production-gate.sh
 PostToolUse	Edit|Write|MultiEdit	.sdlc/hooks/format.sh
