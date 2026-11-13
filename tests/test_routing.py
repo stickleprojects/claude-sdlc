@@ -32,7 +32,7 @@ def change(root: Path, slug: str, upto: str, chain=CHAIN) -> Path:
 
 @pytest.mark.parametrize(
     ("upto", "skill"),
-    [("intent.md", "spec"), ("spec.md", "plan"), ("plan.md", "build")],
+    [("intent.md", "sdlc-spec"), ("spec.md", "sdlc-plan"), ("plan.md", "sdlc-build")],
 )
 def test_each_stage_points_at_the_next_skill(tmp_path: Path, upto: str, skill: str) -> None:
     change(tmp_path, "0001-x", upto)
@@ -43,7 +43,7 @@ def test_each_stage_points_at_the_next_skill(tmp_path: Path, upto: str, skill: s
 def test_a_bug_routes_like_an_intent(tmp_path: Path) -> None:
     change(tmp_path, "0001-x", "bug.md", BUG_CHAIN)
     [step] = steps(tmp_path)
-    assert (step.stage, step.skill) == ("bug", "spec")
+    assert (step.stage, step.skill) == ("bug", "sdlc-spec")
 
 
 def test_build_plan_states(tmp_path: Path) -> None:
@@ -54,9 +54,9 @@ def test_build_plan_states(tmp_path: Path) -> None:
     one_done = approved.replace("- **Status:** todo", "- **Status:** done", 1)
     (folder / "build.md").write_text(one_done)
     [step] = steps(tmp_path)
-    assert step.skill == "build" and "1/2 milestones done; next M2" in step.detail
+    assert step.skill == "sdlc-build" and "1/2 milestones done; next M2" in step.detail
     (folder / "build.md").write_text(approved.replace("in progress", "PR open (#12)", 1))
-    assert steps(tmp_path)[0].skill == "pr", "on the build branch, the PR is open"
+    assert steps(tmp_path)[0].skill == "sdlc-pr", "on the build branch, the PR is open"
 
 
 def test_a_build_plan_on_main_saying_pr_open_means_merged(tmp_path: Path) -> None:
@@ -74,20 +74,25 @@ def test_ref_reads_what_is_merged_not_the_working_tree(tmp_path: Path) -> None:
     change(repo, "0001-x", "spec.md")
     commit(repo, "spec: 0001")
     (repo / "changes/0001-x/plan.md").write_text(files(CHAIN["plan.md"]))  # not committed
-    assert steps(repo)[0].skill == "build"
-    assert steps(repo, ref="HEAD")[0].skill == "plan"
+    assert steps(repo)[0].skill == "sdlc-build"
+    assert steps(repo, ref="HEAD")[0].skill == "sdlc-plan"
 
 
 def test_one_change_by_number_or_slug(tmp_path: Path, capsys) -> None:
     change(tmp_path, "0001-x", "intent.md")
     change(tmp_path, "0002-y", "spec.md")
     assert main(["--root", str(tmp_path), "next", "0002"]) == 0
-    assert capsys.readouterr().out == "0002-y\tspec\tplan\tplan it\n"
+    assert capsys.readouterr().out == "0002-y\tspec\tsdlc-plan\tplan it\n"
     assert main(["--root", str(tmp_path), "next", "0009"]) == 1
 
 
+def command(name: str) -> str:
+    """The skill's name in Claude Code: the framework's are prefixed sdlc- (#23)."""
+    return "sdlc" if name == "sdlc" else f"sdlc-{name}"
+
+
 def _front(name: str) -> str:
-    return (REPO / ".claude/skills" / name / "SKILL.md").read_text().split("---")[1]
+    return (REPO / ".claude/skills" / command(name) / "SKILL.md").read_text().split("---")[1]
 
 
 @pytest.mark.parametrize("name", INTERNAL)
@@ -104,10 +109,29 @@ def test_entry_skills_are_visible_and_route(name: str) -> None:
 
 def test_routing_lists_exactly_the_entry_and_internal_skills() -> None:
     routing = (REPO / ".sdlc/skills/routing.md").read_text()
-    table = re.findall(r"^\| `/([a-z]+)", routing, re.MULTILINE)
-    assert table == ENTRY
+    table = re.findall(r"^\| `/([a-z-]+)", routing, re.MULTILINE)
+    assert table == [command(n) for n in ENTRY]
     skills = {p.parent.name for p in (REPO / ".claude/skills").glob("*/SKILL.md")}
-    assert skills == set(ENTRY) | set(INTERNAL), "every skill is an entry point or internal"
+    expected = {command(n) for n in ENTRY + INTERNAL}
+    assert skills == expected, "every skill is an entry point or internal"
+
+
+@pytest.mark.parametrize("name", ENTRY + INTERNAL)
+def test_each_skill_is_named_as_a_framework_command(name: str) -> None:
+    """#23: /sdlc-intent and the rest, so a project's own skills can't be mistaken for them.
+    The stub's folder and name carry the prefix; the body stays at .sdlc/skills/<name>/, where
+    a project's overrides in .sdlc-local/ find it."""
+    front = _front(name)
+    assert f"\nname: {command(name)}\n" in front
+    stub = (REPO / ".claude/skills" / command(name) / "SKILL.md").read_text()
+    assert f".sdlc/scripts/resolve.sh skills/{name}/SKILL.md" in stub
+
+
+def test_routing_names_skills_that_exist(tmp_path: Path) -> None:
+    """make next's skill column is what /sdlc-next invokes, so each name must be a real skill."""
+    skills = {p.parent.name for p in (REPO / ".claude/skills").glob("*/SKILL.md")}
+    named = set(re.findall(r'"(sdlc-[a-z-]+)"', (REPO / ".sdlc/src/sdlc/routing.py").read_text()))
+    assert named and named <= skills, named - skills
 
 
 # --- going back: out-of-date artifacts and withdrawn changes (#65) ----------------------------
@@ -126,7 +150,7 @@ def planned_repo(tmp_path: Path) -> Path:
 
 def test_in_order_nothing_is_out_of_date(tmp_path: Path) -> None:
     repo = planned_repo(tmp_path)
-    assert steps(repo, ref="HEAD")[0].skill == "build"
+    assert steps(repo, ref="HEAD")[0].skill == "sdlc-build"
 
 
 def test_a_spec_amended_after_the_plan_sends_it_back_to_plan(tmp_path: Path) -> None:
@@ -135,13 +159,13 @@ def test_a_spec_amended_after_the_plan_sends_it_back_to_plan(tmp_path: Path) -> 
     spec.write_text(spec.read_text() + "R9. A new requirement.\n")
     commit(repo, "spec: amend 0001")
     [step] = steps(repo, ref="HEAD")
-    assert step.skill == "plan"
+    assert step.skill == "sdlc-plan"
     assert "spec.md changed in" in step.detail and "after plan.md" in step.detail
     # Confirming (or updating) the plan makes it current again.
     plan = repo / "changes/0001-x/plan.md"
     plan.write_text(plan.read_text().replace("# T", "# T\n\nSpec: ./spec.md (checked)"))
     commit(repo, "plan: confirm against the amended spec")
-    assert steps(repo, ref="HEAD")[0].skill == "build"
+    assert steps(repo, ref="HEAD")[0].skill == "sdlc-build"
 
 
 def test_an_amended_intent_sends_it_back_to_the_spec(tmp_path: Path) -> None:
@@ -150,7 +174,7 @@ def test_an_amended_intent_sends_it_back_to_the_spec(tmp_path: Path) -> None:
     intent.write_text(intent.read_text() + "More.\n")
     commit(repo, "intent: amend 0001")
     [step] = steps(repo, ref="HEAD")
-    assert step.skill == "spec" and "intent.md changed" in step.detail
+    assert step.skill == "sdlc-spec" and "intent.md changed" in step.detail
 
 
 def test_a_build_in_progress_goes_out_of_date_when_the_plan_changes(tmp_path: Path) -> None:
@@ -158,12 +182,12 @@ def test_a_build_in_progress_goes_out_of_date_when_the_plan_changes(tmp_path: Pa
     approved = BUILD_TEMPLATE.replace("draft, awaiting approval", "in progress", 1)
     (repo / "changes/0001-x/build.md").write_text(approved)
     commit(repo, "chore(0001-x): approve build plan")
-    assert steps(repo)[0].skill == "build" and "milestones done" in steps(repo)[0].detail
+    assert steps(repo)[0].skill == "sdlc-build" and "milestones done" in steps(repo)[0].detail
     plan = repo / "changes/0001-x/plan.md"
     plan.write_text(plan.read_text() + "6. Another step.\n")
     commit(repo, "plan: amend 0001")
     [step] = steps(repo)
-    assert step.skill == "build" and "plan.md changed in" in step.detail
+    assert step.skill == "sdlc-build" and "plan.md changed in" in step.detail
 
 
 def test_a_merged_build_stays_done_when_the_spec_changes_later(tmp_path: Path) -> None:
@@ -199,7 +223,7 @@ def test_a_template_comment_does_not_withdraw(tmp_path: Path) -> None:
     folder = tmp_path / "changes" / "0001-x"
     folder.mkdir(parents=True)
     (folder / "intent.md").write_text((REPO / ".sdlc/templates/intent.md").read_text())
-    assert steps(tmp_path)[0].skill == "spec"
+    assert steps(tmp_path)[0].skill == "sdlc-spec"
 
 
 # --- a small build (no build.md) is done once its PR merges (#122) ----------------------------
@@ -231,7 +255,7 @@ def merge_build_branch(repo: Path, slug: str, pr: int, branch: str | None = None
 
 def test_a_small_build_is_done_once_its_pr_merges(tmp_path: Path) -> None:
     repo = planned_repo(tmp_path)
-    assert steps(repo, ref="HEAD")[0].skill == "build"
+    assert steps(repo, ref="HEAD")[0].skill == "sdlc-build"
     merge_build_branch(repo, "0001-x", 95)
     [step] = steps(repo, ref="HEAD")
     assert (step.stage, step.skill, step.detail) == ("plan", "done", "built and merged (#95)")
@@ -259,7 +283,7 @@ def test_a_squash_merged_small_build_is_done_too(tmp_path: Path) -> None:
 def test_other_commits_dont_count_as_the_build_merging(tmp_path: Path, subject: str) -> None:
     repo = planned_repo(tmp_path)
     commit(repo, subject)
-    assert steps(repo, ref="HEAD")[0].skill == "build"
+    assert steps(repo, ref="HEAD")[0].skill == "sdlc-build"
 
 
 def test_a_merged_small_build_stays_done_when_the_spec_changes_later(tmp_path: Path) -> None:

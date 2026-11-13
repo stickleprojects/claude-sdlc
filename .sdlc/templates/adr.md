@@ -2,7 +2,7 @@
 
 <!-- An architecture decision record. Kept at docs/adr/NNNN-<slug>.md, numbered in order; it
 belongs to this repo and the framework sync never touches it. The tech lead or architect owns it
-(.sdlc/docs/roles.md). /plan reads every ADR before proposing a plan and checks each accepted one's
+(.sdlc/docs/roles.md). /sdlc-plan reads every ADR before proposing a plan and checks each accepted one's
 "Revisit when" triggers, so a decision that builds up over several changes gets raised. Don't edit
 an accepted decision away: write a new ADR and mark this one "superseded by NNNN". -->
 

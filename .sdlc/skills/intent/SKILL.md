@@ -1,4 +1,4 @@
-<!-- The frontmatter for this skill is in .claude/skills/intent/SKILL.md, which Claude Code reads. Projects change this
+<!-- The frontmatter for this skill is in .claude/skills/sdlc-intent/SKILL.md, which Claude Code reads. Projects change this
 file with an override in .sdlc-local/ (see .sdlc/docs/overrides.md), never by editing it. -->
 
 # Draft an intent (or a bug report)
@@ -30,4 +30,4 @@ Do not write a spec, a plan or any code at this stage.
 
 ## Committing
 
-When you commit, add the change's files by explicit path (`git add changes/<slug>/intent.md` or `…/bug.md`, plus `docs/roadmap.md` and any adjustment record), never `git add -A` or `git add .`. Follow the `agent-identity` skill for the commit trailer and PR signature.
+When you commit, add the change's files by explicit path (`git add changes/<slug>/intent.md` or `…/bug.md`, plus `docs/roadmap.md` and any adjustment record), never `git add -A` or `git add .`. Follow the `sdlc-agent-identity` skill for the commit trailer and PR signature.

@@ -108,7 +108,7 @@ def test_bootstrap_help_and_bad_args():
 
 def test_bootstrap_creates_the_review_label_the_workflow_listens_for():
     script = (REPO / ".sdlc/scripts/bootstrap-github.sh").read_text()
-    workflow = (REPO / ".github/workflows/claude-review.yml").read_text()
+    workflow = (REPO / ".github/workflows/sdlc-claude-review.yml").read_text()
     assert "\nreview|" in script
     assert "github.event.label.name == 'review'" in workflow
 
@@ -116,14 +116,14 @@ def test_bootstrap_creates_the_review_label_the_workflow_listens_for():
 def test_review_runs_on_every_push_only_with_auto_merge():
     # Each review uses subscription limits (#11). With auto-merge on, `review` is a required
     # check, and required checks belong to the head commit, so then every push needs one (#89).
-    workflow = (REPO / ".github/workflows/claude-review.yml").read_text()
+    workflow = (REPO / ".github/workflows/sdlc-claude-review.yml").read_text()
     assert "types: [opened, ready_for_review, labeled, synchronize]" in workflow
     assert "(github.event.action != 'synchronize' ||" in workflow
     assert "(vars.SDLC_AUTO_MERGE != '' && vars.SDLC_AUTO_MERGE != 'off'))" in workflow
 
 
 def test_review_runs_once_per_pr_at_a_time():
-    workflow = (REPO / ".github/workflows/claude-review.yml").read_text()
+    workflow = (REPO / ".github/workflows/sdlc-claude-review.yml").read_text()
     job = workflow.split("\njobs:", 1)[1]
     assert "group: claude-review-${{ github.event.pull_request.number }}" in job
     assert "cancel-in-progress: true" in job
@@ -132,7 +132,7 @@ def test_review_runs_once_per_pr_at_a_time():
 
 def test_review_clears_its_label_through_the_rest_api():
     # `gh pr edit` fails in orgs hit by the Projects (classic) GraphQL deprecation.
-    workflow = (REPO / ".github/workflows/claude-review.yml").read_text()
+    workflow = (REPO / ".github/workflows/sdlc-claude-review.yml").read_text()
     assert "gh pr edit" not in workflow
     assert 'gh api -X DELETE "repos/$GITHUB_REPOSITORY/issues/$PR/labels/review"' in workflow
 
@@ -328,7 +328,7 @@ def test_bootstrap_defaults_to_solo_and_rejects_unknown_mode():
 
 def test_verifier_runs_on_a_set_model():
     # Without a model the verifier inherits the caller's, so an Opus session runs it on Opus.
-    agent = (REPO / ".claude/agents/verifier.md").read_text()  # the stub holds the frontmatter
+    agent = (REPO / ".claude/agents/sdlc-verifier.md").read_text()  # the stub holds the frontmatter
     front = agent.split("---")[1]
     assert "\nmodel: sonnet\n" in front
 
@@ -407,7 +407,7 @@ def test_review_findings_resolves_threads_and_checks_for_bot_commits():
 def test_pr_title_accepts_bug_artifact_prs():
     script = (REPO / ".sdlc/scripts/check-pr-title.sh").read_text()
     assert "|intent|bug|spec|plan'" in script
-    workflow = (REPO / ".github/workflows/pr-title.yml").read_text()
+    workflow = (REPO / ".github/workflows/sdlc-pr-title.yml").read_text()
     assert '.sdlc/scripts/check-pr-title.sh "$TITLE"' in workflow and "pulls/$PR/files" in workflow
 
 
@@ -510,7 +510,7 @@ def test_spec_pr_open_closes_an_older_run_numbered_pr_it_supersedes(spec_repo):
 
 
 def test_spec_from_intent_queues_runs_and_uses_spec_pr():
-    workflow = (REPO / ".github/workflows/spec-from-intent.yml").read_text()
+    workflow = (REPO / ".github/workflows/sdlc-spec-from-intent.yml").read_text()
     assert "group: spec-from-intent" in workflow
     assert "cancel-in-progress: false" in workflow
     assert ".sdlc/scripts/spec-pr.sh pending" in workflow
@@ -759,7 +759,7 @@ def test_spec_pr_open_offers_each_new_pr_to_auto_merge(spec_repo):
     assert result.returncode == 0, result.stderr
     calls = (state / "calls").read_text()
     assert "repos/o/r/actions/variables/SDLC_AUTO_MERGE" in calls
-    workflow = (REPO / ".github/workflows/spec-from-intent.yml").read_text()
+    workflow = (REPO / ".github/workflows/sdlc-spec-from-intent.yml").read_text()
     assert "SDLC_AUTO_MERGE: ${{ vars.SDLC_AUTO_MERGE }}" in workflow
 
 
@@ -957,13 +957,13 @@ def test_each_repo_has_its_own_apps(agent_env):
 
 
 def test_workflows_guard_against_agent_loops():
-    mention = (REPO / ".github/workflows/claude-mention.yml").read_text()
+    mention = (REPO / ".github/workflows/sdlc-claude-mention.yml").read_text()
     assert "github.event.comment.user.type == 'User'" in mention
-    review = (REPO / ".github/workflows/claude-review.yml").read_text()
+    review = (REPO / ".github/workflows/sdlc-claude-review.yml").read_text()
     # The App's bot and, without an App, the default token's bot (#82); no wildcard.
     assert "allowed_bots: ${{ format('{0},github-actions', vars.SDLC_AGENT_APP_SLUG) }}" in review
     assert "allowed_bots: '*'" not in review
-    spec = (REPO / ".github/workflows/spec-from-intent.yml").read_text()
+    spec = (REPO / ".github/workflows/sdlc-spec-from-intent.yml").read_text()
     assert "actions/create-github-app-token" in spec
 
 
@@ -1116,7 +1116,7 @@ def test_bug_tests_stay_editable_until_the_failing_test_is_committed(bug_branch)
 
 
 def test_only_the_failing_test_files_are_locked(bug_branch):
-    # /build writes more tests after the failing one (coverage, regression guards); those
+    # /sdlc-build writes more tests after the failing one (coverage, regression guards); those
     # stay editable, only what the test(<slug>) commit touched is locked.
     commit(bug_branch, "test(0003-overlap): failing test", {"tests/test_overlap.py": "x\n"})
     assert locked(bug_branch, "tests/test_overlap.py")
@@ -1542,7 +1542,7 @@ def test_clause_check_fails_when_the_spec_cant_be_split(tmp_path):
 
 
 def test_review_runs_the_clause_check_before_the_review_and_never_fails_on_it():
-    workflow = (REPO / ".github/workflows/claude-review.yml").read_text()
+    workflow = (REPO / ".github/workflows/sdlc-claude-review.yml").read_text()
     check = workflow.index("- name: Clause check")
     assert workflow.index("- name: Find the changed specs and plans") < check
     assert check < workflow.index("- uses: anthropics/claude-code-action@v1")
@@ -1682,7 +1682,7 @@ def test_delivery_check_keeps_an_approval_only_if_its_quote_is_there(fake_claude
 
 
 def test_review_skips_the_clause_check_quietly_without_a_clauses_target():
-    workflow = (REPO / ".github/workflows/claude-review.yml").read_text()
+    workflow = (REPO / ".github/workflows/sdlc-claude-review.yml").read_text()
     find = workflow[workflow.index("- name: Find the changed specs and plans") :]
     find = find[: find.index("- uses: ./.github/actions/setup-stack")]
     assert "make -n clauses CHANGE=probe" in find, "probes the target before any stack setup"
@@ -1805,7 +1805,7 @@ esac
 PUSHED = "abc1234def5678abc1234def5678abc1234def56"
 
 
-def review_run(conclusion=None, path=".github/workflows/claude-review.yml"):
+def review_run(conclusion=None, path=".github/workflows/sdlc-claude-review.yml"):
     status = "completed" if conclusion else "in_progress"
     return {"path": path, "status": status, "conclusion": conclusion}
 
@@ -1873,7 +1873,7 @@ def test_request_review_leaves_the_push_review_alone_when_auto_merge_is_on(reque
         [],  # no run yet
         [review_run("skipped")],  # the job's condition skipped it
         [review_run("cancelled")],  # a newer run replaced it
-        [review_run(path=".github/workflows/ci.yml")],  # another workflow
+        [review_run(path=".github/workflows/sdlc-ci.yml")],  # another workflow
     ],
 )
 def test_request_review_adds_the_label_when_no_review_started_on_the_push(request_review, runs):
@@ -1960,13 +1960,14 @@ def test_baseline_gitignore_keeps_the_build_skill_while_ignoring_build_output(tm
     # #103: a bare `build/` also matched .claude/skills/build/, so a file a sync added there
     # was ignored and the sync PR silently left it out. Since #133 the framework's own
     # .gitignore files carry the exception, so the project's root file never changes for it.
+    # Since #23 the stub's folder is sdlc-build, so only .sdlc/ needs one.
     repo = init_repo(tmp_path / "r")
     shutil.copy(REPO / ".sdlc" / "templates" / "gitignore", repo / ".gitignore")
-    for nested in (".claude/skills/.gitignore", ".sdlc/.gitignore"):
-        (repo / nested).parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy(REPO / nested, repo / nested)
+    nested = ".sdlc/.gitignore"
+    (repo / nested).parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy(REPO / nested, repo / nested)
     paths = [
-        ".claude/skills/build/new.md",
+        ".claude/skills/sdlc-build/new.md",
         ".sdlc/skills/build/SKILL.md",
         "build/out.js",
         "app/build/out.js",
@@ -1982,10 +1983,11 @@ def test_baseline_gitignore_keeps_the_build_skill_while_ignoring_build_output(tm
 def test_the_build_skill_stays_tracked_under_a_projects_own_build_rule(tmp_path):
     repo = init_repo(tmp_path / "r")
     (repo / ".gitignore").write_text("build/\n")  # the project's file, nothing of ours in it
-    for nested in (".claude/skills/.gitignore", ".sdlc/.gitignore"):
-        (repo / nested).parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy(REPO / nested, repo / nested)
-    for skill in (".claude/skills/build/SKILL.md", ".sdlc/skills/build/SKILL.md"):
+    nested = ".sdlc/.gitignore"
+    (repo / nested).parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy(REPO / nested, repo / nested)
+    # The stub's folder is sdlc-build since #23, which a `build/` rule doesn't match.
+    for skill in (".claude/skills/sdlc-build/SKILL.md", ".sdlc/skills/build/SKILL.md"):
         (repo / skill).parent.mkdir(parents=True, exist_ok=True)
         (repo / skill).write_text("x\n")
         assert run(["git", "check-ignore", skill], cwd=repo).returncode == 1, skill
@@ -2002,7 +2004,7 @@ def test_v0_9_1_upgrade_steps_name_commands_that_exist():
     identity = (REPO / ".sdlc/scripts/agent-identity.sh").read_text()
     for sub in ("create", "check"):
         assert f"scripts/agent-identity.sh {sub}" in notes and f"  {sub})" in identity
-    assert "!.claude/skills/build/" in notes  # since #133 in .claude/skills/.gitignore instead
+    assert "!.claude/skills/build/" in notes  # since #23 not needed: the stub is sdlc-build/
 
 
 # --- THE RULE for SDLC_AUTO_MERGE, in every place that reads it (#101) ----------------------
@@ -2018,8 +2020,9 @@ AUTO_MERGE_VALUES = [
 
 
 def workflow_reviews_pushes(value: str) -> bool:
-    """claude-review.yml's push gate, evaluated as GitHub does: `!=` on strings ignores case."""
-    workflow = (REPO / ".github/workflows/claude-review.yml").read_text()
+    """sdlc-claude-review.yml's push gate, evaluated as GitHub does: `!=` on strings ignores
+    case."""
+    workflow = (REPO / ".github/workflows/sdlc-claude-review.yml").read_text()
     assert "(vars.SDLC_AUTO_MERGE != '' && vars.SDLC_AUTO_MERGE != 'off')" in workflow
     return value.lower() != "" and value.lower() != "off"
 
@@ -2203,11 +2206,13 @@ def test_auto_merge_refuses_the_old_review_check_as_the_gate(auto_merge):
 def test_auto_merge_never_merges_a_pr_that_changes_a_claude_workflow(auto_merge):
     # The AI review can't run on such a PR (#14), so a person merges it.
     state, go = auto_merge
-    files = [{"filename": "README.md"}, {"filename": ".github/workflows/claude-review.yml"}]
-    (state / "pr-files.json").write_text(json.dumps(files))
-    result, mutated, calls = go(SDLC_AUTO_MERGE="merge")
-    assert not mutated and "claude-*.yml" in result.stderr
-    assert "pulls/7/files --paginate" in calls
+    # The names since #23, and the ones before it, which a PR renaming them deletes.
+    for workflow in ("sdlc-claude-review.yml", "sdlc-claude-mention.yml", "claude-review.yml"):
+        files = [{"filename": "README.md"}, {"filename": f".github/workflows/{workflow}"}]
+        (state / "pr-files.json").write_text(json.dumps(files))
+        result, mutated, calls = go(SDLC_AUTO_MERGE="merge")
+        assert not mutated and "sdlc-claude-*.yml" in result.stderr, workflow
+        assert "pulls/7/files --paginate" in calls
     (state / "pr-files.json").write_text(json.dumps([{"filename": "README.md"}]))
     _, mutated, _ = go(SDLC_AUTO_MERGE="merge")
     assert mutated
@@ -2215,7 +2220,7 @@ def test_auto_merge_never_merges_a_pr_that_changes_a_claude_workflow(auto_merge)
 
 def test_review_posts_its_own_claude_review_status():
     # #101 finding 4: a skipped job posts no status, so it can't satisfy the required gate.
-    workflow = (REPO / ".github/workflows/claude-review.yml").read_text()
+    workflow = (REPO / ".github/workflows/sdlc-claude-review.yml").read_text()
     assert "\n  statuses: write\n" in workflow
     steps = workflow.split("\n      - ")
     names = [s.split("\n", 1)[0] for s in steps]
@@ -2234,12 +2239,12 @@ def test_review_posts_its_own_claude_review_status():
         if when:
             assert f"if: {when}" in steps[i]
     assert "HEAD_SHA: ${{ github.event.pull_request.head.sha }}" in workflow
-    assert "No AI review: the PR changes a claude-*.yml workflow" in steps[done]
+    assert "No AI review: the PR changes an sdlc-claude-*.yml workflow" in steps[done]
 
 
 def test_review_notes_a_workflow_change_on_the_push_that_makes_it():
     # #101 finding 3: the note was posted only when the PR opened.
-    workflow = (REPO / ".github/workflows/claude-review.yml").read_text()
+    workflow = (REPO / ".github/workflows/sdlc-claude-review.yml").read_text()
     note = workflow[workflow.index("- name: Note when the AI review can't run") :]
     note = note[: note.index("\n      - ", 1)]
     assert "if: github.event.action == 'opened'" not in note, "runs on every event"
@@ -2369,7 +2374,7 @@ def test_review_current_usage():
 
 
 def test_unreviewed_pushes_are_marked_when_the_review_doesnt_run():
-    workflow = (REPO / ".github/workflows/claude-review.yml").read_text()
+    workflow = (REPO / ".github/workflows/sdlc-claude-review.yml").read_text()
     job = workflow[workflow.index("\n  unreviewed-push:") :]
     # The exact complement of the review job's push condition: off means the review skips it.
     assert "github.event.action == 'synchronize'" in job
@@ -2448,7 +2453,7 @@ def test_the_roadmap_is_the_projects_and_its_format_is_synced():
 
 
 def test_next_and_the_upgrade_steps_know_the_roadmap():
-    # #81: /next reads the roadmap from main; v0.10.0's upgrade covers both consumers' shapes.
+    # #81: /sdlc-next reads the roadmap from main; v0.10.0's upgrade covers both consumers' shapes.
     nxt = (REPO / ".sdlc/skills/next/SKILL.md").read_text()
     assert "git show origin/main:docs/roadmap.md" in nxt
     assert "Never reorder the roadmap" in nxt
@@ -2538,7 +2543,7 @@ def test_review_posted_fails_when_it_cannot_read_or_is_misused(review_posted):
 
 
 def test_the_gate_needs_the_summary_not_just_a_green_action():
-    workflow = (REPO / ".github/workflows/claude-review.yml").read_text()
+    workflow = (REPO / ".github/workflows/sdlc-claude-review.yml").read_text()
     steps = workflow.split("\n      - ")
     step = {s.split("\n", 1)[0].removeprefix("name: "): s for s in steps}
     assert "id: start" in step["Mark the review as running"]
@@ -2546,7 +2551,7 @@ def test_the_gate_needs_the_summary_not_just_a_green_action():
     done = step["Mark the review as done"]
     assert "SINCE: ${{ steps.start.outputs.since }}" in done
     assert '.sdlc/scripts/review-posted.sh "$PR" "$SINCE"' in done
-    # Skipped (a claude-*.yml change) is checked first: the action posts nothing then.
+    # Skipped (an sdlc-claude-*.yml change) is checked first: the action posts nothing then.
     assert done.index('"$SKIPPED" == true') < done.index("review-posted.sh")
     assert "-f state=failure" in done and "posted no summary" in done
     failed = step["Mark the review as failed"]
@@ -2676,11 +2681,11 @@ def test_review_findings_fails_when_it_cannot_read(review_findings):
 
 
 def test_the_gate_checks_what_the_review_found():
-    workflow = (REPO / ".github/workflows/claude-review.yml").read_text()
+    workflow = (REPO / ".github/workflows/sdlc-claude-review.yml").read_text()
     steps = workflow.split("\n      - ")
     step = {s.split("\n", 1)[0].removeprefix("name: "): s for s in steps}
     done = step["Mark the review as done"]
-    # In order: the claude-*.yml exception, then a summary, then a thread per finding.
+    # In order: the sdlc-claude-*.yml exception, then a summary, then a thread per finding.
     order = ['"$SKIPPED" == true', "review-posted.sh", '.sdlc/scripts/review-findings.sh "$PR"']
     assert [done.index(x) for x in order] == sorted(done.index(x) for x in order)
     assert done.count('echo "reported=true"') == 2 and done.count("exit 1") == 2
@@ -2824,7 +2829,7 @@ def test_the_global_install_check_catches(line):
 
 
 def test_workflows_that_run_claude_install_it_first():
-    for name in ["spec-from-intent", "agent-evals", "release", "claude-review"]:
+    for name in ["sdlc-spec-from-intent", "sdlc-agent-evals", "release", "sdlc-claude-review"]:
         assert "install-claude.sh" in (REPO / f".github/workflows/{name}.yml").read_text(), name
 
 
@@ -2857,7 +2862,7 @@ MAIN_PUSH = {
 
 
 def test_ci_cancels_a_prs_stale_run_but_never_one_on_main():
-    group_expr, cancel = concurrency("ci.yml")
+    group_expr, cancel = concurrency("sdlc-ci.yml")
     assert group(group_expr, PR_PUSH) == "ci-7"
     assert gh_expr(cancel, PR_PUSH) is True
     # Every commit on main gets its own result. A group keeps one pending run, and a newer one
@@ -2872,8 +2877,8 @@ def test_ci_cancels_a_prs_stale_run_but_never_one_on_main():
 
 
 def test_pr_title_cancels_the_older_check_on_the_same_pr():
-    group_expr, cancel = concurrency("pr-title.yml")
+    group_expr, cancel = concurrency("sdlc-pr-title.yml")
     assert group(group_expr, PR_PUSH) == "pr-title-7"
     assert cancel == "true"
-    on = (REPO / ".github/workflows/pr-title.yml").read_text()
+    on = (REPO / ".github/workflows/sdlc-pr-title.yml").read_text()
     assert "\n  push:" not in on  # only PR events, so cancelling never touches main

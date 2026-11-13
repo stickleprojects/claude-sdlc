@@ -62,7 +62,7 @@ Without the App set up, both routes do nothing, and the session acts as you, as 
 ## What stops agents looping or fighting
 
 - **Agents start only when a person asks:** a terminal session, an `@claude` comment *written by a person*, or a merge to `main`. The mention workflow ignores comments from bots, the agent's own App included.
-- **Agents never @-mention anyone** (the `agent-identity` skill), so they can't summon the mention bot or each other.
+- **Agents never @-mention anyone** (the `sdlc-agent-identity` skill), so they can't summon the mention bot or each other.
 - **The review only comments.** It runs when a PR opens and when someone adds the `review` label, including on the agent's PRs, but it never pushes, so there's no loop. Findings wait for a person to work through them.
 - **Before every push, fetch and merge.** A session checks the branch for commits it doesn't have, from a person, the bot or another session under the same identity, and merges them. It never rebases or force-pushes.
 - **Approving and merging stay with people.** In team mode GitHub requires your approval, and the production-gate hook still blocks the agent from merging or approving.

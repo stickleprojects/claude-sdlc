@@ -7,7 +7,7 @@ same path. The sync never writes there, so an update never conflicts with it.
 | You want to change | Put it in |
 |---|---|
 | a template, e.g. the intent's header lines | `.sdlc-local/templates/intent.md` |
-| a skill, e.g. an extra step at the end of `/build` | `.sdlc-local/skills/build/SKILL.md` |
+| a skill, e.g. an extra step at the end of `/sdlc-build` | `.sdlc-local/skills/build/SKILL.md` |
 | the verifier agent | `.sdlc-local/agents/verifier.md` |
 | a prompt the checks use | `.sdlc-local/prompts/<name>.md` |
 | the review rules | `.sdlc-local/REVIEW.md`, or add project rules in `docs/review-rules.md` |

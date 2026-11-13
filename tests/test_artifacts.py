@@ -737,7 +737,8 @@ def test_validate_requires_descopes_only_in_plans_the_branch_edits(branch_repo: 
     assert main(root) == 0  # merged plan, untouched
 
     plan = branch_repo / change / "plan.md"
-    plan.write_text(old_plan + "\nAn edit.\n")  # uncommitted, as /plan validates before committing
+    # Uncommitted, as /sdlc-plan validates before committing.
+    plan.write_text(old_plan + "\nAn edit.\n")
     assert main(root) == 1
     plan.write_text(plan_with("None."))
     assert main(root) == 0

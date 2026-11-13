@@ -1,6 +1,6 @@
 # .sdlc/REVIEW.md
 
-The policy for automated PR review (`.github/workflows/claude-review.yml`). Review findings are comments and threads. The review never approves a PR; its open Important threads hold the merge until they're resolved, and a human merges it (in team mode, after a code owner's approval). The agent that wrote a change never reviews, approves or merges it.
+The policy for automated PR review (`.github/workflows/sdlc-claude-review.yml`). Review findings are comments and threads. The review never approves a PR; its open Important threads hold the merge until they're resolved, and a human merges it (in team mode, after a code owner's approval). The agent that wrote a change never reviews, approves or merges it.
 
 ## Passes
 
@@ -61,13 +61,13 @@ Keep exactly **one** summary comment per PR, and replace it on each new review r
 3. One line per open finding: a short quote of the text it's about, the owner who decides, and a link to its thread.
 4. One line on whether the change matches its spec, saying what was compared, and claiming only what was checked. For example: "Every clause of R1–R45 traced to an acceptance criterion and to a plan step and test (112 clauses)", or "IDs only: every acceptance criterion has a Verification row".
 5. How to handle the findings, as a one-line reminder:
-   - Whoever decides runs `/pr <N>` in Claude Code: the product owner for `intent:`, `bug:` and `spec:` PRs, the engineer for the rest.
+   - Whoever decides runs `/sdlc-pr <N>` in Claude Code: the product owner for `intent:`, `bug:` and `spec:` PRs, the engineer for the rest.
    - Tagging `@claude` on a thread is optional. It hands that finding to the GitHub bot instead, so don't do both for one finding.
 6. Last, the hidden count line from [Posting findings](#posting-findings).
 
 ## Handling findings
 
-Findings are worked through in a Claude Code session in the terminal with `/pr <N>`, which picks the product owner's or the engineer's walkthrough by the PR's type. Claude goes through them one at a time, then edits, pushes, replies on every thread and resolves it. The GitHub bot (`@claude` in a comment) is optional.
+Findings are worked through in a Claude Code session in the terminal with `/sdlc-pr <N>`, which picks the product owner's or the engineer's walkthrough by the PR's type. Claude goes through them one at a time, then edits, pushes, replies on every thread and resolves it. The GitHub bot (`@claude` in a comment) is optional.
 
 - **One actor per finding.** A finding is handled either by the terminal session or by the bot, never both. Before pushing, the terminal session checks the branch for bot commits and merges them in.
 - **Every thread gets a reply** saying what was decided or changed, then it's resolved. Nothing is resolved silently. Replies posted from Claude Code go out under the person's account and end with `(posted from Claude Code)`.

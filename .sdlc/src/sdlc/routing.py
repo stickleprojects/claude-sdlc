@@ -1,7 +1,8 @@
 """Where each change is, and the next step: the routing table the entry skills share.
 
-People remember a few skills (/intent, /plan, /build, /pr, /next). Each one asks this
-module where a change is, and hands over to the skill that owns the next step. The
+People remember a few skills (/sdlc-intent, /sdlc-plan, /sdlc-build, /sdlc-pr, /sdlc-next).
+Each one asks this module where a change is, and hands over to the skill that owns the next
+step. The
 table lives here, once, so the skills can't drift apart; `.sdlc/skills/routing.md`
 explains it for the skills.
 
@@ -27,7 +28,7 @@ from sdlc.artifacts import BUILD, Build, change_dirs, stage
 class Next:
     slug: str
     stage: str
-    skill: str  # the entry skill that owns the next step, or "done"
+    skill: str  # the skill that owns the next step (sdlc-…), or "done" or "withdrawn"
     detail: str
 
     def __str__(self) -> str:
@@ -43,7 +44,7 @@ BASES = [
     (BUILD, ("plan.md", "spec.md")),
 ]
 # Who updates an out-of-date artifact.
-OWNER = {"spec.md": "spec", "plan.md": "plan", BUILD: "build"}
+OWNER = {"spec.md": "sdlc-spec", "plan.md": "sdlc-plan", BUILD: "sdlc-build"}
 
 
 def _git(root: Path, *args: str) -> str | None:
@@ -123,33 +124,35 @@ def next_step(change_dir: Path, merged: bool, root: Path | None = None, rev: str
             artifact, why = stale
             return Next(slug, where, OWNER[artifact], why)
     if where == "empty":
-        return Next(slug, where, "intent", "no intent.md or bug.md yet: describe the change")
+        return Next(slug, where, "sdlc-intent", "no intent.md or bug.md yet: describe the change")
     if where in ("intent", "bug"):
         return Next(
             slug,
             where,
-            "spec",
-            f"the spec is generated when the {where} merges; review its spec PR (/pr)",
+            "sdlc-spec",
+            f"the spec is generated when the {where} merges; review its spec PR (/sdlc-pr)",
         )
     if where == "spec":
-        return Next(slug, where, "plan", "plan it")
+        return Next(slug, where, "sdlc-plan", "plan it")
     if where == "plan":
         if small_build is not None:
             return Next(slug, where, "done", f"built and merged ({small_build})")
-        return Next(slug, where, "build", "build it")
+        return Next(slug, where, "sdlc-build", "build it")
     build = Build.parse((change_dir / BUILD).read_text(encoding="utf-8"))
     status = build.status or ""
     if build.is_draft:
-        return Next(slug, where, "build", "approve the build plan (build.md)")
+        return Next(slug, where, "sdlc-build", "approve the build plan (build.md)")
     if status.startswith("PR open"):
         if merged:
             pr = re.search(r"#\d+", status)
             return Next(
                 slug, where, "done", "built and merged" + (f" ({pr.group()})" if pr else "")
             )
-        return Next(slug, where, "pr", f"{status}: work through its review")
+        return Next(slug, where, "sdlc-pr", f"{status}: work through its review")
     todo = [n for n, s in build.milestones.items() if not (s or "").startswith("done")]
-    return Next(slug, where, "build", f"{build.progress()}; next {todo[0] if todo else 'the PR'}")
+    return Next(
+        slug, where, "sdlc-build", f"{build.progress()}; next {todo[0] if todo else 'the PR'}"
+    )
 
 
 def _extract(root: Path, ref: str, into: Path) -> Path | None:

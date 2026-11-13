@@ -7,7 +7,7 @@
 node_modules/
 dist/
 build/
-# (The framework's /build skill stays tracked through .gitignore files in its own folders.)
+# (The framework's /sdlc-build skill stays tracked through .gitignore files in its own folders.)
 coverage/
 .expo/
 .next/

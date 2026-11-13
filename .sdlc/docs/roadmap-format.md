@@ -1,6 +1,6 @@
 # The roadmap
 
-A roadmap is optional. A project that has `docs/roadmap.md` gets an ordered list of milestones that the pipeline reads and checks: `/intent` places each new change on it, `/build` marks the change done, `/next` shows what's left, and `make validate` fails when the roadmap, the intents and the adjustment records disagree. A project without one sees none of this.
+A roadmap is optional. A project that has `docs/roadmap.md` gets an ordered list of milestones that the pipeline reads and checks: `/sdlc-intent` places each new change on it, `/sdlc-build` marks the change done, `/sdlc-next` shows what's left, and `make validate` fails when the roadmap, the intents and the adjustment records disagree. A project without one sees none of this.
 
 The format came from spellbound3d, which used it for a dozen changes before the framework took it on (#81).
 
@@ -40,8 +40,8 @@ Copy `.sdlc/templates/roadmap.md` to `docs/roadmap.md` and fill in the first mil
 
 | When | What changes |
 |---|---|
-| The intent PR (`/intent`) | The intent gets `Milestone: M<n>`. The milestone's table gets the change's row as `planned`. Any adjustment record is added. |
-| The build PR (`/build`) | The row becomes `✅ done`. If that finishes the milestone, the person decides whether to mark the milestone done and tick its exit criteria. |
+| The intent PR (`/sdlc-intent`) | The intent gets `Milestone: M<n>`. The milestone's table gets the change's row as `planned`. Any adjustment record is added. |
+| The build PR (`/sdlc-build`) | The row becomes `✅ done`. If that finishes the milestone, the person decides whether to mark the milestone done and tick its exit criteria. |
 | Withdrawing a change | The intent gets its `Withdrawn:` line and the row becomes `withdrawn`, in the same PR. |
 
 The check compares each row with the change's state as `make next` reads it:

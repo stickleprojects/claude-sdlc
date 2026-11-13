@@ -1,11 +1,11 @@
-<!-- The frontmatter for this skill is in .claude/skills/po-review/SKILL.md, which Claude Code reads. Projects change this
+<!-- The frontmatter for this skill is in .claude/skills/sdlc-po-review/SKILL.md, which Claude Code reads. Projects change this
 file with an override in .sdlc-local/ (see .sdlc/docs/overrides.md), never by editing it. -->
 
 # Product owner review of a PR
 
 The product owner decides; you explain and do the typing. This is the main way findings get handled: the product owner talks to you in the terminal and doesn't need to comment on GitHub. You walk them through the findings, edit the artifact, push, and reply on every thread. The acceptance is recorded on GitHub, where approving and merging the PR **is** the acceptance. Never approve or merge the PR yourself.
 
-Replies, resolving threads and checking for bot commits follow the shared rules in `.sdlc/skills/review-findings/SKILL.md` (sections *One actor per finding*, *Before you push* and *Reply and resolve*). Read them before step 4, along with the `agent-identity` skill (signatures, commit trailers, no @-mentions).
+Replies, resolving threads and checking for bot commits follow the shared rules in `.sdlc/skills/review-findings/SKILL.md` (sections *One actor per finding*, *Before you push* and *Reply and resolve*). Read them before step 4, along with the `sdlc-agent-identity` skill (signatures, commit trailers, no @-mentions).
 
 ## 1. Load the PR
 

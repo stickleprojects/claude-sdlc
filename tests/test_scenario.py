@@ -60,8 +60,8 @@ def test_sync_installs_framework_owned_files(consumer):
         ".sdlc/templates/build.md",
         ".sdlc/templates/adr.md",
         ".claude/settings.json",
-        ".github/workflows/claude-review.yml",
-        ".github/workflows/pr-title.yml",
+        ".github/workflows/sdlc-claude-review.yml",
+        ".github/workflows/sdlc-pr-title.yml",
         ".sdlc/templates/intent.md",
         ".sdlc/REVIEW.md",
         ".sdlc/src/sdlc/cli.py",
@@ -201,11 +201,11 @@ def test_first_sync_never_overwrites_a_file_the_consumer_has(tmp_path, framework
     shutil.copy(
         REPO / ".sdlc" / "scripts" / "sync-sdlc.sh", repo / ".sdlc" / "scripts" / "sync-sdlc.sh"
     )
-    commit(repo, "chore: existing repo", {".github/workflows/ci.yml": "name: our own ci\n"})
+    commit(repo, "chore: existing repo", {".github/workflows/sdlc-ci.yml": "name: our own ci\n"})
     result = sync(repo, framework_snapshot)
     assert result.returncode == 1
-    assert ".github/workflows/ci.yml" in result.stderr
-    text = (repo / ".github/workflows/ci.yml").read_text()
+    assert ".github/workflows/sdlc-ci.yml" in result.stderr
+    text = (repo / ".github/workflows/sdlc-ci.yml").read_text()
     assert "name: our own ci" in text and "<<<<<<< yours" in text
 
 
@@ -260,7 +260,7 @@ def test_build_plan_in_consumer(consumer):
         "0001-role-list\tbuild\tdraft, awaiting approval, 0/2 milestones done"
     )
     assert make(consumer, "next", "CHANGE=0001").stdout.strip() == (
-        "0001-role-list\tbuild\tbuild\tapprove the build plan (build.md)"
+        "0001-role-list\tbuild\tsdlc-build\tapprove the build plan (build.md)"
     )
 
     approved = draft.replace("draft, awaiting approval", "in progress", 1)
@@ -986,7 +986,7 @@ def test_next_shows_a_merged_small_build_as_done_in_consumer(consumer):
         folder.mkdir(parents=True, exist_ok=True)
         (folder / name).write_text("# T\n\n" + artifact(CHAIN[name]))
     commit(consumer, "plan(0001-tidy): plan it")
-    assert "0001-tidy\tplan\tbuild\tbuild it" in make(consumer, "next").stdout
+    assert "0001-tidy\tplan\tsdlc-build\tbuild it" in make(consumer, "next").stdout
     git(consumer, "checkout", "-q", "-b", "build/0001-tidy")
     commit(consumer, "feat(0001-tidy): tidy", {"src.txt": "tidy\n"})
     git(consumer, "checkout", "-q", "main")
@@ -1144,8 +1144,9 @@ def test_an_old_consumer_moves_into_sdlc_in_one_sync(old_consumer, framework_his
     assert "Our own build rule." in build and not build.startswith("---"), (
         "frontmatter is in the stub"
     )
-    stub = old_consumer / ".claude/skills/build/SKILL.md"
-    assert stub.read_text() == (REPO / ".claude/skills/build/SKILL.md").read_text()
+    stub = old_consumer / ".claude/skills/sdlc-build/SKILL.md"
+    assert stub.read_text() == (REPO / ".claude/skills/sdlc-build/SKILL.md").read_text()
+    assert not (old_consumer / ".claude/skills/build").exists(), "the old skill went"
 
     # The security policy is the project's: it becomes the override, not a merge.
     policy = (old_consumer / ".sdlc-local/skills/security-policy/SKILL.md").read_text()
@@ -1161,7 +1162,7 @@ def test_an_old_consumer_moves_into_sdlc_in_one_sync(old_consumer, framework_his
     assert "No secrets in Godot scenes." in resolved.stdout
 
     files = (old_consumer / ".sdlc/files").read_text().splitlines()
-    assert ".sdlc/scripts/agent.sh" in files and ".claude/skills/build/SKILL.md" in files
+    assert ".sdlc/scripts/agent.sh" in files and ".claude/skills/sdlc-build/SKILL.md" in files
     assert (old_consumer / ".sdlc/version").read_text().split("\n")[1] == git(
         framework_history, "rev-parse", "HEAD"
     ).strip()
@@ -1334,3 +1335,86 @@ def test_an_upgrade_from_an_unknown_commit_counts_from_its_release_tag(
     assert result.returncode == 0, result.stdout + result.stderr
     pending = (consumer / ".sdlc/upgrade-pending.md").read_text()
     assert "# v9.0.0\n" in pending and "# v0.11.0" not in pending
+
+
+# --- the sdlc- prefix (#23) -----------------------------------------------------------------
+
+PREFIXED = "v0.11.1"  # the last release before the prefix
+RENAMED = {
+    ".claude/skills/intent/SKILL.md": ".claude/skills/sdlc-intent/SKILL.md",
+    ".claude/skills/po-review/SKILL.md": ".claude/skills/sdlc-po-review/SKILL.md",
+    ".claude/agents/verifier.md": ".claude/agents/sdlc-verifier.md",
+    ".github/workflows/ci.yml": ".github/workflows/sdlc-ci.yml",
+    ".github/workflows/claude-review.yml": ".github/workflows/sdlc-claude-review.yml",
+}
+
+
+@pytest.fixture
+def unprefixed_consumer(tmp_path):
+    """A consumer on PREFIXED, a framework whose history is PREFIXED then this working tree."""
+    fw = init_repo(tmp_path / "framework")
+    run(["bash", "-c", f'git archive {PREFIXED} | tar -x -C "$0"', str(fw)], check=True)
+    commit(fw, f"release {PREFIXED}")
+    git(fw, "tag", PREFIXED)
+    git(fw, "rm", "-rq", ".")
+    copy_working_tree(fw)
+    commit(fw, "the sdlc- prefix")
+    repo = init_repo(tmp_path / "consumer")
+    files = {
+        "Makefile": git(REPO, "show", f"{PREFIXED}:tests/fixtures/consumer/Makefile") + "\n",
+        ".sdlc/scripts/sync-sdlc.sh": git(REPO, "show", f"{PREFIXED}:.sdlc/scripts/sync-sdlc.sh")
+        + "\n",
+    }
+    commit(repo, "chore: consumer skeleton", files)
+    assert sync(repo, fw, PREFIXED).returncode == 0
+    commit(repo, f"chore: sync {PREFIXED}")
+    return repo, fw
+
+
+def test_an_upgrade_renames_the_frameworks_commands_agent_and_workflows(unprefixed_consumer):
+    repo, fw = unprefixed_consumer
+    ci = repo / ".github/workflows/ci.yml"
+    commit(
+        repo, "chore: our own CI step", {".github/workflows/ci.yml": ci.read_text() + "# ours\n"}
+    )
+    result = sync(repo, fw, "main")
+    out = result.stdout + result.stderr
+    assert result.returncode == 0, out
+
+    for old, new in RENAMED.items():
+        assert (repo / new).read_text() == (REPO / new).read_text(), new
+        if old != ".github/workflows/ci.yml":
+            assert not (repo / old).exists(), old
+    # An edited old file is the project's now: kept and listed, for the upgrade step to merge.
+    assert ci.exists() and "kept (the framework dropped these" in out
+    assert ".github/workflows/ci.yml" in out.split("kept (the framework dropped these", 1)[1]
+    # The skill bodies didn't move, so a project's overrides still find them.
+    assert (repo / ".sdlc/skills/intent/SKILL.md").exists()
+    assert "sdlc-intent" in (repo / ".claude/skills/sdlc-intent/SKILL.md").read_text()
+
+    # The release's upgrade steps wait for /sdlc, and the check holds the PR until they're done.
+    pending = (repo / ".sdlc/upgrade-pending.md").read_text()
+    assert "# v0.12.0\n" in pending and "carry the edit across" in pending
+    assert "upgrade steps from v0.12.0" in make(repo, "validate").stderr
+    (repo / ".sdlc/upgrade-pending.md").unlink()
+    assert make(repo, "validate").returncode == 0
+
+
+def test_the_v0_12_0_upgrade_steps_search_finds_the_old_names(unprefixed_consumer):
+    """The grep in upgrade step 2 finds old commands and workflow links, not paths."""
+    repo, _ = unprefixed_consumer
+    notes = (REPO / "docs/release-notes/v0.12.0.md").read_text()
+    assert "## Upgrade steps" in notes
+    search = re.search(r"```\n\s*(git grep .+)\n", notes).group(1)
+    commit(
+        repo,
+        "docs: ours",
+        {
+            "CLAUDE.md": "Run /intent, then /build all.\nThe verifier subagent checks it.\n",
+            "README.md": "![CI](https://x/actions/workflows/ci.yml/badge.svg)\n",
+            "docs/paths.md": "See changes/0001-x/plan.md and src/build/out.js and */intent.md\n",
+        },
+    )
+    hits = run(["bash", "-c", search], cwd=repo).stdout
+    assert "CLAUDE.md:1:" in hits and "CLAUDE.md:2:" in hits and "README.md:1:" in hits
+    assert "docs/paths.md" not in hits

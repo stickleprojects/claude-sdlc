@@ -1,6 +1,6 @@
 # Build: <short title>
 
-<!-- Stage 3 (Build), written by the /build skill once plan.md is merged. It splits the plan into
+<!-- Stage 3 (Build), written by the /sdlc-build skill once plan.md is merged. It splits the plan into
 milestones, one per session. The person reviews this file as a draft and approves it before any code
 is written. After that, each session checks the previous one (committed, pushed, Done-when passing)
 before starting its own milestone. -->
@@ -50,7 +50,7 @@ None.
 - **Done when:**
 - **Notes:**
 
-<!-- The last milestone always ends with: make check, make coverage, the verifier subagent, and the PR. -->
+<!-- The last milestone always ends with: make check, make coverage, the sdlc-verifier subagent, and the PR. -->
 
 ## Deviations from the plan
 
