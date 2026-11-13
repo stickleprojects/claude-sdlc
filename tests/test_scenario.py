@@ -1548,3 +1548,12 @@ def test_ci_holds_the_plan_rule_in_the_consumer(consumer):
     assert run(check, cwd=consumer, input="src/app.ts\n").returncode == 1
     commit(consumer, "plan(0001-a): plan", {"changes/0001-a/plan.md": "# plan\n"})
     assert run(check, cwd=consumer, input="src/app.ts\n").returncode == 0
+
+
+def test_a_fast_path_fix_title_passes_in_the_consumer(consumer):
+    """#154: the synced title check accepts fix(<slug>) for a bug, its spec and its fix."""
+    files = "changes/0002-b/bug.md\nchanges/0002-b/spec.md\nsrc/app.ts\n"
+    check = [".sdlc/scripts/check-pr-title.sh"]
+    assert run([*check, "fix(0002-b): stop the crash"], cwd=consumer, input=files).returncode == 0
+    refused = run([*check, "feat(0002-b): stop the crash"], cwd=consumer, input=files)
+    assert refused.returncode == 1 and "title it 'fix(0002-b): <summary>'" in refused.stdout

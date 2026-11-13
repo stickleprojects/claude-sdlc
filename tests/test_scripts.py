@@ -3089,3 +3089,60 @@ def test_the_pr_title_job_runs_the_plan_check():
     workflow = (REPO / ".github/workflows/sdlc-pr-title.yml").read_text()
     assert "HEAD_REF: ${{ github.event.pull_request.head.ref }}" in workflow
     assert '.sdlc/scripts/check-plan-first.sh "$HEAD_REF" < "$RUNNER_TEMP/files.txt"' in workflow
+
+
+# --- a fast-path bug PR is titled fix(<slug>) (#154) -----------------------------------------
+
+FAST = ["changes/0010-z/bug.md", "changes/0010-z/spec.md", "tests/test_z.py", "src/z.py"]
+
+
+@pytest.mark.parametrize(
+    ("title", "files", "ok"),
+    [
+        ("fix(0010-z): export no longer hangs", FAST, True),
+        ("fix(0010-z): with its build plan", [*FAST, "changes/0010-z/build.md"], True),
+        ("fix(0010-z): with a plan too", [*FAST, "changes/0010-z/plan.md"], True),
+        ("bug(0010-z): export hangs", FAST, True),  # still allowed, just not the clear choice
+        ("fix(0010-z): spec only", ["changes/0010-z/bug.md", "changes/0010-z/spec.md"], False),
+        ("fix(0010-z): docs only", ["changes/0010-z/bug.md", "docs/a.md", "readme.md"], False),
+        ("fix(0010-z): no report", ["changes/0010-z/spec.md", "src/z.py"], False),
+        ("fix(0010-z): two changes", [*FAST, "changes/0011-w/spec.md"], False),
+        ("fix(0010-z): an intent", [*FAST, "changes/0010-z/intent.md"], False),
+        ("fix(0011-w): wrong scope", FAST, False),
+        ("fix: no scope", FAST, False),
+        ("feat(0007): intent and code", ["changes/0007-x/intent.md", "src/a.py"], False),
+    ],
+)
+def test_pr_title_lets_a_fast_path_bug_be_a_fix(title, files, ok):
+    result = run(
+        ["bash", ".sdlc/scripts/check-pr-title.sh", title], input="".join(f"{f}\n" for f in files)
+    )
+    assert (result.returncode == 0) == ok, result.stdout
+
+
+@pytest.mark.parametrize("title", ["feat(0010-z): fix it", "fix: no scope", "test(0010-z): x"])
+def test_pr_title_suggests_fix_for_a_fast_path_pr(title):
+    result = run(
+        ["bash", ".sdlc/scripts/check-pr-title.sh", title], input="".join(f"{f}\n" for f in FAST)
+    )
+    assert result.returncode == 1
+    assert "the bug fast path), so title it 'fix(0010-z): <summary>'" in result.stdout
+
+
+def test_sdlc_pr_runs_both_walkthroughs_on_a_fast_path_pr():
+    """#154: the product owner signs off the bug and spec, the engineer the code, in that order."""
+    skill = (REPO / ".sdlc/skills/pr/SKILL.md").read_text()
+    row = next(line for line in skill.splitlines() if line.startswith("| `fix(<slug>)`"))
+    assert "`sdlc-po-review`, then `sdlc-review-findings`" in row
+    assert skill.index(row) < skill.index("| anything else"), "matched before plain fix"
+    assert "run the product owner's walkthrough first" in skill
+    assert "still needs the product owner's approval on the bug and spec" in skill  # until #151
+
+
+def test_review_rules_know_the_fast_path_and_never_exempt_a_scoped_fix():
+    review = (REPO / ".sdlc/REVIEW.md").read_text()
+    assert "**The bug fast path** (#148)" in review and "needs no `plan.md`" in review
+    assert "a `test(<slug>): …` commit before the fix" in review
+    assert "too big for one PR" in review
+    assert "Until #151, GitHub doesn't require the product owner's approval" in review
+    assert "a `fix(<slug>)` names a change and is never exempt" in review
