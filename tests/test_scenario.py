@@ -1418,3 +1418,18 @@ def test_the_v0_12_0_upgrade_steps_search_finds_the_old_names(unprefixed_consume
     hits = run(["bash", "-c", search], cwd=repo).stdout
     assert "CLAUDE.md:1:" in hits and "CLAUDE.md:2:" in hits and "README.md:1:" in hits
     assert "docs/paths.md" not in hits
+
+
+def test_a_declined_feature_survives_a_sync(consumer, framework_snapshot):
+    """#74: the decline lives in the project's .sdlc.toml, which the sync never writes."""
+    declined = (
+        '[[features.declined]]\nfeature = "architecture decision records (ADRs)"\n'
+        'reason = "a short-lived prototype"\nby = "Sam"\ndate = 2026-11-13\n'
+    )
+    commit(consumer, "chore: not for us", {".sdlc.toml": declined})
+    commit(framework_snapshot, "fix: a change", {".sdlc/REVIEW.md": "new rules\n"})
+    result = sync(consumer, framework_snapshot, "main")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (consumer / ".sdlc.toml").read_text() == declined
+    assert ".sdlc.toml" not in git(consumer, "diff", "--cached", "--name-only")
+    assert make(consumer, "validate").returncode == 0

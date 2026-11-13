@@ -209,6 +209,7 @@ The production gate hook (`.sdlc/hooks/production-gate.sh`) blocks Claude from r
 | Framework version and updates | `.sdlc/version`; your changes to the pipeline go in `.sdlc-local/` ([overrides](overrides.md)); run `/sdlc` in Claude Code to see what's new and open the sync PR (`make sync-sdlc` by hand) |
 | Agent evals | `evals/`; run with `make evals` |
 | Words `make validate` reads as "nothing here" (`None.`, `TBD`, …) | defaults in `.sdlc/src/sdlc/placeholders.toml`; a repo adds to them (`additional_keywords`) or replaces them (`keywords`) in `.sdlc.toml`, which the sync never touches |
+| Optional features the project said no to | `[[features.declined]]` entries in `.sdlc.toml`, each with the feature (its release-notes title, after `Optional: `) and the reason. `/sdlc` stops offering them, `make validate` checks the entries, and deleting one makes `/sdlc` offer it again |
 | Claude's GitHub identity | `.sdlc/scripts/agent-identity.sh`, `.sdlc/scripts/agent-session.sh`; setup in [agent-identity.md](agent-identity.md) |
 | `.gitignore` baseline (node, python) | `.sdlc/templates/gitignore`; `bootstrap-github.sh` adds any missing line, and `make validate` fails on tracked `node_modules` or a branch changing more than 300 files. A PR that really needs more adds a commit with a `Large-change: <reason>` trailer, which the check output shows (`SDLC_MAX_CHANGED_FILES` overrides it locally) |
 
