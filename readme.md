@@ -276,7 +276,7 @@ Rules that must always hold are enforced by hooks and CI, not left to the model'
 |---|---|
 | The agent can't edit its own hooks (the framework's or the project's), settings, lockfiles or `.env*` | `protect-paths.sh` (PreToolUse on every edit) |
 | No `make deploy-prod`, pushes to `main`, force pushes, merges or approvals | `production-gate.sh` (PreToolUse on every shell command) |
-| No code before the plan: on a change's branch, code waits for a committed `plan.md` (a small bug's `bug.md` and `spec.md` on `build/<slug>` will do), and nothing but docs and artifacts is edited on `main` | `plan-gate.sh` (PreToolUse on every edit; `SDLC_PLAN_GATE=0` overrides) |
+| No code before the plan: on a change's branch, code waits for a committed `plan.md` (a small bug's `bug.md` and `spec.md` on `build/<slug>` will do), and nothing but docs and artifacts is edited on `main` | `plan-gate.sh` (PreToolUse on every edit; `SDLC_PLAN_GATE=0` overrides), and in CI the `pr-title` job's `check-plan-first.sh`, which fails a change's code PR without its plan |
 | Edited files are formatted through `make fmt` | `format.sh` (PostToolUse) |
 | A bug's failing test can't be edited once committed | `.sdlc/scripts/tests-locked.sh` |
 | Artifacts have their required sections, approved descopes, a definition of done and readable requirements | `make validate`, in every `make check` and in CI |

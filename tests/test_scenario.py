@@ -1539,3 +1539,12 @@ def test_the_plan_gate_guards_the_consumer(consumer):
     assert waiting.returncode == 2 and "/sdlc-plan" in waiting.stderr
     commit(consumer, "plan(0001-a): plan", {"changes/0001-a/plan.md": "# plan\n"})
     assert edit().returncode == 0
+
+
+def test_ci_holds_the_plan_rule_in_the_consumer(consumer):
+    """#44: the synced check fails a change's code PR without its plan, then passes with it."""
+    commit(consumer, "spec(0001-a): spec", {"changes/0001-a/spec.md": "# spec\n"})
+    check = [".sdlc/scripts/check-plan-first.sh", "build/0001-a"]
+    assert run(check, cwd=consumer, input="src/app.ts\n").returncode == 1
+    commit(consumer, "plan(0001-a): plan", {"changes/0001-a/plan.md": "# plan\n"})
+    assert run(check, cwd=consumer, input="src/app.ts\n").returncode == 0
