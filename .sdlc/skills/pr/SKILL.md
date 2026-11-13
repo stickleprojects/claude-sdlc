@@ -20,7 +20,7 @@ Read the PR (`gh api repos/{owner}/{repo}/pulls/<N>`) and pick by the type in it
 | `fix(<slug>)` carrying the change's `bug.md` or `spec.md` (the bug fast path, #148) | both: the product owner for the bug and spec, then the engineer for the code | `sdlc-po-review`, then `sdlc-review-findings` |
 | anything else (`plan`, `feat`, `fix`, `chore`, …) | the engineer | `sdlc-review-findings` |
 
-To tell a fast-path PR from a plain fix, list its files (`gh api repos/{owner}/{repo}/pulls/<N>/files --jq '.[].filename'`). For a fast-path PR, run the product owner's walkthrough first: its findings are about what the fix should do, and they can change the code. Then the engineer's, on the threads left. If one person holds both roles, say so and run both in turn.
+To tell a fast-path PR from a plain fix, list its files (`gh api repos/{owner}/{repo}/pulls/<N>/files --jq '.[].filename'`). For a fast-path PR, run the product owner's walkthrough first: its findings are about what the fix should do, and they can change the code. Then the engineer's, on the threads left. If one person holds both roles, say so and run both in turn. GitHub doesn't require the product owner's approval yet (that's #151, path-based CODEOWNERS), so when the engineer is the one running this, say the PR still needs the product owner's approval on the bug and spec before it merges.
 
 Say which in one line ("PR 12 is a spec PR: walking you through it as the product owner"), then invoke that skill with the Skill tool, passing the PR number, and follow it.
 

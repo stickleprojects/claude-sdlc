@@ -3136,6 +3136,7 @@ def test_sdlc_pr_runs_both_walkthroughs_on_a_fast_path_pr():
     assert "`sdlc-po-review`, then `sdlc-review-findings`" in row
     assert skill.index(row) < skill.index("| anything else"), "matched before plain fix"
     assert "run the product owner's walkthrough first" in skill
+    assert "still needs the product owner's approval on the bug and spec" in skill  # until #151
 
 
 def test_review_rules_know_the_fast_path_and_never_exempt_a_scoped_fix():
@@ -3143,4 +3144,5 @@ def test_review_rules_know_the_fast_path_and_never_exempt_a_scoped_fix():
     assert "**The bug fast path** (#148)" in review and "needs no `plan.md`" in review
     assert "a `test(<slug>): …` commit before the fix" in review
     assert "too big for one PR" in review
+    assert "Until #151, GitHub doesn't require the product owner's approval" in review
     assert "a `fix(<slug>)` names a change and is never exempt" in review
