@@ -1557,3 +1557,18 @@ def test_a_fast_path_fix_title_passes_in_the_consumer(consumer):
     assert run([*check, "fix(0002-b): stop the crash"], cwd=consumer, input=files).returncode == 0
     refused = run([*check, "feat(0002-b): stop the crash"], cwd=consumer, input=files)
     assert refused.returncode == 1 and "title it 'fix(0002-b): <summary>'" in refused.stdout
+
+
+def test_the_descope_check_reaches_the_consumer(consumer):
+    """#132: the workflow and both scripts sync, and the scripts run there."""
+    assert (consumer / ".github/workflows/sdlc-descopes.yml").is_file()
+    modes = git(
+        consumer,
+        "ls-files",
+        "-s",
+        ".sdlc/scripts/descopes-decided.sh",
+        ".sdlc/scripts/descopes-status.sh",
+    )
+    assert modes.count("100755") == 2, modes
+    usage = run([".sdlc/scripts/descopes-decided.sh"], cwd=consumer)
+    assert usage.returncode == 2 and "Descope: needs approval" in usage.stderr

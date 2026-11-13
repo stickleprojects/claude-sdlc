@@ -206,6 +206,17 @@ jobs:
               -f description="${reason:-The findings check could not run: add the review label to run it again}"
             exit 1
           fi
+          # A "Descope: needs approval" thread waits for a person's decision, which the
+          # thread's replies record (#132). sdlc-descopes.yml re-checks it on each reply and
+          # each review of the PR, since resolving a thread sends no event.
+          if ! decided="$(.sdlc/scripts/descopes-decided.sh "$PR")"; then
+            echo "reported=true" >> "$GITHUB_OUTPUT"
+            gh api "repos/$GITHUB_REPOSITORY/statuses/$HEAD_SHA" --silent -f state=failure \
+              -f context=claude-review \
+              -f description="$(cut -c1-140 <<<"${decided:-The descope check could not run: add the review label to run it again}")"
+            exit 1
+          fi
+          [[ "$decided" == "no descopes to approve" ]] || description="$(cut -c1-140 <<<"$description; $decided")"
           gh api "repos/$GITHUB_REPOSITORY/statuses/$HEAD_SHA" --silent -f state=success \
             -f context=claude-review -f description="$description"
       - name: Mark the review as failed

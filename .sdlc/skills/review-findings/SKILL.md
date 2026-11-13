@@ -76,6 +76,10 @@ A thread is closed with a reply that says what was decided or changed. Never res
    ```
 
    For a dismissed finding, say why it was kept as it is.
+
+   **A `Descope: needs approval` thread** is decided only by a person's reply (#132): the `claude-review` status stays failed until one is there, and a reply from a bot or the agent's App doesn't count.
+   - **Approved:** the reply says `Approved: <name>, <date>`, with the name of the person who approved it, in their words. Under the agent's identity your reply doesn't count, so ask the person to post that line on the thread themselves and leave it unresolved. Under the person's account, post it only after they've said yes to that descope in this session; never approve one for them.
+   - **Sent back:** reply with what will be built, and resolve the thread only once it is. The next review checks the work (add the `review` label), and the status clears when that review has run.
 2. **Resolve** the thread with the GraphQL `resolveReviewThread` mutation. First find the thread id for the comment:
 
    ```
