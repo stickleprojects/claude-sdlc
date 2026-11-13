@@ -27,6 +27,7 @@ Then check what isn't on main yet:
 
 - **Open PRs:** `gh api 'repos/{owner}/{repo}/pulls?state=open&per_page=100' --jq '.[] | "\(.number)\t\(.head.ref)\t\(.title)"'`. A PR belongs to a change when its branch or title carries the slug (`spec/0002-breadcrumbs`, `plan(0002-breadcrumbs): …`, `build/0002-breadcrumbs`).
 - **A build under way:** a branch `origin/build/<slug>`. On it, `make next CHANGE=<slug>` (without `REF`) reads its build.md.
+- **A merged fast-path bug** (bug.md and spec.md, no plan.md): `make next` shows it `done` when the PR that merged from `build/<slug>` (or the squashed `fix(<slug>): … (#N)`) brought its `spec.md` with it (#148). A bug report merged on its own never counts.
 - **A merged build without build.md** (a small build): `make next` reads it from main's history, as the merge commit `Merge pull request #N from <owner>/build/<slug>`, or the squashed PR title `feat(<slug>): … (#N)`, and shows it `done` (#122). In a repo that rebase-merges neither exists. There, `gh api 'repos/{owner}/{repo}/pulls?state=closed&head={owner}:build/<slug>'` with `merged_at` set means it's done.
 
 ## 2. Pick the change
@@ -42,6 +43,8 @@ Then check what isn't on main yet:
 | | intent or bug PR | the product owner works through its review | `/sdlc-pr` |
 | `intent.md` or `bug.md`, no spec | | the spec workflow opens a spec PR when it merges; if none appeared, write it (the internal `sdlc-spec` skill) | `sdlc-spec` |
 | | spec PR | the product owner works through its review | `/sdlc-pr` |
+| `bug.md` and `spec.md` on `build/<slug>`, nothing on main | | a bug on the fast path: finish the fix, then the PR | `/sdlc-build` |
+| | fast-path `fix(<slug>)` PR | both walkthroughs: the product owner for the bug and spec, then the engineer for the code | `/sdlc-pr` |
 | `spec.md`, no plan | | plan it | `/sdlc-plan` |
 | | plan PR | the engineer works through its review | `/sdlc-pr` |
 | `plan.md` | maybe `build/<slug>` | build it (approve build.md first if it's a draft) | `/sdlc-build` |

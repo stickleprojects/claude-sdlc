@@ -173,6 +173,8 @@ It records the version in `.sdlc/version` and the installed files in `.sdlc/file
 
 **To change the pipeline for your project,** put your version of a skill, template, prompt or `REVIEW.md` in `.sdlc-local/` at the same path. It can be a whole file, or `<!-- extends -->` with only the blocks you change. The sync never writes there. See [.sdlc/docs/overrides.md](.sdlc/docs/overrides.md).
 
+**Settings** that change the pipeline's defaults, such as whether a small bug's fix ships in one PR (`Bug path:`), are listed in [.sdlc/docs/settings.md](.sdlc/docs/settings.md).
+
 ### 3. Configure GitHub: one script
 
 ```

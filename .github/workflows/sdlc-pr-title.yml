@@ -31,7 +31,14 @@ jobs:
           gh api "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --paginate --jq '.[].filename' \
             > "$RUNNER_TEMP/files.txt"
           .sdlc/scripts/check-pr-title.sh "$TITLE" < "$RUNNER_TEMP/files.txt"
+      # `Bug path: full` is read from main's CLAUDE.md, not the PR's, so a PR can't turn the
+      # setting off for itself (#160).
       - name: No code before the plan
         env:
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
-        run: .sdlc/scripts/check-plan-first.sh "$HEAD_REF" < "$RUNNER_TEMP/files.txt"
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git fetch -q --depth=1 origin "$BASE_SHA"
+          git show "$BASE_SHA:CLAUDE.md" > "$RUNNER_TEMP/base-claude.md" 2>/dev/null || : > "$RUNNER_TEMP/base-claude.md"
+          SDLC_CLAUDE_MD="$RUNNER_TEMP/base-claude.md" \
+            .sdlc/scripts/check-plan-first.sh "$HEAD_REF" < "$RUNNER_TEMP/files.txt"

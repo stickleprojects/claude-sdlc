@@ -3090,6 +3090,38 @@ def test_the_pr_title_job_runs_the_plan_check():
     workflow = (REPO / ".github/workflows/sdlc-pr-title.yml").read_text()
     assert "HEAD_REF: ${{ github.event.pull_request.head.ref }}" in workflow
     assert '.sdlc/scripts/check-plan-first.sh "$HEAD_REF" < "$RUNNER_TEMP/files.txt"' in workflow
+    assert 'git show "$BASE_SHA:CLAUDE.md"' in workflow, "main's setting, not the PR's (#160)"
+    assert 'SDLC_CLAUDE_MD="$RUNNER_TEMP/base-claude.md"' in workflow
+
+
+@pytest.mark.parametrize("line", ["Bug path: full", "- Bug path: full", "Bug path: full  "])
+def test_plan_first_refuses_the_fast_path_when_the_repo_turns_it_off(plan_tree, line):
+    """#160: `Bug path: full` in CLAUDE.md means a bug needs its plan.md, CI included."""
+    (plan_tree / "CLAUDE.md").write_text(f"# Project\n\n{line}\n")
+    result = plan_first(plan_tree, "build/0005-z", ["src/z.py"])
+    assert result.returncode == 1 and "says 'Bug path: full'" in result.stdout
+    (plan_tree / "changes/0005-z/plan.md").write_text("x\n")
+    assert plan_first(plan_tree, "build/0005-z", ["src/z.py"]).returncode == 0, "planned is fine"
+
+
+@pytest.mark.parametrize("text", ["Bug path: fast\n", "Bug paths: full are described\n", ""])
+def test_plan_first_keeps_the_fast_path_unless_full_is_set(plan_tree, text):
+    (plan_tree / "CLAUDE.md").write_text(text)
+    assert plan_first(plan_tree, "build/0005-z", ["src/z.py"]).returncode == 0
+
+
+def test_plan_first_reads_the_claude_md_ci_gives_it(plan_tree, tmp_path):
+    """CI passes main's CLAUDE.md: a PR whose own CLAUDE.md drops the line is still refused."""
+    (plan_tree / "CLAUDE.md").write_text("Bug path: fast\n")
+    main_copy = tmp_path / "base-claude.md"
+    main_copy.write_text("Bug path: full\n")
+    result = run(
+        ["bash", str(REPO / ".sdlc/scripts/check-plan-first.sh"), "build/0005-z"],
+        cwd=plan_tree,
+        input="src/z.py\n",
+        env={**os.environ, "SDLC_CLAUDE_MD": str(main_copy)},
+    )
+    assert result.returncode == 1 and "Bug path: full" in result.stdout
 
 
 # --- a fast-path bug PR is titled fix(<slug>) (#154) -----------------------------------------
@@ -3147,6 +3179,32 @@ def test_review_rules_know_the_fast_path_and_never_exempt_a_scoped_fix():
     assert "too big for one PR" in review
     assert "Until #151, GitHub doesn't require the product owner's approval" in review
     assert "a `fix(<slug>)` names a change and is never exempt" in review
+
+
+def test_intent_offers_the_fast_path_unless_the_repo_turns_it_off():
+    """#160: the fast path is the default for a bug, `Bug path: full` turns it off, and the
+    settings page documents the line the skill reads."""
+    intent = (REPO / ".sdlc/skills/intent/SKILL.md").read_text()
+    assert "If the repo's `CLAUDE.md` has the line `Bug path: full`" in intent
+    assert "**The fast path (the default" in intent
+    assert "Size and file count don't count against it" in intent
+    assert "`sdlc-build` skill (its **Bug fast path** section)" in intent
+    assert "from any branch but `build/<slug>`" in intent, "else routing reads it as the fix"
+    settings = (REPO / ".sdlc/docs/settings.md").read_text()
+    row = next(line for line in settings.splitlines() if line.startswith("| `Bug path:`"))
+    assert "`fast`, `full` | `fast`" in row
+
+
+def test_build_sizes_by_session_fit_and_builds_a_fast_path_bug_from_its_spec():
+    """#160: new assets or a data format no longer make a build large on their own."""
+    build = (REPO / ".sdlc/skills/build/SKILL.md").read_text()
+    assert "not by how many files or artefacts it adds" in build
+    assert "it adds no new dependency, service, screen or data format" not in build
+    assert "### 3c. Bug fast path (no plan.md)" in build
+    assert "The spec's acceptance criteria are the steps." in build
+    assert "approving the PR ships the fix" in build
+    verifier = (REPO / ".sdlc/agents/verifier.md").read_text()
+    assert "A bug on the fast path" in verifier and "read `bug.md` in its place" in verifier
 
 
 # --- a descope waits for a person's decision (#132) ------------------------------------------

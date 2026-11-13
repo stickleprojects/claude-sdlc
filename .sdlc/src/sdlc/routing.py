@@ -81,7 +81,7 @@ def out_of_date(root: Path, rev: str, slug: str, present: set[str]) -> tuple[str
     return None
 
 
-def merged_build(root: Path, rev: str, slug: str) -> str | None:
+def merged_build(root: Path, rev: str, slug: str, bringing: str | None = None) -> str | None:
     """How a small build (one with no build.md) shows it merged at `rev`: "#N", or None.
 
     A large build records "PR open" in build.md, which reaches main with its PR. A small build
@@ -89,15 +89,25 @@ def merged_build(root: Path, rev: str, slug: str) -> str | None:
     `Merge pull request #N from <owner>/build/<slug>` (the branch's own merges of main don't
     match), or, in a repo that squash-merges, the build PR's title `feat(<slug>): ... (#N)`
     (`fix(<slug>)` for a bug). A repo that rebase-merges leaves neither.
+
+    With `bringing` (a file in the change folder), the merge counts only if it brought that
+    file to main: a fast-path bug's PR carries its spec.md with the fix (#148), and a bug
+    report merged from a `build/<slug>` branch mustn't read as the fix.
     """
     patterns = (
         ("--merges", rf"^Merge pull request #[0-9]+ from [^ ]+/build/{slug}$"),
         ("--no-merges", rf"^(feat|fix)\({slug}\)!?: .* \(#[0-9]+\)$"),
     )
     for kind, pattern in patterns:
-        found = _git(root, "log", rev, kind, "-E", f"--grep={pattern}", "--format=%s", "-1")
-        if found and (m := re.search(r"#\d+", found)):
-            return m.group()
+        found = _git(root, "log", rev, kind, "-E", f"--grep={pattern}", "--format=%H %s")
+        for line in found.splitlines() if found else []:
+            sha, subject = line.split(" ", 1)
+            if bringing and not _git(
+                root, "diff", "--name-only", f"{sha}^1", sha, "--", f"changes/{slug}/{bringing}"
+            ):
+                continue
+            if m := re.search(r"#\d+", subject):
+                return m.group()
     return None
 
 
@@ -118,6 +128,9 @@ def next_step(change_dir: Path, merged: bool, root: Path | None = None, rev: str
     elif where == "plan" and root is not None:
         small_build = merged_build(root, rev, slug)
         finished = small_build is not None
+    elif where == "spec" and root is not None and (change_dir / "bug.md").exists():
+        small_build = merged_build(root, rev, slug, bringing="spec.md")  # the fast path, #148
+        finished = small_build is not None
     if root is not None and not finished:
         present = {p.name for p in change_dir.iterdir()}
         if stale := out_of_date(root, rev, slug, present):
@@ -133,6 +146,8 @@ def next_step(change_dir: Path, merged: bool, root: Path | None = None, rev: str
             f"the spec is generated when the {where} merges; review its spec PR (/sdlc-pr)",
         )
     if where == "spec":
+        if small_build is not None:
+            return Next(slug, where, "done", f"fixed on the fast path and merged ({small_build})")
         return Next(slug, where, "sdlc-plan", "plan it")
     if where == "plan":
         if small_build is not None:

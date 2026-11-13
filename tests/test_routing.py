@@ -293,3 +293,77 @@ def test_a_merged_small_build_stays_done_when_the_spec_changes_later(tmp_path: P
     spec.write_text(spec.read_text() + "Later.\n")
     commit(repo, "spec: later edit")
     assert steps(repo, ref="HEAD")[0].skill == "done", "what's shipped stays shipped"
+
+
+# --- a bug on the fast path (#148): one PR brings its spec.md and the fix ---------------------
+
+
+def bug_repo(tmp_path: Path) -> Path:
+    """A repo whose main has a bug's bug.md and nothing after it."""
+    repo = init_repo(tmp_path / "r")
+    change(repo, "0001-x", "bug.md", BUG_CHAIN)
+    commit(repo, "bug(0001-x): the report")
+    return repo
+
+
+def test_a_fast_path_bug_is_done_once_its_pr_merges(tmp_path: Path) -> None:
+    from conftest import git
+
+    repo = bug_repo(tmp_path)
+    git(repo, "checkout", "-q", "-b", "build/0001-x")
+    spec = {"changes/0001-x/spec.md": files(BUG_CHAIN["spec.md"])}
+    commit(repo, "bug(0001-x): the spec", spec)
+    commit(repo, "fix(0001-x): the fix", {"src.py": "x = 1\n"})
+    git(repo, "checkout", "-q", "main")
+    git(
+        repo,
+        "merge",
+        "-q",
+        "--no-ff",
+        "-m",
+        "Merge pull request #31 from o/build/0001-x",
+        "build/0001-x",
+    )
+    [step] = steps(repo, ref="HEAD")
+    assert (step.stage, step.skill) == ("spec", "done")
+    assert step.detail == "fixed on the fast path and merged (#31)"
+
+
+def test_a_squash_merged_fast_path_bug_is_done_too(tmp_path: Path) -> None:
+    repo = bug_repo(tmp_path)
+    spec = {"changes/0001-x/spec.md": files(BUG_CHAIN["spec.md"]), "src.py": "x = 1\n"}
+    commit(repo, "fix(0001-x): the fix (#31)", spec)
+    assert steps(repo, ref="HEAD")[0].skill == "done"
+
+
+def test_a_bug_report_merged_from_the_build_branch_is_not_the_fix(tmp_path: Path) -> None:
+    """The full path: the report merged from build/<slug>, its spec merged later by its own PR.
+    The spec is waiting for a plan, not done."""
+    from conftest import git
+
+    repo = init_repo(tmp_path / "r")
+    commit(repo, "chore: start", {"readme.md": "x\n"})
+    git(repo, "checkout", "-q", "-b", "build/0001-x")
+    change(repo, "0001-x", "bug.md", BUG_CHAIN)
+    commit(repo, "bug(0001-x): the report")
+    git(repo, "checkout", "-q", "main")
+    git(
+        repo,
+        "merge",
+        "-q",
+        "--no-ff",
+        "-m",
+        "Merge pull request #30 from o/build/0001-x",
+        "build/0001-x",
+    )
+    spec = {"changes/0001-x/spec.md": files(BUG_CHAIN["spec.md"])}
+    commit(repo, "spec(0001-x): the spec (#32)", spec)
+    [step] = steps(repo, ref="HEAD")
+    assert (step.stage, step.skill) == ("spec", "sdlc-plan")
+
+
+def test_a_spec_without_a_bug_is_never_a_fast_path(tmp_path: Path) -> None:
+    repo = init_repo(tmp_path / "r")
+    change(repo, "0001-x", "spec.md")
+    commit(repo, "feat(0001-x): intent and spec together (#5)")
+    assert steps(repo, ref="HEAD")[0].skill == "sdlc-plan"

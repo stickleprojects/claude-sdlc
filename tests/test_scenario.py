@@ -12,7 +12,7 @@ import shutil
 import pytest
 
 from conftest import REPO, commit, copy_working_tree, git, hook, init_repo, run
-from sdlc.artifacts import CHAIN
+from sdlc.artifacts import BUG_CHAIN, CHAIN
 
 FIXTURE = REPO / "tests" / "fixtures" / "consumer"
 
@@ -1174,6 +1174,30 @@ def test_next_shows_a_merged_small_build_as_done_in_consumer(consumer):
     assert "0001-tidy\tplan\tdone\tbuilt and merged (#3)" in make(consumer, "next").stdout
 
 
+def test_next_shows_a_merged_fast_path_bug_as_done_in_consumer(consumer):
+    """#148, #160: a fast-path bug's one PR brings its spec.md with the fix, and no plan.md."""
+    folder = consumer / "changes" / "0002-crash"
+    folder.mkdir(parents=True)
+    (folder / "bug.md").write_text("# T\n\n" + artifact(BUG_CHAIN["bug.md"]))
+    commit(consumer, "bug(0002-crash): the report")
+    git(consumer, "checkout", "-q", "-b", "build/0002-crash")
+    (folder / "spec.md").write_text("# T\n\n" + artifact(BUG_CHAIN["spec.md"]))
+    commit(consumer, "bug(0002-crash): the spec")
+    commit(consumer, "fix(0002-crash): stop it", {"src.txt": "fixed\n"})
+    git(consumer, "checkout", "-q", "main")
+    git(
+        consumer,
+        "merge",
+        "-q",
+        "--no-ff",
+        "-m",
+        "Merge pull request #4 from o/build/0002-crash",
+        "build/0002-crash",
+    )
+    out = make(consumer, "next").stdout
+    assert "0002-crash\tspec\tdone\tfixed on the fast path and merged (#4)" in out
+
+
 def test_stale_review_and_title_checks_arrive_with_the_sync(consumer):
     """#46: the workflows call these scripts, so the sync installs them runnable."""
     scripts = ("review-current.sh", "review-posted.sh", "review-findings.sh", "check-pr-title.sh")
@@ -1642,6 +1666,21 @@ def test_ci_holds_the_plan_rule_in_the_consumer(consumer):
     assert run(check, cwd=consumer, input="src/app.ts\n").returncode == 1
     commit(consumer, "plan(0001-a): plan", {"changes/0001-a/plan.md": "# plan\n"})
     assert run(check, cwd=consumer, input="src/app.ts\n").returncode == 0
+
+
+def test_bug_path_full_turns_the_fast_path_off_in_the_consumer(consumer):
+    """#160: the synced plan check honours the consumer's `Bug path: full` line."""
+    commit(
+        consumer,
+        "bug(0002-b): report and spec",
+        {"changes/0002-b/bug.md": "# bug\n", "changes/0002-b/spec.md": "# spec\n"},
+    )
+    check = [".sdlc/scripts/check-plan-first.sh", "build/0002-b"]
+    assert run(check, cwd=consumer, input="src/app.ts\n").returncode == 0
+    claude = consumer / "CLAUDE.md"
+    claude.write_text((claude.read_text() if claude.exists() else "") + "\nBug path: full\n")
+    refused = run(check, cwd=consumer, input="src/app.ts\n")
+    assert refused.returncode == 1 and "Bug path: full" in refused.stdout
 
 
 def test_a_fast_path_fix_title_passes_in_the_consumer(consumer):
