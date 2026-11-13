@@ -1549,8 +1549,8 @@ def test_review_runs_the_clause_check_before_the_review_and_never_fails_on_it():
     workflow = (REPO / ".github/workflows/sdlc-claude-review.yml").read_text()
     check = workflow.index("- name: Clause check")
     assert workflow.index("- name: Find the changed specs and plans") < check
-    assert check < workflow.index("- uses: anthropics/claude-code-action@v1")
-    step = workflow[check : workflow.index("- uses: anthropics/claude-code-action@v1")]
+    assert check < workflow.index("- name: Review\n")
+    step = workflow[check : workflow.index("- name: Review\n")]
     # AI only through the adapter (CLAUDE.md): the script calls agent.sh, the step never claude -p.
     assert '.sdlc/scripts/clause-check.sh --changed-since "$BASE"' in step
     assert "claude -p" not in workflow
@@ -2228,7 +2228,7 @@ def test_review_posts_its_own_claude_review_status():
     assert "\n  statuses: write\n" in workflow
     steps = workflow.split("\n      - ")
     names = [s.split("\n", 1)[0] for s in steps]
-    action = next(i for i, n in enumerate(names) if "claude-code-action" in n)
+    action = names.index("name: Review")
     running = next(i for i, n in enumerate(names) if "Mark the review as running" in n)
     done = next(i for i, n in enumerate(names) if "Mark the review as done" in n)
     failed = next(i for i, n in enumerate(names) if "Mark the review as failed" in n)
@@ -2693,7 +2693,7 @@ def test_the_gate_checks_what_the_review_found():
     order = ['"$SKIPPED" == true', "review-posted.sh", '.sdlc/scripts/review-findings.sh "$PR"']
     assert [done.index(x) for x in order] == sorted(done.index(x) for x in order)
     assert done.count('echo "reported=true"') == 3 and done.count("exit 1") == 3
-    action = next(s for s in steps if s.startswith("uses: anthropics/claude-code-action"))
+    action = step["Review"]
     assert "classify_inline_comments: false" in action
     assert (
         "pulls/${{ github.event.pull_request.number }}/comments -f subject_type=file:*)" in action
@@ -3338,3 +3338,102 @@ def test_the_review_rules_and_skill_say_a_person_decides_a_descope():
     skill = (REPO / ".sdlc/skills/review-findings/SKILL.md").read_text()
     assert "**A `Descope: needs approval` thread** is decided only by a person's reply" in skill
     assert "never approve one for them" in skill
+
+
+# --- a review that posts nothing says why, and runs once more (#157) -------------------------
+
+
+def execution_output(result, denials=()):
+    """claude-code-action's execution output: the session's messages, the result last."""
+    return [
+        {"type": "system", "subtype": "init"},
+        {
+            "type": "result",
+            "subtype": result,
+            "num_turns": 10,
+            "permission_denials": list(denials),
+        },
+    ]
+
+
+def denials_of(tmp_path, content, label=None):
+    out = tmp_path / "claude-execution-output.json"
+    if content is not None:
+        out.write_text(content if isinstance(content, str) else json.dumps(content))
+    args = ["bash", str(REPO / ".sdlc/scripts/review-denials.sh"), str(out)]
+    return run(args + ([label] if label else []))
+
+
+def test_review_denials_lists_each_refused_call(tmp_path):
+    refused = [
+        {"tool_name": "Bash", "tool_input": {"command": "gh api repos/o/r/issues/7/comments"}},
+        {"tool_name": "Write", "tool_input": {"file_path": "/tmp/x", "content": "y" * 900}},
+    ]
+    result = denials_of(tmp_path, execution_output("success", refused), "the first review")
+    assert result.returncode == 0
+    lines = result.stdout.splitlines()
+    assert lines[0] == "the first review: success after 10 turn(s), 2 refused tool call(s)"
+    assert lines[1] == "  refused: Bash: gh api repos/o/r/issues/7/comments"
+    assert lines[2].startswith("  refused: Write: {") and len(lines[2]) < 340  # input cut short
+
+
+def test_review_denials_reads_a_single_result_object(tmp_path):
+    result = denials_of(tmp_path, execution_output("error_max_turns")[1])
+    assert "the review: error_max_turns after 10 turn(s), 0 refused" in result.stdout
+
+
+@pytest.mark.parametrize(
+    ("content", "says"),
+    [
+        (None, "no execution output for the review"),
+        ("", "no execution output"),
+        ("not json", "isn't the JSON it should be"),
+        ([{"type": "system"}], "no result message"),
+    ],
+    ids=["missing", "empty", "not json", "no result"],
+)
+def test_review_denials_never_fails(tmp_path, content, says):
+    result = denials_of(tmp_path, content)
+    assert result.returncode == 0 and says in result.stdout
+
+
+def test_the_review_runs_once_more_when_it_posts_nothing():
+    workflow = (REPO / ".github/workflows/sdlc-claude-review.yml").read_text()
+    steps = workflow.split("\n      - ")
+    step = {s.split("\n", 1)[0].removeprefix("name: "): s for s in steps}
+    first, retry, posted = (
+        step["Review"],
+        step["Review once more"],
+        step["Check the review posted its summary"],
+    )
+
+    # The retry is the same review: everything from `with:` on is identical.
+    def inputs(text):  # from `with:` on, without the comments that lead into the next step
+        lines = text.split("        with:\n", 1)[1].rstrip("\n").splitlines()
+        while lines and lines[-1].lstrip().startswith("#"):
+            lines.pop()
+        return lines
+
+    assert inputs(retry) == inputs(first) and len(inputs(first)) > 20
+    assert (
+        "uses: anthropics/claude-code-action@v1" in first
+        and "uses: anthropics/claude-code-action@v1" in retry
+    )
+    assert "if: steps.posted.outputs.posted == 'false'" in retry
+    assert "if: steps.workflow_change.outputs.skipped != 'true'" in posted
+    assert '.sdlc/scripts/review-posted.sh "$PR" "$SINCE"' in posted
+    assert "review-denials.sh" in posted and "review-attempt-1.json" in posted
+    order = [
+        "Review",
+        "Check the review posted its summary",
+        "Review once more",
+        "Mark the review as done",
+    ]
+    names = list(step)
+    assert [names.index(n) for n in order] == sorted(names.index(n) for n in order)
+    keep = step["Keep the review's output"]
+    assert "if: always() && (failure() || steps.posted.outputs.posted == 'false')" in keep
+    assert "uses: actions/upload-artifact@v4" in keep and "retention-days: 7" in keep
+    assert "${{ runner.temp }}/review-attempt-1.json" in keep
+    assert "if: failure()" in step["Show why the review stopped"]
+    assert synced(".sdlc/scripts/review-denials.sh")
