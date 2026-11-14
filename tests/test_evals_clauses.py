@@ -164,6 +164,8 @@ def test_review_rules_ask_for_every_clause_once_and_keep_the_first_split():
     assert "**On a re-review, the first split stands (#160).**" in review
     assert "In text that hasn't changed, raise no new clauses" in review
     assert "original_commit_id" in review and "is a Nit at most" in review
+    assert "If that commit is no longer in the repo" in review
+    assert "treat the whole text as changed" in review
     prompt = (REPO / ".sdlc/prompts/clause-check.md").read_text()
     assert "Split the whole requirement's text into clauses, start to end" in prompt
     assert "Report every clause that isn't covered, not only the first one you find." in prompt
