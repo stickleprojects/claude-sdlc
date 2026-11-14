@@ -3006,7 +3006,9 @@ def make_repo(docs_repo, tmp_path):
     fake.mkdir()
     (fake / "uv").write_text('#!/bin/sh\necho "uv $*"\n')
     (fake / "uv").chmod(0o755)
-    env = {"PATH": f"{fake}:{os.environ['PATH']}", "FULL": ""}
+    # An outer `make check FULL=1` (CI on main) hands FULL=1 to every make below it through
+    # MAKEFLAGS, where it beats the environment, so the inner make starts with none.
+    env = {"PATH": f"{fake}:{os.environ['PATH']}", "FULL": "", "MAKEFLAGS": "", "MAKELEVEL": ""}
     return docs_repo, env
 
 
