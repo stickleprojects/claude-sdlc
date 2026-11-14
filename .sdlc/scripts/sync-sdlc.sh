@@ -84,6 +84,10 @@ main() {
   local review_bot_settings=(
     "variable SDLC_REVIEW_EXTRA_BOTS"
   )
+  # Optional (#163): `check` waits for a clean Claude review. Not reported when unset.
+  local check_order_settings=(
+    "variable SDLC_CHECK_AFTER_REVIEW"
+  )
 
   cd "$(git rev-parse --show-toplevel)"
   if [[ -n "$(git status --porcelain)" ]]; then

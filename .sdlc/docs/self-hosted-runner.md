@@ -31,6 +31,18 @@ In words, the job uses `SDLC_RUNNER` when it's set, except in these cases, which
 
 Each of these can run code that nobody with access to the repo wrote. Comments go to GitHub's runners because a comment event doesn't say where the PR came from. The `@claude` mention bot isn't a required check, so during an outage that only delays its reply.
 
+## A runner that runs one job at a time
+
+A single runner, such as a developer's laptop, runs each PR push's jobs one after the other. `make check` can take many minutes, and when it starts first, the Claude review waits behind it. When the review then asks for changes, that `check` run was wasted: the push is going to be redone.
+
+To run `check` only after a clean review, set:
+
+```
+gh variable set SDLC_CHECK_AFTER_REVIEW --body on
+```
+
+A review that asks for changes then never costs a `check` run ([settings.md](settings.md) has the details). Use it with `SDLC_AUTO_MERGE`, which reviews every push.
+
 ## What the runner needs
 
 - Linux with `bash`, `git`, `make`, `curl` and `jq`, plus the `gh` CLI (the review and merge scripts call it).

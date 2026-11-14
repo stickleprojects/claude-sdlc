@@ -982,10 +982,10 @@ RUNS_ON = (
 
 
 def gh_expr(expr, ctx):
-    """Evaluate a GitHub Actions expression made of what RUNS_ON uses: property paths, 'strings',
-    !, ==, &&, || and parentheses. Like Actions, a missing property is null, && and || return
-    an operand, and null, false, 0 and '' are falsy."""
-    tokens = re.findall(r"'[^']*'|&&|\|\||==|!|\(|\)|[A-Za-z_][\w.-]*", expr)
+    """Evaluate a GitHub Actions expression made of what RUNS_ON and the job conditions use:
+    property paths, 'strings', !, ==, !=, &&, || and parentheses. Like Actions, a missing
+    property is null, && and || return an operand, and null, false, 0 and '' are falsy."""
+    tokens = re.findall(r"'[^']*'|&&|\|\||==|!=|!|\(|\)|[A-Za-z_][\w.-]*", expr)
     pos = 0
 
     def peek():
@@ -1013,9 +1013,30 @@ def gh_expr(expr, ctx):
 
     def equality():
         left = operand()
-        while peek() == "==":
-            take()
-            left = left == operand()
+
+        # Like Actions: strings compare ignoring case, and values of different types compare
+        # as numbers (null and '' are both 0, so an unset variable equals '').
+        def num(v):
+            if v is None or v == "":
+                return 0.0
+            if isinstance(v, bool):
+                return float(v)
+            try:
+                return float(v)
+            except (TypeError, ValueError):
+                return float("nan")
+
+        def same(a, b):
+            if isinstance(a, str) and isinstance(b, str):
+                return a.lower() == b.lower()
+            if type(a) is type(b):
+                return a == b
+            return num(a) == num(b)
+
+        while peek() in ("==", "!="):
+            op = take()
+            right = operand()
+            left = same(left, right) == (op == "==")
         return left
 
     def both():

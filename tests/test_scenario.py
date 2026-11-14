@@ -1705,3 +1705,15 @@ def test_the_descope_check_reaches_the_consumer(consumer):
     assert modes.count("100755") == 2, modes
     usage = run([".sdlc/scripts/descopes-decided.sh"], cwd=consumer)
     assert usage.returncode == 2 and "Descope: needs approval" in usage.stderr
+
+
+def test_check_after_review_reaches_the_consumer(consumer):
+    """#163: the workflow and the gate script sync, the script runs there, and CI's `check`
+    hands same-repo PRs over only when the consumer sets SDLC_CHECK_AFTER_REVIEW."""
+    assert (consumer / ".github/workflows/sdlc-check-after-review.yml").is_file()
+    modes = git(consumer, "ls-files", "-s", ".sdlc/scripts/check-gate.sh")
+    assert modes.startswith("100755"), modes
+    usage = run([".sdlc/scripts/check-gate.sh"], cwd=consumer)
+    assert usage.returncode == 2 and "SDLC_CHECK_AFTER_REVIEW" in usage.stderr
+    ci = (consumer / ".github/workflows/sdlc-ci.yml").read_text()
+    assert "'check (runs after the Claude review)' || 'check'" in ci
