@@ -40,7 +40,8 @@ permissions:
 
 jobs:
   gate:
-    # The review's own inline comments change nothing, and there are many of them.
+    # The reviewer's own review and inline comments change nothing, and there are many of them:
+    # the review's `workflow_run` is the event that looks at its result.
     if: >-
       vars.SDLC_CHECK_AFTER_REVIEW != '' && vars.SDLC_CHECK_AFTER_REVIEW != 'off' && (
         (github.event_name == 'workflow_run' &&
@@ -50,7 +51,9 @@ jobs:
           github.event.pull_request.head.repo.full_name == github.repository &&
           (github.event.action != 'labeled' || github.event.label.name == 'check') &&
           (github.event_name != 'pull_request_review_comment' ||
-            github.event.comment.user.login != 'claude[bot]')))
+            github.event.comment.user.login != 'claude[bot]') &&
+          (github.event_name != 'pull_request_review' ||
+            github.event.review.user.login != 'claude[bot]')))
     runs-on: ${{ vars.SDLC_RUNNER && !github.event.issue.pull_request && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && vars.SDLC_RUNNER || 'ubuntu-latest' }}
     # A new head (a push, or the PR opening) joins the `check` job's group, which cancels a
     # `check` still running on the old head before this job even gets the runner. Every other
