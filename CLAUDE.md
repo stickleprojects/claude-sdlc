@@ -58,7 +58,7 @@ The framework itself. Its changes are tracked as GitHub issues (label `pipeline`
 
 ## Conventions
 
-- One stage at a time. Don't write a spec while drafting an intent, or code before `plan.md` is committed.
+- One stage at a time. Don't write a spec while drafting an intent, or code before `plan.md` is committed. The one exception is a bug on the fast path (#148), where one PR carries the bug, its spec and the fix.
 - When the same mistake happens twice, add the correction here.
 
 ## Known mistakes

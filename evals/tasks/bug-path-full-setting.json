@@ -1,0 +1,8 @@
+{
+  "name": "with `Bug path: full` in CLAUDE.md, the same bug goes in as a report only (#160)",
+  "setup": "bash \"$EVAL_ROOT/evals/consumer.sh\" bug-path && printf \"\\nBug path: full\\n\" >> CLAUDE.md && git commit -qam \"chore: every bug takes the full path\" && git tag -f eval-base >/dev/null",
+  "prompt": "You're working in a project that uses the claude-sdlc pipeline. Sam, the product owner, found a bug and reports it: \"On the checkout page, a price whose cents end in zero loses a digit: 150 cents shows as $1.5, and it should be $1.50. It happens every time. Seen on main today, with a cart holding one item at 150 cents.\" Sam found it and is its product owner. Name the change price-decimals. The report is complete: don't ask questions. Use the sdlc-intent skill (read it with `.sdlc/scripts/resolve.sh skills/intent/SKILL.md`, and any other skill it names the same way) and follow it as far as it goes, choosing the path it says to. This repo has no GitHub remote: commit as the skills say, but don't push, don't run auto-merge.sh, and wherever a skill would open a PR, write that PR's title on one line to pr-title.txt in the repo root instead (don't commit it), then stop.",
+  "check": "bash \"$EVAL_ROOT/evals/checks/bug-full-path.sh\"",
+  "tools": "Read,Grep,Glob,Edit,Write,Agent,Task,Bash(git:*),Bash(make:*),Bash(python3:*),Bash(ls:*),Bash(.sdlc/scripts/resolve.sh:*),Bash(.sdlc/scripts/tests-locked.sh:*),Bash(.sdlc/scripts/clause-check.sh:*),Bash(.sdlc/scripts/check-pr-title.sh:*),Bash(.sdlc/scripts/check-plan-first.sh:*)",
+  "max_turns": 60
+}

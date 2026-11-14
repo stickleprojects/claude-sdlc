@@ -11,6 +11,9 @@
 # branch, or merged to main before it. The bug fast path (#148) is the exception: on
 # build/<slug>, a bug whose bug.md and spec.md are in the tree may be fixed without a plan.
 # Code is anything but changes/, docs/ and top-level *.md. Other branches aren't checked.
+# A repo whose CLAUDE.md has the line `Bug path: full` turns the fast path off (#160): then a bug
+# needs its plan.md too. CI passes main's CLAUDE.md in SDLC_CLAUDE_MD, so a PR can't turn the
+# setting off for itself; without it, ./CLAUDE.md is read.
 set -uo pipefail
 
 branch="${1:-}"
@@ -40,6 +43,11 @@ if [[ -f "changes/$slug/plan.md" ]]; then
   exit 0
 fi
 if [[ "$branch" == "build/$slug" && -f "changes/$slug/bug.md" && -f "changes/$slug/spec.md" ]]; then
+  if grep -qE '^(- )?Bug path: *full[[:space:]]*$' "${SDLC_CLAUDE_MD:-CLAUDE.md}" 2>/dev/null; then
+    echo "::error::This PR fixes bug $slug without a plan.md (the bug fast path), but this repo's" \
+      "CLAUDE.md says 'Bug path: full'. Plan it with /sdlc-plan and merge the plan PR first."
+    exit 1
+  fi
   echo "ok: $slug is a bug with its spec, on the fast path (#148)"
   exit 0
 fi

@@ -5,7 +5,7 @@ file with an override in .sdlc-local/ (see .sdlc/docs/overrides.md), never by ed
 
 How much ceremony a build gets depends on its size:
 
-- **Small** (most bug fixes, copy changes, a few files): built in **this session**, straight from plan.md, ending in one PR. No build.md, no milestones, no approval round. The plan was already approved.
+- **Small** (most bug fixes, copy changes, a few files): built in **this session**, straight from plan.md, ending in one PR. No build.md, no milestones, no approval round. The plan was already approved. A bug on the fast path is small too, built from its spec with no plan.md (section 3c).
 - **Large** (more than one session's work): first a **build plan**, `changes/<slug>/build.md`, which splits the plan into milestones. The person reviews it as a file and approves it. Then one milestone per session, and one PR at the end.
 
 Milestones are sessions, not PRs. Every build, small or large, ends in exactly one PR.
@@ -63,12 +63,14 @@ Ask whenever something is ambiguous, but **one decision at a time**. Use AskUser
 3. **Otherwise, list the candidates.** A candidate is a folder `changes/<slug>/` where all of these hold:
    - `plan.md` exists on `origin/main`;
    - no merged PR has come from `build/<slug>`. Check with `gh api 'repos/{owner}/{repo}/pulls?state=closed&head={owner}:build/<slug>'` and look at `merged_at`.
+
+   A bug on the fast path is a candidate too: `origin/build/<slug>` has the change's `bug.md` and `spec.md` committed, there's no `plan.md`, and no PR from it has merged. Build it as in [Bug fast path](#3c-bug-fast-path-no-planmd).
    - **One candidate:** use it, and say which.
    - **Several:** ask which. Put any already in progress (an `origin/build/<slug>` branch exists) first.
    - **None:** don't just stop. Follow routing step 4 in `.sdlc/skills/routing.md`: if a change is ready to plan (its spec merged), say so and offer to run `/sdlc-plan` for it; otherwise say what each change is waiting on.
 
    `make next REF=origin/main` (see the routing file) lists every change's next step, which gives you the candidates directly.
-4. **Check the plan is approved.** It must be merged on `origin/main`. If an open PR changes this change's `spec.md` or `plan.md`, ask whether to wait for it or build against what's on `main`.
+4. **Check the plan is approved.** It must be merged on `origin/main` (a fast-path bug has no plan: its bug and spec are approved with its PR). If an open PR changes this change's `spec.md` or `plan.md`, ask whether to wait for it or build against what's on `main`.
 
 ## 2. Get onto the branch and check what the last session left
 
@@ -78,7 +80,7 @@ Ask whenever something is ambiguous, but **one decision at a time**. Use AskUser
 4. **The spec or plan changed on main after the build plan was made.** Check with `git log <built-against sha>..origin/main -- changes/<slug>/spec.md changes/<slug>/plan.md`. If either changed, show what changed, merge `origin/main` into the branch, and update build.md for it as a draft (section 4): changed milestones need approving again.
 
 Then:
-- **No build.md, and nothing built yet:** size the build (section 3).
+- **No build.md, and nothing built yet:** size the build (section 3). A fast-path bug (no plan.md) goes to section 3c.
 - **build.md is a draft** (`Status: draft, awaiting approval`): it isn't approved. Never build from it. Go to section 4.
 - **build.md is approved:** section 5.
 - **`Status: PR open`:** see [When build.md says PR open](#when-buildmd-says-pr-open).
@@ -87,15 +89,11 @@ Then:
 
 Read CLAUDE.md, then `intent.md` (or `bug.md`), `spec.md` and `plan.md` in full. Decide whether this is one session's work.
 
-**Small: build it now** when all of these hold:
-- the plan has at most three steps;
-- it touches a handful of files (as a guide, five or fewer, not counting tests);
-- it adds no new dependency, service, screen or data format;
-- you expect to build, test and open the PR comfortably within this session.
+Size it by how much work there is and how well it's understood, not by how many files or artefacts it adds (#160). The plan's review already weighed the risk: a build plan only splits work that won't fit in one session.
 
-Changing the text of a message, fixing a one-line bug or adjusting a style is small. When it's borderline, prefer small: a build that runs out of room can still write a build plan from where it got to.
+**Small: build it now** when you expect to build, test and open the PR comfortably within this session. As a guide, that's a plan of up to about four steps whose approach is settled. A fix that touches ten files, adds assets, data files or fixtures, or changes a format that only this change's code reads can still be small. Changing a message, fixing a bug with a known cause or adjusting a style is small. When it's borderline, prefer small: a build that runs out of room can still write a build plan from where it got to.
 
-**Large: write a build plan** otherwise. Say which you chose and why in one line, then go on. In `/sdlc-build all`, a small build runs in the orchestrator's session itself.
+**Large: write a build plan** when it won't fit: more steps than one session can build and test, a step that's a session's work on its own, or an approach uncertain enough (an unknown cause, a spike to try first) that the work may restart. Say which you chose and why in one line, then go on. In `/sdlc-build all`, a small build runs in the orchestrator's session itself.
 
 ### 3a. Small: one session, one PR
 
@@ -129,6 +127,14 @@ If it turns out bigger than it looked, stop at the end of a finished, passing st
 7. **Write `changes/<slug>/build.md`** from `.sdlc/templates/build.md`, on `build/<slug>`, with `Status: draft, awaiting approval`, `Approved: not yet` and the `origin/main` sha it was built against.
 8. **Run `make validate`, then commit and push the draft** on its own (`chore(<slug>): draft build plan`). It's committed so that a session that ends now loses nothing; its draft status stops any session building from it.
 9. **Ask for approval of the file** (section 4).
+
+### 3c. Bug fast path (no plan.md)
+
+A bug whose `bug.md` and short `spec.md` are committed on `build/<slug>`, with no `plan.md` (`/sdlc-intent` chose the fast path, #148). Its bug, spec and fix are approved together, in one PR. It's always a small build:
+
+1. **The spec's acceptance criteria are the steps.** Write a failing test for each first, and commit them alone as `test(<slug>): failing tests for <symptoms>` (the lock rule above), then push. Then make the fix in `fix(<slug>): <what>` commits, plus the docs the change needs, pushing after each.
+2. **If it turns out too big for one PR** (it needs a design decision, a new dependency or a plan), stop at a passing step, commit and push, and tell the person. The way back is the full path: the bug and spec go in as their own PR from a new branch, and the plan can reuse the code on `build/<slug>`. Don't decide that alone.
+3. Finish as in section 6. The PR body opens with the bug in a sentence and says that approving the PR ships the fix: the product owner checks the bug and spec, and an engineer checks the code.
 
 ## 4. Approving the build plan
 

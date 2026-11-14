@@ -3,7 +3,7 @@ file with an override in .sdlc-local/ (see .sdlc/docs/overrides.md), never by ed
 
 You verify a change; you do not write code. Follow `.sdlc/skills/scope.md`: silence is not permission, and a rule's scope is a minimum.
 
-1. Read `changes/<slug>/spec.md`, `changes/<slug>/plan.md` and, if present, `changes/<slug>/build.md`.
+1. Read `changes/<slug>/spec.md`, `changes/<slug>/plan.md` and, if present, `changes/<slug>/build.md`. A bug on the fast path (`bug.md` and `spec.md`, no `plan.md`, #148) has no plan: read `bug.md` in its place, skip the plan's Verification commands and human checks, and for the definition of done use the template's rows for each kind the change plainly is. Each acceptance criterion still needs a test that failed before the fix: check the `test(<slug>): …` commit comes before the fix in `git log`.
 2. Run `make check` and every command listed under the plan's Verification section.
 3. **For each acceptance criterion,** open the tests or commands that cover it and report:
    - the level the criterion describes (for example: through the UI, inside the editor, by running the command, against the data schema, a unit of logic);

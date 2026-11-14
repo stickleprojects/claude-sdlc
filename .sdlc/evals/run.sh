@@ -4,6 +4,9 @@
 # A task (evals/tasks/*.json) is {"name", "prompt", "check"}: the prompt goes to
 # .sdlc/scripts/agent.sh in a throwaway copy of the repo, then `check` (a shell command)
 # runs in that copy and must exit 0. Fails when the pass rate is below EVAL_MIN_PASS_RATE.
+# Optional fields: "setup", a shell command run in the copy before the agent (it fails the
+# task if it fails); "tools", the agent's allowed tools (AGENT_ALLOWED_TOOLS); "max_turns"
+# (AGENT_MAX_TURNS). Setup and check get EVAL_ROOT, the repo the copy was taken from.
 # EVAL_TASKS_DIR points at another task folder (the framework's own tests use this).
 set -euo pipefail
 
@@ -29,15 +32,23 @@ for task in "${tasks[@]}"; do
   # Copy tracked and new files only, so the agent sees a clean checkout.
   (cd "$root" && git ls-files -co --exclude-standard -z | xargs -0 cp --parents -t "$work")
   total=$((total + 1))
-  if (cd "$work" && jq -r .prompt "$task" | "$root/.sdlc/scripts/agent.sh" - >"$work/.agent.log" 2>&1 \
+  log="$(mktemp)"
+  setup="$(jq -r '.setup // empty' "$task")"
+  tools="$(jq -r '.tools // empty' "$task")"
+  turns="$(jq -r '.max_turns // empty' "$task")"
+  if (cd "$work" && export EVAL_ROOT="$root" \
+      && { [[ -z "$setup" ]] || bash -c "$setup"; } \
+      && jq -r .prompt "$task" \
+        | AGENT_ALLOWED_TOOLS="${tools:-${AGENT_ALLOWED_TOOLS:-}}" AGENT_MAX_TURNS="${turns:-${AGENT_MAX_TURNS:-}}" \
+          "$root/.sdlc/scripts/agent.sh" - >"$log" 2>&1 \
       && bash -c "$(jq -r .check "$task")"); then
     pass=$((pass + 1))
     echo "PASS  $name"
   else
     echo "FAIL  $name (log: tail of agent output below)"
-    tail -n 20 "$work/.agent.log" 2>/dev/null | sed 's/^/      /'
+    tail -n 20 "$log" 2>/dev/null | sed 's/^/      /'
   fi
-  rm -rf "$work"
+  rm -rf "$work" "$log"
 done
 
 echo "evals: $pass/$total passed (minimum rate $min_rate)"

@@ -1,0 +1,8 @@
+{
+  "name": "a bug that needs a product decision goes in as a report only, not on the fast path (#160)",
+  "setup": "bash \"$EVAL_ROOT/evals/consumer.sh\" bug-path",
+  "prompt": "You're working in a project that uses the claude-sdlc pipeline. Sam, the product owner, reports a bug: \"Big prices are hard to read on the checkout page: 123456 cents shows as $1234.56. I'm not sure what it should show. Some of the team want a thousands separator ($1,234.56), others say the accounts export needs no separator, and I haven't decided which. Seen on main today, every time.\" Sam found it and is its product owner. Name the change big-prices. The report is complete: don't ask questions. Use the sdlc-intent skill (read it with `.sdlc/scripts/resolve.sh skills/intent/SKILL.md`, and any other skill it names the same way) and follow it as far as it goes, choosing the path it says to. This repo has no GitHub remote: commit as the skills say, but don't push, don't run auto-merge.sh, and wherever a skill would open a PR, write that PR's title on one line to pr-title.txt in the repo root instead (don't commit it), then stop.",
+  "check": "bash \"$EVAL_ROOT/evals/checks/bug-full-path.sh\"",
+  "tools": "Read,Grep,Glob,Edit,Write,Agent,Task,Bash(git:*),Bash(make:*),Bash(python3:*),Bash(ls:*),Bash(.sdlc/scripts/resolve.sh:*),Bash(.sdlc/scripts/tests-locked.sh:*),Bash(.sdlc/scripts/clause-check.sh:*),Bash(.sdlc/scripts/check-pr-title.sh:*),Bash(.sdlc/scripts/check-plan-first.sh:*)",
+  "max_turns": 60
+}
