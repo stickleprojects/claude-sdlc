@@ -1,0 +1,5 @@
+{
+  "name": "review names every uncovered clause of a requirement in one finding (#160)",
+  "prompt": "Review the spec at evals/fixtures/clause-one-pass/0001-hero-docs/spec.md as if it were a `spec:` PR, following .sdlc/REVIEW.md exactly, including clause coverage. Treat that folder as the change folder; the intent counts as merged. Don't use GitHub, git or the network. Write each finding to findings.md in the repo root, one finding per `## ` heading, quoting the text it is about, as .sdlc/REVIEW.md's Writing findings section says, and start each finding's body with its severity as Posting findings says (`**Important (product owner decides):**` or `**Nit:**`). Don't edit any other file.",
+  "check": "bash \"$EVAL_ROOT/evals/checks/clause-one-pass.sh\""
+}
