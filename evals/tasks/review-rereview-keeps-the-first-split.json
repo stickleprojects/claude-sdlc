@@ -1,0 +1,7 @@
+{
+  "name": "a re-review raises no new clauses in unchanged text, but catches a reworded one (#160)",
+  "setup": "bash evals/fixtures/clause-one-pass/rereview/setup.sh",
+  "prompt": "Re-review a `spec:` PR, following .sdlc/REVIEW.md exactly, including clause coverage and its rules for a re-review. The PR's repo is the git repo in ./rereview (run git there with `git -C rereview \u2026`), its spec is rereview/changes/0001-hero-docs/spec.md at HEAD, and the intent counts as merged. An earlier review of this PR posted one thread; it's in rereview/earlier-threads.json, exactly as `gh api repos/<repo>/pulls/<N>/comments` returns it, so read that file wherever REVIEW.md says to call gh. Don't use GitHub or the network. Write each finding to findings.md in the current directory (beside rereview/, not inside it), one finding per `## ` heading, quoting the text it is about, as .sdlc/REVIEW.md's Writing findings section says, and start each finding's body with its severity as Posting findings says (`**Important (product owner decides):**` or `**Nit:**`). Don't edit any other file.",
+  "check": "bash \"$EVAL_ROOT/evals/checks/clause-rereview.sh\"",
+  "tools": "Read,Grep,Glob,Edit,Write,Bash(git -C rereview:*)"
+}

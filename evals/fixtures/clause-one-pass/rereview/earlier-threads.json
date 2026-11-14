@@ -1,0 +1,9 @@
+[
+  {
+    "in_reply_to_id": null,
+    "path": "changes/0001-hero-docs/spec.md",
+    "original_commit_id": "SHA_BEFORE",
+    "resolved": true,
+    "body": "**Important (product owner decides):** R1 has clauses no acceptance criterion tests.\n\n> R1. The docs match the new Thor: the art bible's characters line gives Thor at 3.0 units on the large Barbarian with `Rig_Large` clips and `Flexing` for interact; `docs/gdd/characters.md` gives his height as 3.0; `docs/architecture.md` shows the per-rig animation libraries.\n\n| Clause | Covered by |\n|---|---|\n| the art bible's line gives Thor at 3.0 units | AC1 |\n| with `Rig_Large` clips | none |\n| `Flexing` for interact | none |\n| `docs/gdd/characters.md` gives his height as 3.0 | none |\n| `docs/architecture.md` shows the per-rig animation libraries | none |\n\nSuggested: extend AC1 to search the art bible line for `Rig_Large` and `Flexing`, `docs/gdd/characters.md` for Thor at 3.0, and `docs/architecture.md` for `Rig_Large`."
+  }
+]
