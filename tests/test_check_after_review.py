@@ -351,7 +351,22 @@ def run_event(repo="o/r", event="pull_request"):
             ON,
             False,
         ),
-        ("pull_request_review", {"pull_request": SAME, "action": "submitted"}, ON, True),
+        (
+            "pull_request_review",
+            {"pull_request": SAME, "action": "submitted", "review": {"user": {"login": "kieron"}}},
+            ON,
+            True,
+        ),
+        (
+            "pull_request_review",
+            {
+                "pull_request": SAME,
+                "action": "submitted",
+                "review": {"user": {"login": "claude[bot]"}},
+            },
+            ON,
+            False,
+        ),
         (
             "pull_request_review_comment",
             {"pull_request": SAME, "action": "created", "comment": {"user": {"login": "kieron"}}},
@@ -380,6 +395,7 @@ def run_event(repo="o/r", event="pull_request"):
         "check label",
         "another label",
         "a person's review",
+        "the reviewer's own review",
         "a reply",
         "the reviewer's own comment",
     ],
