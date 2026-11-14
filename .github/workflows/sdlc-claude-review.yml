@@ -246,6 +246,16 @@ jobs:
       # code owner reviews it by hand, and .sdlc/scripts/auto-merge.sh never auto-merges such a PR.
       # A green action isn't enough: it can end early (refused tools, the turn limit) having
       # posted nothing, so success needs the summary posted or edited during this job.
+      # What the review read and ran, so a "No findings" can be checked: the tool calls only.
+      - name: List the review's tool calls
+        if: always() && steps.workflow_change.outputs.skipped != 'true'
+        run: |
+          if [[ -s "$RUNNER_TEMP/review-attempt-1.json" ]]; then
+            .sdlc/scripts/review-denials.sh --calls "$RUNNER_TEMP/review-attempt-1.json" "the first review"
+            .sdlc/scripts/review-denials.sh --calls "$RUNNER_TEMP/claude-execution-output.json" "the second review"
+          else
+            .sdlc/scripts/review-denials.sh --calls "$RUNNER_TEMP/claude-execution-output.json" "the review"
+          fi
       - name: Mark the review as done
         id: done
         if: success()

@@ -3459,6 +3459,45 @@ def test_review_denials_lists_each_refused_call(tmp_path):
     assert lines[2].startswith("  refused: Write: {") and len(lines[2]) < 340  # input cut short
 
 
+def call(name, tool_input):
+    return {"type": "tool_use", "name": name, "input": tool_input}
+
+
+def test_review_denials_lists_each_tool_call_with_calls(tmp_path):
+    session = execution_output("success")
+    session[1:1] = [
+        {"type": "assistant", "message": {"content": [{"type": "text", "text": "No findings."}]}},
+        {
+            "type": "assistant",
+            "message": {
+                "content": [
+                    call("Read", {"file_path": ".review-rules.md"}),
+                    call("Bash", {"command": "gh pr diff 7"}),
+                    call("Bash", {"command": 'gh pr comment 7 --body "one\n\ntwo"'}),
+                ]
+            },
+        },
+        {"type": "user", "message": {"content": [{"type": "tool_result", "content": "SECRET"}]}},
+        {"type": "assistant", "message": {"content": [call("Write", {"content": "y" * 900})]}},
+    ]
+    out = tmp_path / "claude-execution-output.json"
+    out.write_text(json.dumps(session))
+    script = str(REPO / ".sdlc/scripts/review-denials.sh")
+    result = run(["bash", script, "--calls", str(out), "the review"])
+    assert result.returncode == 0
+    lines = result.stdout.splitlines()
+    assert lines[0] == "the review: success after 10 turn(s), 0 refused tool call(s)"
+    assert lines[1] == '  called: Read: {"file_path":".review-rules.md"}'
+    assert lines[2] == "  called: Bash: gh pr diff 7"
+    assert lines[3] == '  called: Bash: gh pr comment 7 --body "one two"'  # one line each
+    assert lines[4].startswith("  called: Write: {") and len(lines[4]) < 240  # input cut short
+    assert len(lines) == 5
+    # Only the calls: never the model's text or what the tools returned.
+    assert "No findings" not in result.stdout and "SECRET" not in result.stdout
+    # Without --calls, the calls aren't listed.
+    assert "called:" not in run(["bash", script, str(out)]).stdout
+
+
 def test_review_denials_reads_a_single_result_object(tmp_path):
     result = denials_of(tmp_path, execution_output("error_max_turns")[1])
     assert "the review: error_max_turns after 10 turn(s), 0 refused" in result.stdout
@@ -3518,4 +3557,10 @@ def test_the_review_runs_once_more_when_it_posts_nothing():
     assert "uses: actions/upload-artifact@v4" in keep and "retention-days: 7" in keep
     assert "${{ runner.temp }}/review-attempt-1.json" in keep
     assert "if: failure()" in step["Show why the review stopped"]
+    calls = step["List the review's tool calls"]
+    assert "if: always() && steps.workflow_change.outputs.skipped != 'true'" in calls
+    assert '--calls "$RUNNER_TEMP/review-attempt-1.json" "the first review"' in calls
+    assert '--calls "$RUNNER_TEMP/claude-execution-output.json" "the second review"' in calls
+    assert '--calls "$RUNNER_TEMP/claude-execution-output.json" "the review"' in calls
+    assert names.index("Review once more") < names.index("List the review's tool calls")
     assert synced(".sdlc/scripts/review-denials.sh")
