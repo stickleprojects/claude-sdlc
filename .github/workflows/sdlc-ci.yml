@@ -15,6 +15,19 @@ concurrency:
 
 jobs:
   check:
+    # With SDLC_CHECK_AFTER_REVIEW on (#163), a same-repo PR's `check` waits for a clean Claude
+    # review and runs in sdlc-check-after-review.yml, which posts it as a commit status. The job
+    # here is then skipped under another name: a skipped check run named `check` would count as
+    # passing for branch protection. Pushes to main and fork PRs run here as before.
+    name: >-
+      ${{ github.event_name == 'pull_request' &&
+      vars.SDLC_CHECK_AFTER_REVIEW != '' && vars.SDLC_CHECK_AFTER_REVIEW != 'off' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      'check (runs after the Claude review)' || 'check' }}
+    if: >-
+      !(github.event_name == 'pull_request' &&
+      vars.SDLC_CHECK_AFTER_REVIEW != '' && vars.SDLC_CHECK_AFTER_REVIEW != 'off' &&
+      github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ${{ vars.SDLC_RUNNER && !github.event.issue.pull_request && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && vars.SDLC_RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4

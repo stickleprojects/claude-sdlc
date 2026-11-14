@@ -1,0 +1,154 @@
+# `make check` after a clean Claude review, on repos that set SDLC_CHECK_AFTER_REVIEW (#163).
+#
+# Without the setting, sdlc-ci.yml runs `check` on every PR push beside the review, and every
+# job here is skipped. With it, sdlc-ci.yml leaves same-repo PRs to this workflow, which runs
+# `make check` on a PR's head only once the review is clean (.sdlc/scripts/check-gate.sh): a
+# review that asks for changes means another push, so `check` on this one would be wasted. On
+# a runner that runs one job at a time it would also hold up the review. Pushes to main and
+# fork PRs keep running `check` in sdlc-ci.yml straight away.
+#
+# The result is the `check` commit status on the head, which branch protection requires in
+# place of sdlc-ci.yml's check run. Until it runs, the status is pending and says what it waits
+# for. The gate looks again when that can change:
+#   - a Claude review finishes (workflow_run);
+#   - someone replies in a review thread or reviews the PR: resolving a thread sends no event,
+#     so a finding settled without a push needs a reply or an approval;
+#   - someone adds the `check` label, which runs `make check` whatever the review says.
+# A new push cancels a `check` still running on the old head (the shared concurrency group),
+# so a one-job runner moves on to the new head's review.
+#
+# workflow_run runs main's copy of this file, with a token that can write statuses, on the PR's
+# code. So it's for same-repo PRs only (forks never get here), and `make check` runs without a
+# GitHub token: checkout doesn't keep its credentials, and no step that runs PR code has one.
+name: Check after review
+
+on:
+  workflow_run:
+    workflows: [Claude review]
+    types: [completed]
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review, labeled]
+  pull_request_review:
+    types: [submitted]
+  pull_request_review_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+  statuses: write
+
+jobs:
+  gate:
+    # The review's own inline comments change nothing, and there are many of them.
+    if: >-
+      vars.SDLC_CHECK_AFTER_REVIEW != '' && vars.SDLC_CHECK_AFTER_REVIEW != 'off' && (
+        (github.event_name == 'workflow_run' &&
+          github.event.workflow_run.event == 'pull_request' &&
+          github.event.workflow_run.head_repository.full_name == github.repository) ||
+        (github.event_name != 'workflow_run' &&
+          github.event.pull_request.head.repo.full_name == github.repository &&
+          (github.event.action != 'labeled' || github.event.label.name == 'check') &&
+          (github.event_name != 'pull_request_review_comment' ||
+            github.event.comment.user.login != 'claude[bot]')))
+    runs-on: ${{ vars.SDLC_RUNNER && !github.event.issue.pull_request && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && vars.SDLC_RUNNER || 'ubuntu-latest' }}
+    # A new head (a push, or the PR opening) joins the `check` job's group, which cancels a
+    # `check` still running on the old head before this job even gets the runner. Every other
+    # event gets a group of its own, so a reply never cancels a `check` in progress.
+    concurrency:
+      group: >-
+        ${{ github.event_name == 'pull_request' && github.event.action != 'labeled' &&
+        format('check-after-review-{0}', github.event.pull_request.number) ||
+        format('check-gate-{0}', github.run_id) }}
+      cancel-in-progress: true
+    outputs:
+      decision: ${{ steps.gate.outputs.decision }}
+      pr: ${{ steps.pr.outputs.pr }}
+      head: ${{ steps.pr.outputs.head }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Find the PR and its head
+        id: pr
+        env:
+          EVENT: ${{ github.event_name }}
+          RUN_HEAD: ${{ github.event.workflow_run.head_sha }}
+          RUN_PR: ${{ github.event.workflow_run.pull_requests[0].number }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          if [[ "$EVENT" == workflow_run ]]; then
+            head="$RUN_HEAD" pr="$RUN_PR"
+            [[ -n "$pr" ]] || pr="$(gh api "repos/$GITHUB_REPOSITORY/commits/$head/pulls" \
+              --jq '[.[] | select(.state == "open")][0].number // empty')"
+          else
+            head="$PR_HEAD" pr="$PR_NUMBER"
+          fi
+          echo "pr=$pr" >> "$GITHUB_OUTPUT"
+          echo "head=$head" >> "$GITHUB_OUTPUT"
+      # Remove the label first, so adding it again runs `check` again.
+      - name: Clear the check label
+        if: github.event.action == 'labeled'
+        run: gh api -X DELETE "repos/$GITHUB_REPOSITORY/issues/${{ steps.pr.outputs.pr }}/labels/check" --silent
+      - name: Is the review clean?
+        id: gate
+        if: steps.pr.outputs.pr != ''
+        env:
+          PR: ${{ steps.pr.outputs.pr }}
+          HEAD_SHA: ${{ steps.pr.outputs.head }}
+          FORCE: ${{ github.event.action == 'labeled' && '--force' || '' }}
+        run: |
+          line="$(.sdlc/scripts/check-gate.sh "$PR" "$HEAD_SHA" $FORCE)"
+          echo "$line"
+          echo "decision=${line%% *}" >> "$GITHUB_OUTPUT"
+
+  check:
+    needs: gate
+    if: needs.gate.outputs.decision == 'run'
+    runs-on: ${{ vars.SDLC_RUNNER && !github.event.issue.pull_request && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && vars.SDLC_RUNNER || 'ubuntu-latest' }}
+    # One `check` per PR: a newer one (another head, the label) replaces one still running.
+    concurrency:
+      group: check-after-review-${{ needs.gate.outputs.pr }}
+      cancel-in-progress: true
+    env:
+      PR: ${{ needs.gate.outputs.pr }}
+      HEAD_SHA: ${{ needs.gate.outputs.head }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Mark check as running
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh api "repos/$GITHUB_REPOSITORY/statuses/$HEAD_SHA" --silent -f state=pending
+          -f context=check -f description="make check is running" -f target_url="$RUN_URL"
+      # The PR merged into main, as sdlc-ci.yml tests it on a pull_request event.
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/pull/${{ needs.gate.outputs.pr }}/merge
+          fetch-depth: 0  # make validate and the docs-only check compare the branch with main
+          persist-credentials: false
+      - name: Check the merge is of this head
+        run: |
+          parent="$(git rev-parse HEAD^2 2>/dev/null)"
+          [[ "$parent" == "$HEAD_SHA" ]] || {
+            echo "::error::refs/pull/$PR/merge is of ${parent:-nothing}, not $HEAD_SHA: a newer push replaced it"
+            exit 1
+          }
+      - uses: ./.github/actions/setup-stack
+      - run: make check
+      - name: Post the result
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STATUS: ${{ job.status }}
+        run: |
+          case "$STATUS" in
+            success) state=success description="make check passed" ;;
+            cancelled) state=pending description="make check was cancelled: add the check label to run it again" ;;
+            *) state=failure description="make check failed" ;;
+          esac
+          gh api "repos/$GITHUB_REPOSITORY/statuses/$HEAD_SHA" --silent -f state="$state" \
+            -f context=check -f description="$description" -f target_url="$RUN_URL"
