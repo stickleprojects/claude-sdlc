@@ -298,7 +298,7 @@ def ctx(event_name, event, variables):
     [
         ("pull_request", {"pull_request": SAME}, UNSET, True, "check"),
         ("pull_request", {"pull_request": SAME}, OFF, True, "check"),
-        ("pull_request", {"pull_request": SAME}, ON, False, "check (runs after the Claude review)"),
+        ("pull_request", {"pull_request": SAME}, ON, False, "check: waits for the Claude review"),
         ("pull_request", {"pull_request": FORK}, ON, True, "check"),
         ("push", {"ref": "refs/heads/main"}, ON, True, "check"),
     ],
@@ -307,18 +307,27 @@ def ctx(event_name, event, variables):
 def test_ci_check_hands_same_repo_prs_over_only_when_on(event_name, event, variables, runs, name):
     job = ci_job()
     c = ctx(event_name, event, variables)
-    assert bool(gh_expr(expr(job["if"]), c)) is runs
+    assert bool(gh_expr(expr(job["env"]["DEFERRED"]), c)) is not runs
     assert gh_expr(expr(job["name"]), c) == name
 
 
-def test_a_skipped_ci_check_never_carries_the_required_name():
-    # A skipped check run counts as passing for branch protection, so it mustn't be `check`.
+def test_a_deferred_ci_check_runs_nothing_and_never_carries_the_required_name():
+    # The job is never skipped, so GitHub always evaluates its name (#206 asked for a readable
+    # one). When deferred, every step but the note is skipped, and the name isn't `check`: that
+    # check run would count toward the required `check`.
     job = ci_job()
+    assert "if" not in job
+    note, *work = job["steps"]
+    assert note["if"] == "env.DEFERRED == 'true'" and "run" in note and "uses" not in note
+    for step in work:
+        assert step["if"].endswith("env.DEFERRED != 'true'"), step
     for variables in (ON, OFF, UNSET):
         for event in ({"pull_request": SAME}, {"pull_request": FORK}):
             c = ctx("pull_request", event, variables)
-            if not gh_expr(expr(job["if"]), c):
+            if gh_expr(expr(job["env"]["DEFERRED"]), c):
                 assert gh_expr(expr(job["name"]), c) != "check"
+    # DEFERRED and the name test the same condition.
+    assert expr(job["env"]["DEFERRED"]) in expr(job["name"])
 
 
 def gate_if():
