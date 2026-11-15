@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from conftest import REPO, run
-from test_scripts import RUNS_ON, gh_expr
+from scripts.helpers import RUNS_ON, gh_expr
 
 GATE = REPO / ".sdlc/scripts/check-gate.sh"
 CI = REPO / ".github/workflows/sdlc-ci.yml"

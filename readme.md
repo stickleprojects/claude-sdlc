@@ -314,8 +314,8 @@ Clone this repo and run `make setup && make check`. `make check` runs about 800 
 
 | Layer | What | Where |
 |---|---|---|
-| Unit | The `sdlc` CLI, the artifact rules and the routing | `tests/test_artifacts.py`, `tests/test_routing.py` |
-| Unit | Hooks block and allow exactly the right commands and paths; the scripts behave against fake GitHub and fake models | `tests/test_hooks.py`, `tests/test_scripts.py`, `tests/test_agent_apps.py` |
+| Unit | The `sdlc` CLI, the artifact rules and the routing | `tests/artifacts/`, `tests/test_routing.py` |
+| Unit | Hooks block and allow exactly the right commands and paths; the scripts behave against fake GitHub and fake models | `tests/test_hooks.py`, `tests/scripts/`, `tests/test_agent_apps.py` |
 | Scenario | Install the framework into a throwaway consumer repo, then run changes through it: syncs, upgrades, validation, hooks | `tests/test_scenario.py` |
 
 Agent evals (`make evals`, `evals/tasks/`) test the skills and the review with Claude itself, on fixtures where the right answer is known. They run on demand and before every release.

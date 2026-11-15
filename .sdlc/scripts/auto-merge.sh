@@ -12,7 +12,7 @@
 # auto-merge is off. Anything else is the merge method. Every script reads it through
 # `--method`; sdlc-claude-review.yml can't run a script in its `if`, so it spells the same rule as
 # `vars.SDLC_AUTO_MERGE != '' && vars.SDLC_AUTO_MERGE != 'off'` (expression comparisons ignore
-# case). tests/test_scripts.py holds them all to the same answers.
+# case). tests/scripts/test_auto_merge_rule.py holds them all to the same answers.
 #
 # Run it straight after opening the PR: GitHub refuses once a PR is approved and green
 # ("clean status"). It enables auto-merge only when all of these hold, and otherwise says why

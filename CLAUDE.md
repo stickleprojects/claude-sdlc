@@ -12,7 +12,7 @@ make check       # lint + test + validate; the one command that must exit 0 befo
                  # (a docs-only branch skips test; FULL=1 runs everything)
 make fmt         # format; FILES="a.py b.py" limits it to those files
 make test        # uv run pytest -q
-uv run pytest tests/test_artifacts.py::test_next_slug_increments   # a single test
+uv run pytest tests/artifacts/test_chain.py::test_next_slug_increments   # a single test
 make new-change NAME=<kebab-name>   # start a change
 make status      # stage each change has reached
 make next REF=origin/main   # each change's next step and the skill that owns it
@@ -29,7 +29,7 @@ Change tracking: issues
 
 The framework itself. Its changes are tracked as GitHub issues (label `pipeline`), not `changes/` folders; .sdlc/REVIEW.md reads the line above. Product work happens in consumer repos (e.g. stickleprojects/sdlc-sandbox), which pull framework-owned files with `.sdlc/scripts/sync-sdlc.sh`. The list of framework-owned paths is in that script. Changing a framework-owned path, a `make` target name or an artifact's required sections affects every consumer: say so in the PR, and use a `!` title if it's a breaking change.
 
-- Tests: `tests/test_hooks.py` and `tests/test_scripts.py` are unit tests for the hooks and scripts. `tests/test_scenario.py` installs the framework into a throwaway consumer repo (`tests/fixtures/consumer/`) and runs a change through it. When you change a hook, script, skill or the sync manifest, add a case there.
+- Tests: `tests/test_hooks.py` and `tests/scripts/` (one file per script) are unit tests for the hooks and scripts. `tests/test_scenario.py` installs the framework into a throwaway consumer repo (`tests/fixtures/consumer/`) and runs a change through it. When you change a hook, script, skill or the sync manifest, add a case there.
 - PR titles follow conventional commits (`feat:`, `fix:`, `ci:`, …, `!` for breaking changes). They drive the version and the release notes.
 
 ## Architecture
@@ -40,7 +40,7 @@ The framework itself. Its changes are tracked as GitHub issues (label `pipeline`
   - the workflows.
 
   Framework make targets go in `.sdlc/sdlc.mk`, not in a consumer's Makefile. A consumer changes framework files through overrides in `.sdlc-local/` (`.sdlc/src/sdlc/resolve.py`, `.sdlc/docs/overrides.md`), so anything that reads a skill, template, prompt or `REVIEW.md` must read it through the resolver.
-- **Stack contract:** hooks, CI and evals call only the `make` targets above, never `uv`, `ruff` or `pytest` directly. Language-specific details live only in `Makefile` and `.github/actions/setup-stack/`. Keep it that way: `test_ci_hooks_scripts_and_evals_call_only_make_targets` in `tests/test_scripts.py` fails on a direct call (#169).
+- **Stack contract:** hooks, CI and evals call only the `make` targets above, never `uv`, `ruff` or `pytest` directly. Language-specific details live only in `Makefile` and `.github/actions/setup-stack/`. Keep it that way: `test_ci_hooks_scripts_and_evals_call_only_make_targets` in `tests/scripts/test_stack_contract.py` fails on a direct call (#169).
 - **Agent adapter:** CI and evals call AI only through `.sdlc/scripts/agent.sh`. Don't call `claude -p` from workflows directly. (`claude-code-action` in the review and mention workflows is the one exception.)
 - **Artifact chain:** `changes/NNNN-name/{intent,spec,plan}.md`. The required `##` sections are defined in `.sdlc/src/sdlc/artifacts.py` (`CHAIN`) and must match `.sdlc/templates/`. A test enforces this. Change both together.
 - **Optional build plan:** `changes/NNNN-name/build.md`, written by `/sdlc-build` for builds of more than one session. It sits outside `CHAIN`; `check_build` validates it when present (sections from `.sdlc/templates/build.md`, no approval with open questions). Small plans are built without one.
