@@ -11,18 +11,13 @@
 # branch, or merged to main before it. The bug fast path (#148) is the exception: on
 # build/<slug>, a bug whose bug.md and spec.md are in the tree may be fixed without a plan.
 # Code is anything but changes/, docs/ and top-level *.md. Other branches aren't checked.
+# A change's branch without its number (build/x for changes/0007-x) fails when it has code (#185).
 # A repo whose CLAUDE.md has the line `Bug path: full` turns the fast path off (#160): then a bug
 # needs its plan.md too. CI passes main's CLAUDE.md in SDLC_CLAUDE_MD, so a PR can't turn the
 # setting off for itself; without it, ./CLAUDE.md is read.
 set -uo pipefail
 
 branch="${1:-}"
-slug="$(grep -oE '[0-9]{4}-[a-z0-9]+(-[a-z0-9]+)*' <<<"$branch" | head -1 || true)"
-if [[ -z "$slug" || ! -d "changes/$slug" ]]; then
-  echo "ok: $branch isn't a change's branch"
-  exit 0
-fi
-
 code=""
 while IFS= read -r path; do
   case "$path" in
@@ -33,6 +28,22 @@ while IFS= read -r path; do
   code="$path"
   break
 done
+
+slug="$(grep -oE '[0-9]{4}-[a-z0-9]+(-[a-z0-9]+)*' <<<"$branch" | head -1 || true)"
+if [[ -z "$slug" || ! -d "changes/$slug" ]]; then
+  # build/price-decimals for changes/0007-price-decimals: without the number nothing matches,
+  # and the checks below would silently pass its code (#185).
+  if [[ -n "$code" && "$branch" =~ ^(build|plan|spec|bug)/([a-z0-9]+(-[a-z0-9]+)*)$ ]]; then
+    for dir in changes/[0-9][0-9][0-9][0-9]-"${BASH_REMATCH[2]}"; do
+      [[ -d "$dir" ]] || continue
+      echo "::error::The branch $branch leaves out the change number, so it doesn't match" \
+        "${dir#changes/}. Push it as ${BASH_REMATCH[1]}/${dir#changes/} and open the PR from that."
+      exit 1
+    done
+  fi
+  echo "ok: $branch isn't a change's branch"
+  exit 0
+fi
 
 if [[ -z "$code" ]]; then
   echo "ok: $slug, no code changed"

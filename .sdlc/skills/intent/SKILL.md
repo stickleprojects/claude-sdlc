@@ -8,7 +8,7 @@ file with an override in .sdlc-local/ (see .sdlc/docs/overrides.md), never by ed
 **Is it a bug?** If the person describes something that worked differently from what was specified or expected (found in testing or use), it's a bug: use the lighter path in [For a bug](#for-a-bug). That includes pushback on a change that has already merged or shipped: it becomes a new bug change with `Came from:` naming that change, never a reopened one. If it's new behaviour, or you're not sure, ask.
 
 1. Act as a business analyst. Ask short questions until you understand: the problem and who has it, the outcome that would count as success, the users and systems affected, constraints, and what is still unknown. Ask one round at a time; don't invent answers.
-2. Pick a short kebab-case name and run `make new-change NAME=<name>`. It prints the new `intent.md` path.
+2. Pick a short kebab-case name and run `make new-change NAME=<name>`. It prints the new `intent.md` path and the slug. The folder it made, `NNNN-<name>` (for example `0007-breadcrumbs`), is the change's **slug**: wherever a skill says `<slug>`, in a branch, a commit or a PR title, it means that folder name, number included, never the bare name (#185).
 3. Fill in every section of that file from the conversation. Put anything unresolved under **Open questions** rather than guessing.
 4. **If the repo has a roadmap** (`docs/roadmap.md`), place the change on it. Read the roadmap and agree with the originator which milestone this delivers: usually the first one that isn't done and whose scope covers it. Then, in the same PR:
    - fill in the intent's `Milestone:` line, under `Product owner:` (with a roadmap, `make new-change` writes it as `Milestone: M<n>`; add it if it's missing);
@@ -35,11 +35,11 @@ Do not write a spec, a plan or any code at this stage. (A bug on the fast path, 
    - **The full path** otherwise: the bug PR, then its spec PR, plan and build, as for an intent.
 
    Tell the person which path and why in one line of plain words, for example "I can fix this in the same PR, so approving it ships the fix", or "this needs a product decision first, so the report goes in on its own". They can ask for the other path.
-3. Run `make new-change NAME=<name> TYPE=bug`. It prints the new `bug.md` path; there is no `intent.md`.
+3. Run `make new-change NAME=<name> TYPE=bug`. It prints the new `bug.md` path and the slug; there is no `intent.md`. Its folder name, `NNNN-<name>`, is the slug, number included (step 2 above).
 4. Fill in every section, then run `make validate`. Show the person the file and ask for corrections.
 5. **The full path:** open the bug PR, from any branch but `build/<slug>` (that one is the build's). Merging it triggers a short spec: requirements and one acceptance test per symptom.
 6. **The fast path:**
-   1. Work on `build/<slug>`, created from `origin/main`. The plan gate allows code there once `bug.md` and `spec.md` are committed.
+   1. Work on `build/<slug>`, created from `origin/main`: the folder name with its number, `build/0007-price-decimals`, not `build/price-decimals`. The plan gate allows code there once `bug.md` and `spec.md` are committed, and blocks a branch that leaves the number out.
    2. Write `spec.md` as the internal `sdlc-spec` skill's **For a bug** section says (read it with `.sdlc/scripts/resolve.sh skills/spec/SKILL.md`). If that raises an open question for the product owner, the fast path stops: delete `spec.md`, move `bug.md` to a branch of its own (`bug/<slug>`), say why, and take the full path. The spec workflow writes the spec once the bug merges, and the question goes to the product owner there.
    3. Commit `bug.md` and `spec.md` (`bug(<slug>): <title>`) and push.
    4. Build the fix with the `sdlc-build` skill (its **Bug fast path** section): failing tests first, then the fix, the verifier, and a PR titled `fix(<slug>): <summary>`. If the session is running short at this point, stop and say so. `/sdlc-build <slug>` picks up the branch in a new session.

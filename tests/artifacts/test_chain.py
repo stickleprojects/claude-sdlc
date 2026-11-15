@@ -57,5 +57,24 @@ def test_new_then_check_round_trip(tmp_path: Path) -> None:
     assert main(["--root", str(tmp_path), "check"]) == 0
 
 
+def test_new_prints_the_path_then_the_slug_with_its_number(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """#185: shown only the path, agents named the branch build/<name> without the number."""
+    (tmp_path / ".sdlc" / "templates").mkdir(parents=True)
+    for kind in ("intent.md", "bug.md"):
+        template = (REPO / ".sdlc" / "templates" / kind).read_text()
+        (tmp_path / ".sdlc" / "templates" / kind).write_text(template)
+    assert main(["--root", str(tmp_path), "new", "add-login"]) == 0
+    assert main(["--root", str(tmp_path), "new", "--type", "bug", "price-decimals"]) == 0
+    assert capsys.readouterr().out.splitlines() == [
+        str(tmp_path / "changes" / "0001-add-login" / "intent.md"),
+        "slug: 0001-add-login (its branches: build/0001-add-login, plan/0001-add-login, …)",
+        str(tmp_path / "changes" / "0002-price-decimals" / "bug.md"),
+        "slug: 0002-price-decimals"
+        " (its branches: build/0002-price-decimals, plan/0002-price-decimals, …)",
+    ]
+
+
 def test_new_rejects_bad_name(tmp_path: Path) -> None:
     assert main(["--root", str(tmp_path), "new", "Bad Name"]) == 2

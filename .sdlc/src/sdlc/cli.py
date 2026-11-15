@@ -57,6 +57,8 @@ def cmd_new(root: Path, name: str, kind: str = "feature") -> int:
         text = add_milestone_line(text)
     (target / first).write_text(text, encoding="utf-8")
     print(target / first)
+    # Branches take the slug with its number; shown only the path, agents dropped it (#185).
+    print(f"slug: {slug} (its branches: build/{slug}, plan/{slug}, …)")
     return 0
 
 

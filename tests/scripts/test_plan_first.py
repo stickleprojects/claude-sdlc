@@ -107,3 +107,26 @@ def test_plan_first_reads_the_claude_md_ci_gives_it(plan_tree, tmp_path):
         env={**os.environ, "SDLC_CLAUDE_MD": str(main_copy)},
     )
     assert result.returncode == 1 and "Bug path: full" in result.stdout
+
+
+@pytest.mark.parametrize("prefix", ["build", "plan", "spec", "bug"])
+def test_plan_first_fails_a_change_branch_without_its_number(plan_tree, prefix):
+    """#185: build/z for changes/0005-z matched nothing, so its code passed unchecked."""
+    result = plan_first(plan_tree, f"{prefix}/z", ["changes/0005-z/bug.md", "src/z.py"])
+    assert result.returncode == 1
+    assert f"The branch {prefix}/z leaves out the change number" in result.stdout
+    assert f"Push it as {prefix}/0005-z" in result.stdout
+
+
+@pytest.mark.parametrize(
+    ("branch", "files"),
+    [
+        ("build/z", ["changes/0005-z/bug.md"]),  # no code: nothing for the plan check to miss
+        ("build/other", ["src/z.py"]),  # no change folder ends in -other
+        ("fix/z", ["src/z.py"]),  # maintenance prefixes aren't a change's branches
+        ("build/z-more", ["src/z.py"]),  # 0005-z doesn't match a longer name
+    ],
+)
+def test_plan_first_leaves_other_unnumbered_branches_alone(plan_tree, branch, files):
+    result = plan_first(plan_tree, branch, files)
+    assert result.returncode == 0 and "isn't a change's branch" in result.stdout
