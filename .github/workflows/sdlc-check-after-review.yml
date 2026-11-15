@@ -55,7 +55,7 @@ jobs:
           (github.event_name != 'pull_request_review' ||
             github.event.review.user.login != 'claude[bot]')))
     runs-on: ${{ vars.SDLC_RUNNER && !github.event.issue.pull_request && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && vars.SDLC_RUNNER || 'ubuntu-latest' }}
-    # A new head (a push, or the PR opening) joins the `check` job's group, which cancels a
+    # A new head (a push, or the PR opening) joins the `make-check` job's group, which cancels a
     # `check` still running on the old head before this job even gets the runner. Every other
     # event gets a group of its own, so a reply never cancels a `check` in progress.
     concurrency:
@@ -108,7 +108,12 @@ jobs:
           echo "$line"
           echo "decision=${line%% *}" >> "$GITHUB_OUTPUT"
 
-  check:
+  # Never `check` as the job's id or name (#206). Branch protection requires `check`, and a
+  # check run of that name counts toward it: a cancelled one blocks the merge and a skipped one
+  # passes it. Only the commit status posted below may answer it.
+  # tests/test_workflow_names.py holds every workflow to this.
+  make-check:
+    name: make check (after review)
     needs: gate
     if: needs.gate.outputs.decision == 'run'
     runs-on: ${{ vars.SDLC_RUNNER && !github.event.issue.pull_request && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && vars.SDLC_RUNNER || 'ubuntu-latest' }}

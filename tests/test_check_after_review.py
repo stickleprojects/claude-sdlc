@@ -413,7 +413,7 @@ def test_a_new_head_cancels_the_old_heads_check_and_nothing_else_does():
     )
     assert "format('check-after-review-{0}', github.event.pull_request.number)" in group
     assert group.endswith("|| format('check-gate-{0}', github.run_id)")
-    assert jobs["check"]["concurrency"] == {
+    assert jobs["make-check"]["concurrency"] == {
         "group": "check-after-review-${{ needs.gate.outputs.pr }}",
         "cancel-in-progress": True,
     }
@@ -427,7 +427,7 @@ def steps(job):
 
 
 def test_pr_code_runs_with_no_github_token():
-    check = steps("check")
+    check = steps("make-check")
     for name, step in check.items():
         if "uses" in step:
             assert (
@@ -436,13 +436,13 @@ def test_pr_code_runs_with_no_github_token():
             ), name
         if "GH_TOKEN" in step.get("env", {}):
             assert not re.search(r"^\s*make |\.sdlc/|\./", step["run"], re.M), name
-    job = load(AFTER)["jobs"]["check"]
+    job = load(AFTER)["jobs"]["make-check"]
     assert "GH_TOKEN" not in job.get("env", {})
     assert steps("gate")["actions/checkout@v4"]["with"]["persist-credentials"] is False
 
 
 def test_check_tests_the_merge_of_the_gated_head_and_posts_the_status():
-    check = steps("check")
+    check = steps("make-check")
     assert (
         check["actions/checkout@v4"]["with"]["ref"]
         == "refs/pull/${{ needs.gate.outputs.pr }}/merge"
