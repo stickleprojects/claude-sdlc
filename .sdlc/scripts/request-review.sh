@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Ask for a fresh Claude review of a push, without cancelling one the push already started (#105).
 #
-# Usage: .sdlc/scripts/request-review.sh <pr-number> [<sha>]     sha: the commit just pushed (default HEAD)
+# Usage: .sdlc/scripts/request-review.sh <pr-number> [<sha>]     sha: the commit just pushed
+#   Default: this checkout's HEAD when it's on the PR's branch (the session that just pushed, which
+#   GitHub may not show yet), otherwise the PR's head on GitHub (another checkout pushed nothing).
 #
 # sdlc-claude-review.yml runs on a push (`synchronize`) only when the repo variable SDLC_AUTO_MERGE is
 # set; otherwise a review needs the `review` label. Adding the label after a push that already
@@ -23,13 +25,23 @@
 set -uo pipefail
 
 pr="${1:-}"
-[[ "$pr" =~ ^[0-9]+$ ]] || { sed -n '2,22p' "$0" >&2; exit 2; }
-sha="${2:-HEAD}"
+[[ "$pr" =~ ^[0-9]+$ ]] || { sed -n '2,24p' "$0" >&2; exit 2; }
+repo="${GITHUB_REPOSITORY:-$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)}"
+[[ -n "$repo" ]] || { echo "Not adding the review label: can't tell which repo this is."; exit 0; }
+sha="${2:-}"
+if [[ -z "$sha" ]]; then
+  # Run from another checkout, HEAD is some other branch's commit (spellbound3d#183).
+  read -r pr_ref pr_sha < <(gh api "repos/$repo/pulls/$pr" --jq '.head.ref + " " + .head.sha' \
+    2>/dev/null) || true
+  if [[ -n "${pr_ref:-}" && "$(git branch --show-current 2>/dev/null)" != "$pr_ref" ]]; then
+    sha="${pr_sha:-}"
+  else
+    sha=HEAD
+  fi
+fi
 # The runs API needs the full sha; expand a short one when this checkout has the commit.
 sha="$(git rev-parse --verify --quiet "$sha^{commit}" 2>/dev/null || echo "$sha")"
 [[ "$sha" =~ ^[0-9a-f]{7,40}$ ]] || { echo "request-review: no commit to review" >&2; exit 2; }
-repo="${GITHUB_REPOSITORY:-$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)}"
-[[ -n "$repo" ]] || { echo "Not adding the review label: can't tell which repo this is."; exit 0; }
 wait="${REQUEST_REVIEW_WAIT:-60}" poll="${REQUEST_REVIEW_POLL:-5}"
 short="${sha:0:7}"
 
