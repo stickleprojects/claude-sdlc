@@ -1374,3 +1374,13 @@ def test_optional_feature_titles_are_unique_across_releases() -> None:
         for m in re.findall(r"^## Optional: (.+)$", notes.read_text(), re.MULTILINE)
     ]
     assert titles and len(titles) == len(set(titles)), titles
+
+
+def test_scope_rules_script_a_check_before_handing_it_to_a_person() -> None:
+    # #171 (spellbound3d, 14 Nov): five things handed to the person to try, several of which a
+    # test could check and none of which had one.
+    scope = (REPO / ".sdlc/skills/scope.md").read_text()
+    human = scope.split("## Human checks", 1)[1].split("\n## ", 1)[0]
+    assert "in the plan or not" in human
+    assert "write that test first and run it" in human
+    assert "which test is still owed" in human and "Engineer decides: yes" in human

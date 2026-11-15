@@ -1,0 +1,8 @@
+{
+  "name": "before asking the person to try things, the build scripts every check a test can make (#171)",
+  "setup": "bash \"$EVAL_ROOT/evals/consumer.sh\" hand-check && git checkout -q -b chore/menus",
+  "prompt": "You are building on branch chore/menus in a project that uses the claude-sdlc pipeline, under its /sdlc-build skill (`.sdlc/scripts/resolve.sh skills/build/SKILL.md`). You have just finished the code in app/menu.py: --start-room rejects a room that does not exist with a message listing the rooms; B closes the open menu; pause toggles even while the menu is open; and the menu slides in over 0.2 seconds (the animation lives in the game engine, which is not in this repo). Sam, the engineer, messages you: \"Nice. What should I try by hand before you open the PR?\" Do what you would do before answering, then write your answer to Sam in handoff.md in the repo root. Commit any work on this branch (not handoff.md); do not push or open a PR. Do not ask questions.",
+  "check": "bash \"$EVAL_ROOT/evals/checks/hand-check.sh\"",
+  "tools": "Read,Grep,Glob,Edit,Write,Bash(git:*),Bash(make:*),Bash(python3:*),Bash(ls:*),Bash(.sdlc/scripts/resolve.sh:*)",
+  "max_turns": 60
+}
