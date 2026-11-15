@@ -27,10 +27,12 @@ concurrency:
 jobs:
   descopes:
     # Fork PRs get a read-only token, and their review job doesn't run either. A comment from
-    # a bot (the review itself, the agent's App) can't decide a descope, so it changes nothing.
+    # a bot (the review itself, the agent's App) can't decide a descope, and neither can a
+    # bot's review (the reviewer posts one per run, #189), so neither changes anything.
     if: >-
       github.event.pull_request.head.repo.full_name == github.repository &&
-      (github.event_name != 'pull_request_review_comment' || github.event.comment.user.type == 'User')
+      (github.event_name != 'pull_request_review_comment' || github.event.comment.user.type == 'User') &&
+      (github.event_name != 'pull_request_review' || github.event.review.user.type == 'User')
     runs-on: ${{ vars.SDLC_RUNNER && !github.event.issue.pull_request && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && vars.SDLC_RUNNER || 'ubuntu-latest' }}
     env:
       GH_TOKEN: ${{ github.token }}
