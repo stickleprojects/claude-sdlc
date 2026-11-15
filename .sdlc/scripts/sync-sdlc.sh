@@ -88,6 +88,10 @@ main() {
   local check_order_settings=(
     "variable SDLC_CHECK_AFTER_REVIEW"
   )
+  # Optional (#174): a build PR may amend its plan, approved in one thread. Not reported when unset.
+  local plan_amend_settings=(
+    "variable SDLC_BUILD_AMENDS_PLAN"
+  )
 
   cd "$(git rev-parse --show-toplevel)"
   if [[ -n "$(git status --porcelain)" ]]; then
