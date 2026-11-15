@@ -4,6 +4,7 @@ import json
 import os
 import re
 import shutil
+from pathlib import Path
 
 import pytest
 
@@ -3625,3 +3626,104 @@ def test_the_review_runs_once_more_when_it_posts_nothing():
     assert '--calls "$RUNNER_TEMP/claude-execution-output.json" "the review"' in calls
     assert names.index("Review once more") < names.index("List the review's tool calls")
     assert synced(".sdlc/scripts/review-denials.sh")
+
+
+# --- a merge of the base that leaves the PR's diff unchanged keeps its review (#182) ----------
+# PR #176: GitHub's Update branch merged main in, the diff was byte-for-byte the same, and the
+# push still needed the review label and a second review.
+
+
+@pytest.fixture
+def base_merge(tmp_path):
+    """A PR whose commit P was reviewed, after which main moved on (M)."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    def git_(*args):
+        return run(
+            ["git", "-c", "user.name=t", "-c", "user.email=t@t", *args], cwd=repo, check=True
+        ).stdout.strip()
+
+    git_("init", "-q", "-b", "main")
+    (repo / "app.py").write_text("a = 1\n")
+    (repo / "other.py").write_text("b = 1\n")
+    git_("add", "-A")
+    git_("commit", "-qm", "base")
+    git_("checkout", "-qb", "pr")
+    (repo / "app.py").write_text("a = 2\n")
+    git_("commit", "-qam", "P: the PR's change")
+    reviewed = git_("rev-parse", "HEAD")
+    git_("checkout", "-q", "main")
+    (repo / "other.py").write_text("b = 2\n")
+    git_("commit", "-qam", "M: main moves on")
+    git_("update-ref", "refs/remotes/origin/main", "main")
+    git_("checkout", "-q", "pr")
+    fake = tmp_path / "bin"
+    fake.mkdir()
+    (fake / "gh").write_text(FAKE_GH_REVIEW_CURRENT)
+    (fake / "gh").chmod(0o755)
+    state = tmp_path / "gh"
+    state.mkdir()
+
+    def go(head, base_ref="main"):
+        # As GitHub lists a PR's commits: those on its head that aren't on the base.
+        commits = git_("rev-list", "--reverse", f"origin/main..{head}").split()
+        (state / "commits").write_text("".join(f"{c}\n" for c in commits))
+        for f in state.glob("status-*"):
+            f.unlink()
+        (state / f"status-{reviewed}").write_text(
+            json.dumps([{"context": "claude-review", "state": "success"}])
+        )
+        (state / "posted").unlink(missing_ok=True)
+        env = {"PATH": f"{fake}:{os.environ['PATH']}", "D": str(state), "GITHUB_REPOSITORY": "o/r"}
+        if base_ref is not None:
+            env["BASE_REF"] = base_ref
+        result = run(
+            ["bash", str(REPO / ".sdlc/scripts/review-current.sh"), "7", head], cwd=repo, env=env
+        )
+        posted = state / "posted"
+        return result, posted.read_text() if posted.exists() else ""
+
+    return git_, reviewed, go
+
+
+def test_a_merge_of_the_base_with_the_same_diff_keeps_the_review(base_merge):
+    git_, reviewed, go = base_merge
+    git_("merge", "-q", "--no-edit", "main")
+    result, posted = go(git_("rev-parse", "HEAD"))
+    assert result.returncode == 0, result.stderr
+    assert "state=success" in posted, posted
+    assert f"The Claude review of {reviewed[:7]} still holds: only main was merged in" in posted
+
+
+def test_a_merge_that_changes_the_prs_diff_still_needs_a_review(base_merge):
+    git_, _, go = base_merge
+    git_("merge", "-q", "--no-commit", "main")
+    (Path(git_("rev-parse", "--show-toplevel")) / "app.py").write_text("a = 3\n")  # slipped in
+    git_("add", "app.py")
+    git_("commit", "-qm", "merge main, and a change")
+    _, posted = go(git_("rev-parse", "HEAD"))
+    assert "state=failure" in posted and "Not reviewed: 1 commit since the review" in posted
+
+
+def test_a_plain_commit_after_the_review_still_needs_one(base_merge):
+    git_, _, go = base_merge
+    (Path(git_("rev-parse", "--show-toplevel")) / "app.py").write_text("a = 4\n")
+    git_("commit", "-qam", "another change")
+    _, posted = go(git_("rev-parse", "HEAD"))
+    assert "state=failure" in posted
+
+
+@pytest.mark.parametrize("base_ref", [None, "no-such-branch"])
+def test_without_a_readable_base_every_push_needs_a_review(base_merge, base_ref):
+    git_, _, go = base_merge
+    git_("merge", "-q", "--no-edit", "main")
+    _, posted = go(git_("rev-parse", "HEAD"), base_ref=base_ref)
+    assert "state=failure" in posted
+
+
+def test_the_unreviewed_push_job_gives_the_script_the_base_and_history():
+    workflow = (REPO / ".github/workflows/sdlc-claude-review.yml").read_text()
+    job = workflow[workflow.index("  unreviewed-push:") :]
+    assert "BASE_REF: ${{ github.event.pull_request.base.ref }}" in job
+    assert "fetch-depth: 0" in job
