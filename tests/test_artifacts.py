@@ -1374,3 +1374,12 @@ def test_optional_feature_titles_are_unique_across_releases() -> None:
         for m in re.findall(r"^## Optional: (.+)$", notes.read_text(), re.MULTILINE)
     ]
     assert titles and len(titles) == len(set(titles)), titles
+
+
+def test_build_all_orchestrator_opens_the_pr_itself() -> None:
+    # #170 (spellbound3d 0029, PR #182): the orchestrator holds the run's decisions, which the PR
+    # body records; a worker sees only its own unit.
+    build = (REPO / ".sdlc/skills/build/SKILL.md").read_text()
+    assert "No FAIL: open the PR from this session" in build
+    assert "No FAIL: start a worker with the per-criterion results to open the PR." not in build
+    assert "the orchestrator usually opens the PR itself" in build
