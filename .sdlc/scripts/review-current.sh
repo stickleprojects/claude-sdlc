@@ -12,15 +12,22 @@
 #
 # Every push counts, docs and sketches too: any commit after the review needs a new one. The
 # exception is a push that only merges the base branch in, such as GitHub's Update branch
-# (#182): when the PR's diff against its base is the same as the reviewed commit's, nothing the
-# review saw has changed, so the review still holds and the status is a success naming it. A
-# merge that changes the PR's diff (a conflict resolved, a fix slipped in) still needs a review.
+# (#182): each commit since the review is a merge of the reviewed chain with a commit on the base
+# branch, and its tree is exactly what git's own merge of those two gives, so the merge added
+# nothing of its own, and main's changes it brings in touch none of the files the PR changes. The
+# review then still holds, and the status is a success naming it. A conflict resolved by hand
+# or a change slipped into the merge gives a different tree, and still needs a review. So does
+# a merge that brings in changes to a file the PR changes too: git can merge two rewordings of
+# the same rule cleanly, and only a review sees that they clash. (Comparing diffs doesn't work: their context lines change whenever the
+# base edits a line next to the PR's, as on #192 and #193.)
 # A commit that already has a `claude-review` status (a review is running on it, or one ran) is
 # left alone. Exits 0 unless it can't read or post, so the push's other checks are unaffected.
 #
 # Env: GITHUB_REPOSITORY (owner/name; default: the gh repo of this checkout).
 #      BASE_REF  the PR's base branch, as origin/<BASE_REF> in this checkout with the PR's
 #                history (fetch-depth: 0). Unset or unreadable: every push needs a review.
+#      SDLC_REVIEW_CARRY_FORWARD  `off`: every push needs a review, base merges too (the repo
+#                variable of that name; anything else, or unset, carries a review forward).
 set -uo pipefail
 
 pr="${1:-}" head="${2:-}"
@@ -45,23 +52,40 @@ commits="$(gh api "repos/$repo/pulls/$pr/commits" --paginate --jq '.[].sha')" \
 # Newest first: the PR's commits come oldest first. (No `tac`: macOS doesn't have it.)
 shas=()
 while IFS= read -r sha; do [[ -n "$sha" ]] && shas+=("$sha"); done <<<"$commits"
-reviewed="" since=0
+reviewed="" since=0 at=-1
 for ((i = ${#shas[@]} - 1; i >= 0; i--)); do
-  if [[ "$(state_of "${shas[i]}")" == success ]]; then reviewed="${shas[i]}"; break; fi
+  if [[ "$(state_of "${shas[i]}")" == success ]]; then reviewed="${shas[i]}" at=$i; break; fi
   since=$((since + 1))
 done
 
-# The PR's changes as a patch id: its diff from where it meets the base branch. Empty when git
-# can't tell (no base, a shallow checkout) or the diff is empty, which never matches.
-pr_patch() {
-  local fork
-  fork="$(git merge-base "origin/$BASE_REF" "$1" 2>/dev/null)" || return 0
-  git diff "$fork" "$1" 2>/dev/null | git patch-id --stable 2>/dev/null | cut -d' ' -f1
+# Is <commit> a merge of <prev> with a commit on the base branch that adds nothing of its own?
+# Needs the PR's history and origin/<BASE_REF> (fetch-depth: 0) and git 2.38+ for merge-tree;
+# anything git can't answer counts as "no", so the push needs a review.
+overlap=""
+base_merge_only() {
+  local commit="$1" prev="$2" parents merged file
+  read -r -a parents <<<"$(git rev-list --parents -n 1 "$commit" 2>/dev/null)"
+  ((${#parents[@]} == 3)) && [[ "${parents[1]}" == "$prev" ]] || return 1
+  git merge-base --is-ancestor "${parents[2]}" "origin/$BASE_REF" 2>/dev/null || return 1
+  merged="$(git merge-tree --write-tree "$prev" "${parents[2]}" 2>/dev/null)" || return 1
+  [[ "$merged" == "$(git rev-parse "$commit^{tree}" 2>/dev/null)" ]] || return 1
+  # What the merge brought in from the base, against the files the reviewed PR changes.
+  while IFS= read -r file; do
+    [[ -n "$file" ]] && grep -qxF -- "$file" <<<"$pr_files" && { overlap="$file"; return 1; }
+  done < <(git diff --name-only "$prev" "$commit" 2>/dev/null)
+  return 0
 }
-if [[ -n "$reviewed" && -n "${BASE_REF:-}" ]]; then
-  before="$(pr_patch "$reviewed")"
-  if [[ -n "$before" && "$before" == "$(pr_patch "$head")" ]]; then
-    description="The Claude review of ${reviewed:0:7} still holds: only $BASE_REF was merged in, and the PR's diff is unchanged"
+if [[ -n "$reviewed" && -n "${BASE_REF:-}" && "${SDLC_REVIEW_CARRY_FORWARD:-}" != off ]] \
+  && ((since > 0)); then
+  pr_files="$(git diff --name-only "$(git merge-base "origin/$BASE_REF" "$reviewed" 2>/dev/null)" \
+    "$reviewed" 2>/dev/null)"
+  prev="$reviewed" carried=1
+  for ((i = at + 1; i < ${#shas[@]}; i++)); do
+    base_merge_only "${shas[i]}" "$prev" || { carried=""; break; }
+    prev="${shas[i]}"
+  done
+  if [[ -n "$carried" && "$prev" == "$head" ]]; then
+    description="The Claude review of ${reviewed:0:7} still holds: only $BASE_REF was merged in, adding nothing of its own"
     gh api "repos/$repo/statuses/$head" --silent -f state=success -f context=claude-review \
       -f description="${description:0:140}" || { echo "review-current: can't post the status" >&2; exit 1; }
     echo "review-current: ${head:0:7}: $description"
@@ -69,12 +93,14 @@ if [[ -n "$reviewed" && -n "${BASE_REF:-}" ]]; then
   fi
 fi
 
-if [[ -n "$reviewed" ]]; then
+if [[ -n "$overlap" ]]; then
+  description="Not reviewed: $BASE_REF changed ${overlap##*/} too, which this PR changes. Add the review label"
+elif [[ -n "$reviewed" ]]; then
   s=""; ((since == 1)) || s="s"
   description="Not reviewed: $since commit$s since the review of ${reviewed:0:7}. Add the review label"
 else
   description="Not reviewed yet: add the review label to run the Claude review"
 fi
 gh api "repos/$repo/statuses/$head" --silent -f state=failure -f context=claude-review \
-  -f description="$description" || { echo "review-current: can't post the status" >&2; exit 1; }
+  -f description="${description:0:140}" || { echo "review-current: can't post the status" >&2; exit 1; }
 echo "review-current: ${head:0:7}: $description"
