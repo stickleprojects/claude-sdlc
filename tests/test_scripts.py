@@ -3943,6 +3943,21 @@ def test_build_amends_plan_is_wired_through_ci_the_rules_and_the_skill():
     assert "| `SDLC_BUILD_AMENDS_PLAN` | `on`, `off` | off |" in settings
 
 
+def test_descopes_skip_a_bots_review_as_well_as_its_comments():
+    # #189: the reviewer's own pull_request_review events started the job for nothing.
+    workflow = (REPO / ".github/workflows/sdlc-descopes.yml").read_text()
+    assert "github.event.comment.user.type == 'User'" in workflow
+    assert (
+        "(github.event_name != 'pull_request_review' || github.event.review.user.type == 'User')"
+        in workflow
+    )
+
+
+def test_runner_docs_warn_about_old_pull_refs_and_secret_scans():
+    doc = (REPO / ".sdlc/docs/self-hosted-runner.md").read_text()
+    assert "refs/remotes/pull/*" in doc and "persists between jobs" in doc
+
+
 def test_the_check_job_keeps_a_projects_reports():
     # #188: spellbound3d's last edit to a synced workflow was its own report upload.
     workflow = (REPO / ".github/workflows/sdlc-ci.yml").read_text()
