@@ -1404,3 +1404,15 @@ def test_review_checks_the_design_text_a_requirement_change_makes_stale() -> Non
     assert "fix the whole requirement it names and the plan text that depends on it" in findings
     po = (REPO / ".sdlc/skills/po-review/SKILL.md").read_text()
     assert "every clause the finding lists is covered at once" in po
+
+
+def test_review_skills_check_for_stale_text_before_every_push() -> None:
+    # #173 (spellbound3d#183): a stale build.md and a PR body the push made untrue each cost
+    # another review round.
+    findings = (REPO / ".sdlc/skills/review-findings/SKILL.md").read_text()
+    before_push = findings.split("## Before you push", 1)[1].split("\n## ", 1)[0]
+    for step in ("make next REF=origin/main", "make clauses CHANGE=<slug>", "pulls/<N> --jq .body"):
+        assert step in before_push, step
+    assert "Fix the whole requirement" in before_push
+    po = (REPO / ".sdlc/skills/po-review/SKILL.md").read_text()
+    assert "follow *Before you push*" in po
