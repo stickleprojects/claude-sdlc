@@ -12,7 +12,8 @@
 # requirement the way the job's own `review` check run could (#101).
 # Every repo requires `claude-review`, so nobody merges on a stale review (#46): without
 # auto-merge, a push isn't reviewed, and the `unreviewed-push` job marks its commit as not
-# reviewed, with what to do. The `review` label then reviews it.
+# reviewed, with what to do. The `review` label then reviews it. A push that only merges the base
+# in, leaving the PR's diff as reviewed (GitHub's Update branch), keeps its review (#182).
 name: Claude review
 
 on:
@@ -328,6 +329,10 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       PR: ${{ github.event.pull_request.number }}
       HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      # A push that only merges the base in keeps the review (#182): it compares the diffs.
+      BASE_REF: ${{ github.event.pull_request.base.ref }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - run: .sdlc/scripts/review-current.sh "$PR" "$HEAD_SHA"

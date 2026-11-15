@@ -40,7 +40,7 @@ The framework itself. Its changes are tracked as GitHub issues (label `pipeline`
   - the workflows.
 
   Framework make targets go in `.sdlc/sdlc.mk`, not in a consumer's Makefile. A consumer changes framework files through overrides in `.sdlc-local/` (`.sdlc/src/sdlc/resolve.py`, `.sdlc/docs/overrides.md`), so anything that reads a skill, template, prompt or `REVIEW.md` must read it through the resolver.
-- **Stack contract:** hooks, CI and evals call only the `make` targets above, never `uv`, `ruff` or `pytest` directly. Language-specific details live only in `Makefile` and `.github/actions/setup-stack/`. Keep it that way.
+- **Stack contract:** hooks, CI and evals call only the `make` targets above, never `uv`, `ruff` or `pytest` directly. Language-specific details live only in `Makefile` and `.github/actions/setup-stack/`. Keep it that way: `test_ci_hooks_scripts_and_evals_call_only_make_targets` in `tests/test_scripts.py` fails on a direct call (#169).
 - **Agent adapter:** CI and evals call AI only through `.sdlc/scripts/agent.sh`. Don't call `claude -p` from workflows directly. (`claude-code-action` in the review and mention workflows is the one exception.)
 - **Artifact chain:** `changes/NNNN-name/{intent,spec,plan}.md`. The required `##` sections are defined in `.sdlc/src/sdlc/artifacts.py` (`CHAIN`) and must match `.sdlc/templates/`. A test enforces this. Change both together.
 - **Optional build plan:** `changes/NNNN-name/build.md`, written by `/sdlc-build` for builds of more than one session. It sits outside `CHAIN`; `check_build` validates it when present (sections from `.sdlc/templates/build.md`, no approval with open questions). Small plans are built without one.
