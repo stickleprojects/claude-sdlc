@@ -12,6 +12,7 @@
 #     committed may be fixed without a plan.
 #   - On the default branch (main), code isn't written at all: switch to a branch first.
 #   - Other branches (chore/…, fix/…, docs/…) aren't tied to a change and aren't checked.
+#   - A change's branch without its number (build/x for changes/0007-x) is blocked (#185).
 # Always editable: changes/, docs/, top-level *.md, and anything outside the repo.
 # SDLC_PLAN_GATE=0 turns the check off deliberately.
 set -euo pipefail
@@ -48,6 +49,15 @@ if [[ -z "$slug" ]]; then
   for name in "$branch" "$(basename "$top")"; do
     candidate="$(grep -oE '[0-9]{4}-[a-z0-9]+(-[a-z0-9]+)*' <<<"$name" | head -1 || true)"
     if [[ -n "$candidate" && -d "changes/$candidate" ]]; then slug="$candidate"; break; fi
+  done
+fi
+
+# build/price-decimals for changes/0007-price-decimals: the number is missing, so nothing above
+# matched and every rule below would silently stop applying (#185).
+if [[ -z "$slug" && "$branch" =~ ^(build|plan|spec|bug)/([a-z0-9]+(-[a-z0-9]+)*)$ ]]; then
+  for dir in changes/[0-9][0-9][0-9][0-9]-"${BASH_REMATCH[2]}"; do
+    [[ -d "$dir" ]] || continue
+    block "the branch $branch leaves out the change number, so it doesn't match ${dir#changes/}. Rename it: git branch -m ${BASH_REMATCH[1]}/${dir#changes/} (SDLC_PLAN_GATE=0 overrides)."
   done
 fi
 

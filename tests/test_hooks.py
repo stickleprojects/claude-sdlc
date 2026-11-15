@@ -461,6 +461,27 @@ def test_plan_gate_lets_a_small_bug_be_fixed_without_a_plan(plan_repo):
     assert plan_gate(plan_repo, "src/x.py").returncode == 2, "only on build/<slug>"
 
 
+@pytest.mark.parametrize("prefix", ["build", "plan", "spec", "bug"])
+def test_plan_gate_blocks_a_change_branch_without_its_number(plan_repo, prefix):
+    """#185: on build/x the gate found no change for changes/0003-x and let code through."""
+    from conftest import git
+
+    git(plan_repo, "switch", "-q", "-c", f"{prefix}/x")
+    blocked = plan_gate(plan_repo, "src/x.py")
+    assert blocked.returncode == 2
+    assert f"the branch {prefix}/x leaves out the change number" in blocked.stderr
+    assert f"git branch -m {prefix}/0003-x" in blocked.stderr
+    assert plan_gate(plan_repo, "changes/0003-x/plan.md").returncode == 0, "artifacts still open"
+
+
+@pytest.mark.parametrize("branch", ["build/y", "build/x-more", "fix/x"])
+def test_plan_gate_leaves_unnumbered_branches_with_no_change_alone(plan_repo, branch):
+    from conftest import git
+
+    git(plan_repo, "switch", "-q", "-c", branch)
+    assert plan_gate(plan_repo, "src/x.py").returncode == 0
+
+
 def test_plan_gate_is_not_a_fast_path_for_a_feature(plan_repo):
     from conftest import git
 
