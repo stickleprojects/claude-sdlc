@@ -1381,7 +1381,7 @@ def test_review_skills_check_for_stale_text_before_every_push() -> None:
     # another review round.
     findings = (REPO / ".sdlc/skills/review-findings/SKILL.md").read_text()
     before_push = findings.split("## Before you push", 1)[1].split("\n## ", 1)[0]
-    for step in ("make next REF=origin/main", "make clauses CHANGE=<slug>", "gh pr view <N>"):
+    for step in ("make next REF=origin/main", "make clauses CHANGE=<slug>", "pulls/<N> --jq .body"):
         assert step in before_push, step
     assert "Fix the whole requirement" in before_push
     po = (REPO / ".sdlc/skills/po-review/SKILL.md").read_text()
