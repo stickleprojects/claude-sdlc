@@ -3941,3 +3941,18 @@ def test_build_amends_plan_is_wired_through_ci_the_rules_and_the_skill():
     assert "Never treat the build.md record as the approval" in build
     settings = (REPO / ".sdlc/docs/settings.md").read_text()
     assert "| `SDLC_BUILD_AMENDS_PLAN` | `on`, `off` | off |" in settings
+
+
+def test_the_check_job_keeps_a_projects_reports():
+    # #188: spellbound3d's last edit to a synced workflow was its own report upload.
+    workflow = (REPO / ".github/workflows/sdlc-ci.yml").read_text()
+    check = workflow[workflow.index("make check") :]
+    step = check[check.index("- uses: actions/upload-artifact@v4") :][:300]
+    assert "if: always()" in step and "path: reports/" in step
+    assert "if-no-files-found: ignore" in step
+
+
+def test_check_after_review_runs_no_action_after_pr_code():
+    # #188: that job has main's privileges, so no upload (or any action) after `make check`.
+    after = (REPO / ".github/workflows/sdlc-check-after-review.yml").read_text()
+    assert "upload-artifact" not in after[after.index("      - run: make check") :]
