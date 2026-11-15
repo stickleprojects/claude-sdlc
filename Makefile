@@ -51,16 +51,20 @@ CHECK_BASE ?= origin/main
 
 check: lint check-test validate exec-bits
 
-# The test suite, unless the branch changes only documentation (#140), and without the slow
-# scenario tests (tests/test_scenario.py, most of the suite's time). FULL=1 runs everything:
-# CI sets it on pushes to main and the release always does, so main is fully tested.
+# The test suite, unless the branch changes only documentation (#140). The slow scenario tests
+# (tests/test_scenario.py, most of the suite's time) run only when the branch changes something
+# they test (scripts/scenario-needed.sh). FULL=1 runs everything: CI sets it on pushes to main
+# and the release always does, so main and every release are fully tested.
 check-test:
 	@if [ -n "$(FULL)" ]; then \
 		$(MAKE) --no-print-directory test; \
 	elif why="$$(bash scripts/docs-only.sh $(CHECK_BASE))"; then \
 		echo "test: skipped, $$why (FULL=1 runs it)"; \
+	elif why="$$(bash scripts/scenario-needed.sh $(CHECK_BASE))"; then \
+		echo "test: everything, scenario tests included: $$why"; \
+		$(MAKE) --no-print-directory test; \
 	else \
-		echo "test: without the scenario tests (FULL=1 runs them)"; \
+		echo "test: without the scenario tests, $$why (FULL=1 runs them)"; \
 		$(MAKE) --no-print-directory test TEST_ARGS='-m "not scenario"'; \
 	fi
 

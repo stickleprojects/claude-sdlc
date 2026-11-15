@@ -91,7 +91,7 @@ def test_when_unsure_everything_runs(docs_repo):
 @pytest.fixture
 def make_repo(docs_repo, tmp_path):
     """The framework's Makefile in a throwaway repo, with a `uv` that only says it ran."""
-    for path in ("Makefile", ".sdlc/sdlc.mk", "scripts/docs-only.sh"):
+    for path in ("Makefile", ".sdlc/sdlc.mk", "scripts/docs-only.sh", "scripts/scenario-needed.sh"):
         target = docs_repo / path
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(REPO / path, target)
@@ -131,12 +131,25 @@ def test_make_check_test_runs_the_suite_for_code_or_full(make_repo):
     full = run(["make", "check-test", "CHECK_BASE=main", "FULL=1"], cwd=repo, env=env)
     assert "uv run pytest -q" in full.stdout and "skipped" not in full.stdout
     assert "not scenario" not in full.stdout
-    commit(repo, "feat: change", {"src.py": "x = 1\n"})
-    code = run(["make", "check-test", "CHECK_BASE=main"], cwd=repo, env=env)
-    assert "uv run pytest -q -m not scenario" in code.stdout and "skipped" not in code.stdout
-    assert "test: without the scenario tests (FULL=1 runs them)" in code.stdout
+    commit(repo, "test: change", {"tests/test_x.py": "x = 1\n"})
+    tests_only = run(["make", "check-test", "CHECK_BASE=main"], cwd=repo, env=env)
+    assert "uv run pytest -q -m not scenario" in tests_only.stdout
+    assert (
+        "test: without the scenario tests, only documentation and other tests changed since "
+        "main (FULL=1 runs them)" in tests_only.stdout
+    )
     full = run(["make", "check-test", "CHECK_BASE=main", "FULL=1"], cwd=repo, env=env)
     assert "uv run pytest -q" in full.stdout and "not scenario" not in full.stdout
+
+
+@pytest.mark.parametrize("path", [".sdlc/scripts/x.sh", "src.py", "tests/test_scenario.py"])
+def test_make_check_test_runs_the_scenario_tests_for_what_they_test(make_repo, path):
+    repo, env = make_repo
+    commit(repo, "feat: change", {path: "x = 1\n"})
+    code = run(["make", "check-test", "CHECK_BASE=main"], cwd=repo, env=env)
+    assert code.returncode == 0, code.stderr
+    assert f"test: everything, scenario tests included: {path} changed" in code.stdout
+    assert code.stdout.strip().splitlines()[-1] == "uv run pytest -q"
 
 
 def test_make_test_runs_everything(make_repo):
