@@ -155,6 +155,9 @@ jobs:
             project's overrides applied). Check the diff against the spec.md and plan.md
             of the change it implements (under changes/).
 
+            This repo's SDLC_BUILD_AMENDS_PLAN variable is '${{ vars.SDLC_BUILD_AMENDS_PLAN }}'
+            (`on` lets a build PR amend its plan: the rules' "A build PR that amends its plan").
+
             If the file .clause-check.json exists in the workspace, it is the clause check's
             output for the specs and plans this PR changes: start clause coverage from it, as
             the rules' "Where the clauses come from" says. If it doesn't exist, the PR changes
@@ -217,6 +220,9 @@ jobs:
             Follow the review rules in .review-rules.md exactly (.sdlc/REVIEW.md with this
             project's overrides applied). Check the diff against the spec.md and plan.md
             of the change it implements (under changes/).
+
+            This repo's SDLC_BUILD_AMENDS_PLAN variable is '${{ vars.SDLC_BUILD_AMENDS_PLAN }}'
+            (`on` lets a build PR amend its plan: the rules' "A build PR that amends its plan").
 
             If the file .clause-check.json exists in the workspace, it is the clause check's
             output for the specs and plans this PR changes: start clause coverage from it, as

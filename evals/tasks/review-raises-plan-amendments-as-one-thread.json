@@ -1,0 +1,5 @@
+{
+  "name": "with SDLC_BUILD_AMENDS_PLAN on, the review raises a build PR's recorded plan amendments as one thread (#174)",
+  "prompt": "Review a build PR as the rules in .sdlc/REVIEW.md say, for the change folder evals/fixtures/plan-amendments/0029-castle. This repo's SDLC_BUILD_AMENDS_PLAN variable is 'on'. The PR's body is evals/fixtures/plan-amendments/pr-body.md and its diff is evals/fixtures/plan-amendments/pr.diff; the folder's files are as they are after the PR. Review only what the rules' Descopes pass says about plan amendments and descopes. Don't use GitHub, git or the network. Write each finding to findings.md in the repo root, one finding per `## ` heading, each body starting with its severity as the rules' Posting findings section says, with the first line of a thread's comment exactly as the rules give it. Don't edit any other file.",
+  "check": "bash \"$EVAL_ROOT/evals/checks/plan-amendments.sh\""
+}

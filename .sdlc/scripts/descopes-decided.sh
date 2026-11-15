@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Has a person decided every "Descope: needs approval" thread on a PR? (#132)
+# Has a person decided every "Descope: needs approval" thread on a PR? (#132) And every
+# "Plan changes: needs approval" thread, where a build PR amends its plan (#174): it's read the
+# same way, so a person's reply approves the amendments, never a line in build.md.
 #
 # Usage: .sdlc/scripts/descopes-decided.sh <pr-number>
 #
@@ -47,8 +49,9 @@ threads="$(gh api graphql --paginate -f query="$query" -F owner="${repo%%/*}" \
     .data.repository.pullRequest.reviewThreads.nodes[] | .comments.nodes
     | select(length > 0)
     | select((.[0].author.login // \"\" | sub(\"\\\\[bot\\\\]\$\"; \"\")) == \"$login\")
-    | select(.[0].body | test(\"Descope: needs approval\"))
-    | {first: (.[0].body | split(\"\\n\") | map(select(test(\"\\\\S\"))) | .[0] // \"\"),
+    | select(.[0].body | test(\"(Descope|Plan changes): needs approval\"))
+    | {kind: (if (.[0].body | test(\"Plan changes: needs approval\")) then \"plan change\" else \"descope\" end),
+       first: (.[0].body | split(\"\\n\") | map(select(test(\"\\\\S\"))) | .[0] // \"\"),
        people: [.[1:][] | select(.author.__typename == \"User\")
                  | {who: .author.login, at: .createdAt,
                     approved: (.body | test(\"Approved:\\\\s*\\\\S\"))}]}
@@ -59,6 +62,7 @@ short() {  # the finding's first line, without its markdown lead-in, for a statu
   local text
   text="$(sed -E 's/^\s*\*\*Important[^*]*\*\*:?\s*//; s/\*\*//g' <<<"$1")"
   text="${text#Descope: needs approval}"
+  text="${text#Plan changes: needs approval}"
   text="$(sed -E 's/^[.:]?\s*//' <<<"$text")"
   printf '%s' "${text:0:40}"
 }
@@ -69,20 +73,25 @@ while IFS= read -r thread; do
   [[ -n "$thread" ]] || continue
   n=$((n + 1))
   first="$(jq -r .first <<<"$thread")"
+  kind="$(jq -r .kind <<<"$thread")"
   approval="$(jq -r '[.people[] | select(.approved)] | last | select(.) | "\(.who) (\(.at[:10]))"' <<<"$thread")"
   if [[ -n "$approval" ]]; then
-    decided+=("approved by @$approval")
+    if [[ "$kind" == descope ]]; then
+      decided+=("approved by @$approval")
+    else
+      decided+=("plan changes approved by @$approval")
+    fi
     continue
   fi
   reply="$(jq -r '.people | last | select(.) | "\(.who) \(.at)"' <<<"$thread")"
   if [[ -z "$reply" ]]; then
-    echo "A descope waits for a person's decision: $(short "$first"). Reply Approved: <name>, <date>, or send it back"
+    echo "A $kind waits for a person's decision: $(short "$first"). Reply Approved: <name>, <date>, or send it back"
     exit 1
   fi
   who="${reply% *}"
   at="${reply#* }"
   if [[ -z "$reviewed" || ! "$reviewed" > "$at" ]]; then
-    echo "@$who sent a descope back ($(short "$first")): once it's built, add the review label to check it"
+    echo "@$who sent a $kind back ($(short "$first")): once it's built, add the review label to check it"
     exit 1
   fi
   decided+=("sent back by @$who, re-reviewed")

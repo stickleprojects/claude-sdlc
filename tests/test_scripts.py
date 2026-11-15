@@ -3820,3 +3820,124 @@ def test_the_unreviewed_push_job_gives_the_script_the_base_and_history():
     job = workflow[workflow.index("  unreviewed-push:") :]
     assert "BASE_REF: ${{ github.event.pull_request.base.ref }}" in job
     assert "fetch-depth: 0" in job
+
+
+# --- a build PR that amends its plan (#174) ---------------------------------------------------
+# spellbound3d 0029: two decisions made mid-build needed a separate spec PR (#183) and five extra
+# approvals. With SDLC_BUILD_AMENDS_PLAN=on the build PR carries them, and one reply from a
+# person approves them all.
+
+AMENDS = ["changes/0029-w/plan.md", "changes/0029-w/spec.md", "changes/0029-w/build.md", "src/w.py"]
+LISTED = (
+    "Builds the castle.\n\n## Plan changes\n\n- Interior brick runs dropped (Kieron, 14 Nov).\n"
+)
+
+
+def title_check(title, files, tmp_path, amends="on", body=LISTED):
+    env = {"SDLC_BUILD_AMENDS_PLAN": amends}
+    if body is not None:
+        (tmp_path / "body.md").write_text(body)
+        env["SDLC_PR_BODY_FILE"] = str(tmp_path / "body.md")
+    return run(
+        ["bash", ".sdlc/scripts/check-pr-title.sh", title],
+        input="".join(f"{f}\n" for f in files),
+        env=env,
+    )
+
+
+@pytest.mark.parametrize(
+    ("title", "files", "kwargs", "ok"),
+    [
+        ("feat(0029-w): the whole castle", AMENDS, {}, True),
+        ("fix(0029-w): the warp", AMENDS, {}, True),
+        ("feat: no scope is fine", AMENDS, {}, True),
+        ("feat(0029-w): plan only", ["changes/0029-w/plan.md", "src/w.py"], {}, True),
+        ("feat(0029-w): setting off", AMENDS, {"amends": ""}, False),
+        ("feat(0029-w): setting off", AMENDS, {"amends": "off"}, False),
+        ("feat(0029-w): no section", AMENDS, {"body": "Builds the castle."}, False),
+        ("feat(0029-w): no body", AMENDS, {"body": None}, False),
+        ("feat(0029-w): no code", ["changes/0029-w/plan.md", "changes/0029-w/spec.md"], {}, False),
+        ("feat(0029-w): an intent too", [*AMENDS, "changes/0029-w/intent.md"], {}, False),
+        ("feat(0029-w): two changes", [*AMENDS, "changes/0030-v/plan.md"], {}, False),
+        ("docs(0029-w): wrong type", AMENDS, {}, False),
+        ("plan(0029-w): still a plan PR", AMENDS, {}, True),
+    ],
+)
+def test_pr_title_lets_a_build_pr_amend_its_plan_when_the_repo_opts_in(
+    title, files, kwargs, ok, tmp_path
+):
+    result = title_check(title, files, tmp_path, **kwargs)
+    assert (result.returncode == 0) == ok, result.stdout
+
+
+def test_pr_title_asks_for_the_plan_changes_section(tmp_path):
+    result = title_check("feat(0029-w): build", AMENDS, tmp_path, body="Builds the castle.")
+    assert result.returncode == 1
+    assert "under a '## Plan changes' heading in the PR body" in result.stdout
+
+
+def test_pr_title_keeps_the_fast_path_with_amendments_on(tmp_path):
+    result = title_check("fix(0010-z): export no longer hangs", FAST, tmp_path)
+    assert result.returncode == 0 and "the bug fast path" in result.stdout
+
+
+PLAN_CHANGES = (
+    "**Important (engineer decides; product owner for spec clauses):** Plan changes: needs"
+    " approval. Two amendments, both recorded in build.md."
+)
+
+
+def test_plan_changes_wait_for_a_persons_reply(descopes):
+    bot_line = note("stickle-claude", "Approved: Kieron, 2026-11-14", "2026-11-14T11:00:00Z", "Bot")
+    for thread in (
+        descope_thread(first=PLAN_CHANGES),
+        descope_thread(bot_line, first=PLAN_CHANGES),
+    ):
+        result = descopes([thread])
+        assert result.returncode == 1
+        assert result.stdout.startswith("A plan change waits for a person's decision: Two amend")
+
+
+def test_one_reply_approves_every_plan_change(descopes):
+    approved = note("kieron", "Approved: Kieron, 2026-11-15", "2026-11-15T11:00:00Z")
+    result = descopes([descope_thread(approved, first=PLAN_CHANGES)])
+    assert result.returncode == 0
+    assert (
+        result.stdout.strip() == "descopes decided: plan changes approved by @kieron (2026-11-15)"
+    )
+
+
+def test_plan_changes_sent_back_wait_for_a_re_review(descopes):
+    back = note("kieron", "No: keep the brick runs.", "2026-11-15T11:00:00Z")
+    result = descopes([descope_thread(back, first=PLAN_CHANGES)], reviewed="2026-11-15T10:30:00Z")
+    assert result.returncode == 1 and "@kieron sent a plan change back" in result.stdout
+
+
+def test_descopes_status_clears_a_plan_change_once_approved(descopes):
+    approved = note("kieron", "Approved: Kieron, 2026-11-15", "2026-11-15T11:00:00Z")
+    status = ("failure", "A plan change waits for a person's decision: x")
+    result = descopes(
+        [descope_thread(approved, first=PLAN_CHANGES)], status=status, script="status"
+    )
+    assert "state=success" in result.posted
+    assert "plan changes approved by @kieron" in result.posted
+    waiting = descopes([descope_thread(first=PLAN_CHANGES)], status=status, script="status")
+    assert "state=failure" in waiting.posted
+
+
+def test_build_amends_plan_is_wired_through_ci_the_rules_and_the_skill():
+    title = (REPO / ".github/workflows/sdlc-pr-title.yml").read_text()
+    assert "SDLC_BUILD_AMENDS_PLAN: ${{ vars.SDLC_BUILD_AMENDS_PLAN }}" in title
+    assert 'SDLC_PR_BODY_FILE="$RUNNER_TEMP/body.md"' in title
+    review = (REPO / ".github/workflows/sdlc-claude-review.yml").read_text()
+    assert (
+        review.count("SDLC_BUILD_AMENDS_PLAN variable is '${{ vars.SDLC_BUILD_AMENDS_PLAN }}'") == 2
+    )
+    rules = (REPO / ".sdlc/REVIEW.md").read_text()
+    assert "**A build PR that amends its plan (#174):**" in rules
+    assert "Plan changes: needs approval." in rules and "is never the approval" in rules
+    build = (REPO / ".sdlc/skills/build/SKILL.md").read_text()
+    assert "gh variable get SDLC_BUILD_AMENDS_PLAN" in build
+    assert "Never treat the build.md record as the approval" in build
+    settings = (REPO / ".sdlc/docs/settings.md").read_text()
+    assert "| `SDLC_BUILD_AMENDS_PLAN` | `on`, `off` | off |" in settings
