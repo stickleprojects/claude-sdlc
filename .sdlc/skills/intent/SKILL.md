@@ -11,7 +11,7 @@ file with an override in .sdlc-local/ (see .sdlc/docs/overrides.md), never by ed
 2. Pick a short kebab-case name and run `make new-change NAME=<name>`. It prints the new `intent.md` path.
 3. Fill in every section of that file from the conversation. Put anything unresolved under **Open questions** rather than guessing.
 4. **If the repo has a roadmap** (`docs/roadmap.md`), place the change on it. Read the roadmap and agree with the originator which milestone this delivers: usually the first one that isn't done and whose scope covers it. Then, in the same PR:
-   - add `Milestone: M<n>` to the intent, under `Product owner:`;
+   - fill in the intent's `Milestone:` line, under `Product owner:` (with a roadmap, `make new-change` writes it as `Milestone: M<n>`; add it if it's missing);
    - add the change's row to that milestone's `### Changes` table as `| [<slug>](../changes/<slug>/) | <summary> | planned |`;
    - if the change doesn't fit the milestone's agreed scope, or its scope isn't agreed yet (it's `draft`), or it moves a milestone's goal, exit criteria or order, add an adjustment record from `.sdlc/templates/roadmap-adjustment.md` at `docs/roadmap/adjustments/NNNN-<slug>.md` (the next free number, `Status: accepted`: merging the PR is the acceptance), an `Adjustment: NNNN-<slug>` line in the intent, and a citation of the record in the milestone's scope text. Never edit an old record away: a new one supersedes it.
 
