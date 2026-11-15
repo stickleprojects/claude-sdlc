@@ -28,3 +28,6 @@ select = ["E", "F", "I", "B", "UP"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "scenario: installs the framework into a consumer repo (slow); make check runs these only with FULL=1",
+]

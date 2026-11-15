@@ -14,6 +14,10 @@ import pytest
 from conftest import REPO, commit, copy_working_tree, git, hook, init_repo, run
 from sdlc.artifacts import BUG_CHAIN, CHAIN
 
+# Most of the suite's time. `make check` runs these only with FULL=1, which CI sets on pushes
+# to main and the release always sets; `make test` always runs them.
+pytestmark = pytest.mark.scenario
+
 FIXTURE = REPO / "tests" / "fixtures" / "consumer"
 
 

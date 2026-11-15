@@ -104,7 +104,14 @@ def make_repo(docs_repo, tmp_path):
     (fake / "uv").chmod(0o755)
     # An outer `make check FULL=1` (CI on main) hands FULL=1 to every make below it through
     # MAKEFLAGS, where it beats the environment, so the inner make starts with none.
-    env = {"PATH": f"{fake}:{os.environ['PATH']}", "FULL": "", "MAKEFLAGS": "", "MAKELEVEL": ""}
+    # TEST_ARGS likewise: `make check` without FULL runs these tests with it set.
+    env = {
+        "PATH": f"{fake}:{os.environ['PATH']}",
+        "FULL": "",
+        "TEST_ARGS": "",
+        "MAKEFLAGS": "",
+        "MAKELEVEL": "",
+    }
     return docs_repo, env
 
 
@@ -123,9 +130,26 @@ def test_make_check_test_runs_the_suite_for_code_or_full(make_repo):
     commit(repo, "docs: change", {"readme.md": "changed\n"})
     full = run(["make", "check-test", "CHECK_BASE=main", "FULL=1"], cwd=repo, env=env)
     assert "uv run pytest -q" in full.stdout and "skipped" not in full.stdout
+    assert "not scenario" not in full.stdout
     commit(repo, "feat: change", {"src.py": "x = 1\n"})
     code = run(["make", "check-test", "CHECK_BASE=main"], cwd=repo, env=env)
-    assert "uv run pytest -q" in code.stdout and "skipped" not in code.stdout
+    assert "uv run pytest -q -m not scenario" in code.stdout and "skipped" not in code.stdout
+    assert "test: without the scenario tests (FULL=1 runs them)" in code.stdout
+    full = run(["make", "check-test", "CHECK_BASE=main", "FULL=1"], cwd=repo, env=env)
+    assert "uv run pytest -q" in full.stdout and "not scenario" not in full.stdout
+
+
+def test_make_test_runs_everything(make_repo):
+    repo, env = make_repo
+    result = run(["make", "test"], cwd=repo, env=env)
+    assert result.stdout.strip().splitlines()[-1] == "uv run pytest -q"
+
+
+def test_the_scenario_tests_are_marked_and_main_and_the_release_run_them():
+    assert "pytestmark = pytest.mark.scenario" in (REPO / "tests/test_scenario.py").read_text()
+    assert '"scenario:' in (REPO / "pyproject.toml").read_text()
+    release = (REPO / ".github/workflows/release.yml").read_text()
+    assert "- run: make check FULL=1" in release
 
 
 def test_check_runs_the_tests_through_check_test_and_main_runs_them_all():
