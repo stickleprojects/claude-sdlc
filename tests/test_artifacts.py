@@ -1376,6 +1376,36 @@ def test_optional_feature_titles_are_unique_across_releases() -> None:
     assert titles and len(titles) == len(set(titles)), titles
 
 
+def test_scope_rules_script_a_check_before_handing_it_to_a_person() -> None:
+    # #171 (spellbound3d, 14 Nov): five things handed to the person to try, several of which a
+    # test could check and none of which had one.
+    scope = (REPO / ".sdlc/skills/scope.md").read_text()
+    human = scope.split("## Human checks", 1)[1].split("\n## ", 1)[0]
+    assert "in the plan or not" in human
+    assert "write that test first and run it" in human
+    assert "which test is still owed" in human and "Engineer decides: yes" in human
+
+
+def test_build_all_orchestrator_opens_the_pr_itself() -> None:
+    # #170 (spellbound3d 0029, PR #182): the orchestrator holds the run's decisions, which the PR
+    # body records; a worker sees only its own unit.
+    build = (REPO / ".sdlc/skills/build/SKILL.md").read_text()
+    assert "No FAIL: open the PR from this session" in build
+    assert "No FAIL: start a worker with the per-criterion results to open the PR." not in build
+    assert "the orchestrator usually opens the PR itself" in build
+
+
+def test_review_checks_the_design_text_a_requirement_change_makes_stale() -> None:
+    # #172 (spellbound3d#183): round 1 found a stale plan Approach after a spec amendment.
+    review = (REPO / ".sdlc/REVIEW.md").read_text()
+    assert "The design text that depends on it, in the same pass (#172)" in review
+    assert "Approach, Steps, Verification rows" in review
+    findings = (REPO / ".sdlc/skills/review-findings/SKILL.md").read_text()
+    assert "fix the whole requirement it names and the plan text that depends on it" in findings
+    po = (REPO / ".sdlc/skills/po-review/SKILL.md").read_text()
+    assert "every clause the finding lists is covered at once" in po
+
+
 def test_review_skills_check_for_stale_text_before_every_push() -> None:
     # #173 (spellbound3d#183): a stale build.md and a PR body the push made untrue each cost
     # another review round.
