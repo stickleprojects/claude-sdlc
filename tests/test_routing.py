@@ -92,7 +92,7 @@ def command(name: str) -> str:
 
 
 def _front(name: str) -> str:
-    return (REPO / ".claude/skills" / command(name) / "SKILL.md").read_text().split("---")[1]
+    return (REPO / ".sdlc/claude/skills" / command(name) / "SKILL.md").read_text().split("---")[1]
 
 
 @pytest.mark.parametrize("name", INTERNAL)
@@ -111,7 +111,7 @@ def test_routing_lists_exactly_the_entry_and_internal_skills() -> None:
     routing = (REPO / ".sdlc/skills/routing.md").read_text()
     table = re.findall(r"^\| `/([a-z-]+)", routing, re.MULTILINE)
     assert table == [command(n) for n in ENTRY]
-    skills = {p.parent.name for p in (REPO / ".claude/skills").glob("*/SKILL.md")}
+    skills = {p.parent.name for p in (REPO / ".sdlc/claude/skills").glob("*/SKILL.md")}
     expected = {command(n) for n in ENTRY + INTERNAL}
     assert skills == expected, "every skill is an entry point or internal"
 
@@ -123,13 +123,13 @@ def test_each_skill_is_named_as_a_framework_command(name: str) -> None:
     a project's overrides in .sdlc-local/ find it."""
     front = _front(name)
     assert f"\nname: {command(name)}\n" in front
-    stub = (REPO / ".claude/skills" / command(name) / "SKILL.md").read_text()
+    stub = (REPO / ".sdlc/claude/skills" / command(name) / "SKILL.md").read_text()
     assert f".sdlc/scripts/resolve.sh skills/{name}/SKILL.md" in stub
 
 
 def test_routing_names_skills_that_exist(tmp_path: Path) -> None:
     """make next's skill column is what /sdlc-next invokes, so each name must be a real skill."""
-    skills = {p.parent.name for p in (REPO / ".claude/skills").glob("*/SKILL.md")}
+    skills = {p.parent.name for p in (REPO / ".sdlc/claude/skills").glob("*/SKILL.md")}
     named = set(re.findall(r'"(sdlc-[a-z-]+)"', (REPO / ".sdlc/src/sdlc/routing.py").read_text()))
     assert named and named <= skills, named - skills
 
