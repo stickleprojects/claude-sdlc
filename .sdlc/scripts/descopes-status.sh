@@ -5,7 +5,7 @@
 #
 # Run by .github/workflows/sdlc-descopes.yml when a decision can change (a reply in a thread,
 # a review of the PR). It moves the status only between the review's own "posted" (success)
-# and a descope failure this check set, whose description mentions a descope:
+# and a failure this check set, whose description mentions a descope or a plan change (#174):
 #   - success, and a descope isn't decided  -> failure, saying which and what to do;
 #   - descope failure, and now all decided  -> success, naming who approved each one;
 #   - descope failure, still not decided    -> failure, with the current reason.
@@ -28,7 +28,7 @@ current="$(gh api "repos/$repo/commits/$sha/statuses" \
 state="${current%%$'\t'*}"
 description="${current#*$'\t'}"
 ours=""
-[[ "$state" == failure && "$description" == *descope* ]] && ours=1
+[[ "$state" == failure && ( "$description" == *descope* || "$description" == *"plan change"* ) ]] && ours=1
 if [[ "$state" != success && -z "$ours" ]]; then
   echo "descopes-status: claude-review is '${state:-unset}' on $sha; the review job owns it, leaving it"
   exit 0

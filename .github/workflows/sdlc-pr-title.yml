@@ -27,10 +27,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TITLE: ${{ github.event.pull_request.title }}
           PR: ${{ github.event.pull_request.number }}
+          BODY: ${{ github.event.pull_request.body }}
+          # A build PR may amend its plan when the repo opts in (#174).
+          SDLC_BUILD_AMENDS_PLAN: ${{ vars.SDLC_BUILD_AMENDS_PLAN }}
         run: |
           gh api "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --paginate --jq '.[].filename' \
             > "$RUNNER_TEMP/files.txt"
-          .sdlc/scripts/check-pr-title.sh "$TITLE" < "$RUNNER_TEMP/files.txt"
+          printf '%s\n' "$BODY" > "$RUNNER_TEMP/body.md"
+          SDLC_PR_BODY_FILE="$RUNNER_TEMP/body.md" \
+            .sdlc/scripts/check-pr-title.sh "$TITLE" < "$RUNNER_TEMP/files.txt"
       # `Bug path: full` is read from main's CLAUDE.md, not the PR's, so a PR can't turn the
       # setting off for itself (#160).
       - name: No code before the plan

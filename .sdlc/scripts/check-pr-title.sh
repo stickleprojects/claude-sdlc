@@ -16,6 +16,13 @@
 # only when every gate artifact it changes is that change's bug.md, spec.md or plan.md, bug.md
 # is one of them, and the PR also changes code (anything but changes/, docs/ and top-level *.md,
 # as in check-plan-first.sh).
+#
+# A build PR that amends its plan (#174) is the other exception, only when the repo variable
+# SDLC_BUILD_AMENDS_PLAN is `on`: a feat or fix PR may carry one change's plan.md and spec.md with
+# its code when its body lists them under a `## Plan changes` heading. A person still approves
+# them, in the review's "Plan changes: needs approval" thread (descopes-decided.sh).
+#
+# Env: SDLC_BUILD_AMENDS_PLAN (`on` or anything else), SDLC_PR_BODY_FILE (the PR's body).
 set -uo pipefail
 
 title="${1:-}"
@@ -44,6 +51,31 @@ fast_path_slug() {
   echo "$slug"
 }
 
+# A build PR amending its plan: one change's spec.md and plan.md, plus code. Prints the slug.
+amended_slug() {
+  local slug
+  [[ "${SDLC_BUILD_AMENDS_PLAN:-}" == on ]] || return 1
+  slug="$(sed -nE 's#^changes/([^/]+)/(spec|plan)\.md$#\1#p' <<<"$gate_files" | sort -u)"
+  [[ -n "$slug" && "$slug" != *$'\n'* ]] || return 1
+  grep -qvE "^changes/$slug/(spec|plan)\.md$" <<<"$gate_files" && return 1
+  grep -vE '^(changes/|docs/)' <<<"$files" | grep -qvE '^[^/]+\.md$' || return 1
+  echo "$slug"
+}
+plan_changes_listed() {
+  [[ -n "${SDLC_PR_BODY_FILE:-}" && -f "$SDLC_PR_BODY_FILE" ]] \
+    && grep -qiE '^##+ *Plan changes' "$SDLC_PR_BODY_FILE"
+}
+
+if [[ -n "$gates" && ( "$type" == feat || "$type" == fix ) ]] && slug="$(amended_slug)"; then
+  if plan_changes_listed; then
+    echo "ok: $title (a build PR amending $slug's plan, SDLC_BUILD_AMENDS_PLAN)"
+    exit 0
+  fi
+  echo "::error::This PR amends $slug's plan or spec with its code. List each amendment under a" \
+    "'## Plan changes' heading in the PR body, or move them to a plan or spec PR."
+  echo "Got: $title"
+  exit 1
+fi
 if [[ -n "$gates" && "$type" == fix ]] && slug="$(fast_path_slug)" && [[ "$scope" == "$slug" ]]; then
   echo "ok: $title (the bug fast path for $slug)"
   exit 0
