@@ -1814,7 +1814,8 @@ case "$path" in
     # Each call takes the next head from $D/heads (the push shows up after a while).
     head="$(head -n 1 "$D/heads")"
     (($(wc -l < "$D/heads") > 1)) && sed -i 1d "$D/heads"
-    echo "{\"head\": {\"sha\": \"$head\"}}" > "$D/pull.json"; serve pull.json ;;
+    ref="$(cat "$D/ref")"
+    echo "{\"head\": {\"sha\": \"$head\", \"ref\": \"$ref\"}}" > "$D/pull.json"; serve pull.json ;;
   repos/o/r/issues/7/labels)
     if ((post)); then [[ ! -e "$D/label-fails" ]] || exit 1; else serve labels.json; fi ;;
   repos/o/r/actions/variables/SDLC_AUTO_MERGE)
@@ -1846,9 +1847,18 @@ def request_review(tmp_path):
     state.mkdir()
 
     def go(
-        variable="", status=200, heads=(PUSHED,), runs=(), labels=(), label_fails=False, sha=PUSHED
+        variable="",
+        status=200,
+        heads=(PUSHED,),
+        runs=(),
+        labels=(),
+        label_fails=False,
+        sha=PUSHED,
+        ref="feat/x",
+        cwd=REPO,
     ):
         (state / "heads").write_text("\n".join(heads) + "\n")
+        (state / "ref").write_text(ref)
         (state / "var-status").write_text(str(status))
         (state / "var.json").write_text(json.dumps({"value": variable}))
         (state / "runs.json").write_text(json.dumps({"workflow_runs": list(runs)}))
@@ -1865,7 +1875,9 @@ def request_review(tmp_path):
             "REQUEST_REVIEW_POLL": "1",
         }
         args = [] if sha is None else [sha]
-        result = run(["bash", str(REPO / ".sdlc/scripts/request-review.sh"), "7", *args], env=env)
+        result = run(
+            ["bash", str(REPO / ".sdlc/scripts/request-review.sh"), "7", *args], cwd=cwd, env=env
+        )
         calls = (state / "calls").read_text()
         labelled = any(c.startswith("api repos/o/r/issues/7/labels -f") for c in calls.splitlines())
         return result, labelled, calls
@@ -1952,6 +1964,53 @@ def test_request_review_leaves_a_label_that_is_already_on(request_review):
     assert not labelled and "already on" in result.stdout
 
 
+@pytest.fixture
+def other_checkout(tmp_path):
+    """A checkout on a branch with one commit of its own, which isn't the PR's head."""
+    repo = tmp_path / "checkout"
+    repo.mkdir()
+    for cmd in (
+        ["git", "init", "-q", "-b", "build/0029-x"],
+        [
+            "git",
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "local",
+        ],
+    ):
+        run(cmd, cwd=repo, check=True)
+    local = run(["git", "rev-parse", "HEAD"], cwd=repo, check=True).stdout.strip()
+    return repo, local
+
+
+def test_request_review_from_another_checkout_names_the_prs_head(request_review, other_checkout):
+    # spellbound3d#183: run from #182's checkout, it named a981ed0 instead of #183's 751a1c7.
+    repo, local = other_checkout
+    result, labelled, calls = request_review(sha=None, ref="spec/0029-amend", cwd=repo)
+    # Labelled at all means it waited for abc1234: with the local commit it would never match.
+    assert result.returncode == 0 and labelled, result.stdout + result.stderr
+    result, labelled, calls = request_review(
+        variable="merge", runs=[review_run()], sha=None, ref="spec/0029-amend", cwd=repo
+    )
+    assert f"actions/runs?head_sha={PUSHED}&" in calls and local not in calls
+
+
+def test_request_review_on_the_prs_branch_names_the_local_push(request_review, other_checkout):
+    # The skills' case: this checkout just pushed, and GitHub may still show the old head (#105).
+    repo, local = other_checkout
+    result, labelled, calls = request_review(
+        variable="merge", runs=[review_run()], sha=None, ref="build/0029-x", cwd=repo
+    )
+    assert result.returncode == 0 and not labelled, result.stdout + result.stderr
+    assert f"actions/runs?head_sha={local}&" in calls and local[:7] in result.stdout
+
+
 def test_request_review_says_when_it_couldnt_add_the_label(request_review):
     result, labelled, _ = request_review(label_fails=True)
     assert result.returncode == 0
@@ -1975,10 +2034,12 @@ def test_skills_ask_for_a_review_through_request_review():
     assert synced(".sdlc/scripts/request-review.sh")
 
 
-def test_request_review_expands_the_checkouts_head_for_the_runs_api(request_review):
-    full = git(REPO, "rev-parse", "HEAD")
-    for sha in (None, full[:7]):  # no sha means the checkout's HEAD; a short one is expanded
-        _, _, calls = request_review(variable="merge", runs=[review_run()], sha=sha)
+def test_request_review_expands_the_checkouts_head_for_the_runs_api(request_review, other_checkout):
+    repo, full = other_checkout
+    for sha in (None, full[:7]):  # no sha on the PR's branch means HEAD; a short one is expanded
+        _, _, calls = request_review(
+            variable="merge", runs=[review_run()], sha=sha, ref="build/0029-x", cwd=repo
+        )
         assert f"actions/runs?head_sha={full}&" in calls
 
 
