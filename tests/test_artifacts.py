@@ -1374,3 +1374,15 @@ def test_optional_feature_titles_are_unique_across_releases() -> None:
         for m in re.findall(r"^## Optional: (.+)$", notes.read_text(), re.MULTILINE)
     ]
     assert titles and len(titles) == len(set(titles)), titles
+
+
+def test_review_skills_check_for_stale_text_before_every_push() -> None:
+    # #173 (spellbound3d#183): a stale build.md and a PR body the push made untrue each cost
+    # another review round.
+    findings = (REPO / ".sdlc/skills/review-findings/SKILL.md").read_text()
+    before_push = findings.split("## Before you push", 1)[1].split("\n## ", 1)[0]
+    for step in ("make next REF=origin/main", "make clauses CHANGE=<slug>", "gh pr view <N>"):
+        assert step in before_push, step
+    assert "Fix the whole requirement" in before_push
+    po = (REPO / ".sdlc/skills/po-review/SKILL.md").read_text()
+    assert "follow *Before you push*" in po

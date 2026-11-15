@@ -1,0 +1,8 @@
+{
+  "name": "before pushing a review fix, the PR body is updated where the push makes it false (#173)",
+  "setup": "bash \"$EVAL_ROOT/evals/consumer.sh\" stale-pr-body && git checkout -q -b fix/two-digit-cents",
+  "prompt": "You're in a project that uses the claude-sdlc pipeline, on branch fix/two-digit-cents, handling the code review on its PR (number 12). The review raised one finding: \"Important: format_price has no test for zero cents. Add one: 0 cents shows as $0.00.\" Sam, the engineer, has decided: fix as recommended. Follow the review-findings skill (read it with `.sdlc/scripts/resolve.sh skills/review-findings/SKILL.md`) from section 3, step 1, up to the push. This repo has no GitHub remote: wherever the skill reads or edits the PR body with gh, use pr-body.md in the repo root instead (don't commit it), and skip fetching, pushing, request-review.sh and replying on threads. Commit as the skill says. Don't ask questions.",
+  "check": "bash \"$EVAL_ROOT/evals/checks/stale-pr-body.sh\"",
+  "tools": "Read,Grep,Glob,Edit,Write,Bash(git:*),Bash(make:*),Bash(python3:*),Bash(ls:*),Bash(.sdlc/scripts/resolve.sh:*)",
+  "max_turns": 40
+}

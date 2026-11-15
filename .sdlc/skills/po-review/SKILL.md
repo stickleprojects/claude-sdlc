@@ -44,7 +44,7 @@ Findings that belong to the engineer (plan or code) get noted and handed on, not
 
 1. Edit only the artifact under review (`intent.md` or `spec.md`). Record each decision where the template expects it. For a spec, that's the "Product owner decisions" section.
 2. Run `make validate`.
-3. Check the branch for commits pushed by anyone else (*One actor per finding*). Then commit the artifact by explicit path (`git add changes/<slug>/<artifact>.md`) with `<stage>: address review (product owner decisions)`, and push.
+3. Check the branch for commits pushed by anyone else (*One actor per finding*), and follow *Before you push*: nothing out of date, every changed requirement traced, the PR body still true. Then commit the artifact by explicit path (`git add changes/<slug>/<artifact>.md`) with `<stage>: address review (product owner decisions)`, and push.
 4. Ask for a fresh review with `.sdlc/scripts/request-review.sh <N>`, never by adding the `review` label yourself: with auto-merge on, the push already started one, and the label would cancel it (#105). Tell the product owner the line it prints, and include it in your reply on the PR.
 5. Reply on every thread you handled with what was decided ("Product owner decided: …"), signed `— Claude` under the agent identity or `(posted from Claude Code)` under the person's, then resolve it (*Reply and resolve*). If resolving fails, tell the product owner which threads to resolve by hand.
 
