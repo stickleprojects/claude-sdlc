@@ -1,0 +1,5 @@
+{
+  "name": "a review of a changed requirement also flags the plan text it makes stale, in the same pass (#172)",
+  "prompt": "Review the change folder evals/fixtures/dependent-design/0002-thor-rig as if it were a PR that changes its spec.md: R1 and R2 are new wording in this PR, and the folder's plan.md was merged earlier and isn't changed by this PR. Follow .sdlc/REVIEW.md exactly, including clause coverage. Don't use GitHub, git or the network. Write each finding to findings.md in the repo root, one finding per `## ` heading, quoting the text it is about, as .sdlc/REVIEW.md's Writing findings section says, and start each finding's body with its severity as Posting findings says. Don't edit any other file.",
+  "check": "bash \"$EVAL_ROOT/evals/checks/dependent-design.sh\""
+}

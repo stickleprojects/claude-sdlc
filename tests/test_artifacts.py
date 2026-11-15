@@ -1393,3 +1393,14 @@ def test_build_all_orchestrator_opens_the_pr_itself() -> None:
     assert "No FAIL: open the PR from this session" in build
     assert "No FAIL: start a worker with the per-criterion results to open the PR." not in build
     assert "the orchestrator usually opens the PR itself" in build
+
+
+def test_review_checks_the_design_text_a_requirement_change_makes_stale() -> None:
+    # #172 (spellbound3d#183): round 1 found a stale plan Approach after a spec amendment.
+    review = (REPO / ".sdlc/REVIEW.md").read_text()
+    assert "The design text that depends on it, in the same pass (#172)" in review
+    assert "Approach, Steps, Verification rows" in review
+    findings = (REPO / ".sdlc/skills/review-findings/SKILL.md").read_text()
+    assert "fix the whole requirement it names and the plan text that depends on it" in findings
+    po = (REPO / ".sdlc/skills/po-review/SKILL.md").read_text()
+    assert "every clause the finding lists is covered at once" in po
