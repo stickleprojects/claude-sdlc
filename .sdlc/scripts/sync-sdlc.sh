@@ -24,11 +24,12 @@ main() {
 
   # framework path -> path in the consumer repo. Everything lives in .sdlc/ (#133); the other
   # entries are small files Claude Code and GitHub only look for in their own folders: skill
-  # and agent stubs that forward to .sdlc/, the hook settings, and the workflows.
+  # and agent stubs that forward to .sdlc/ (kept in .sdlc/claude/, #205), the hook settings,
+  # and the workflows.
   local paths=(
     ".sdlc:.sdlc"
-    ".claude/skills:.claude/skills"
-    ".claude/agents:.claude/agents"
+    ".sdlc/claude/skills:.claude/skills"
+    ".sdlc/claude/agents:.claude/agents"
     ".claude/settings.json:.claude/settings.json"
     ".github/workflows:.github/workflows"
   )
@@ -170,6 +171,8 @@ main() {
   legacy_fw_of() {  # <framework path>
     case "$1" in
       .sdlc/src/sdlc/*) echo "src/sdlc/${1#.sdlc/src/sdlc/}" ;;
+      # The stubs lived in the framework's own .claude/ until #205.
+      .sdlc/claude/*) echo ".claude/${1#.sdlc/claude/}" ;;
       *) legacy_of "$1" ;;
     esac
   }
@@ -423,6 +426,8 @@ main() {
         file="${file#./}"
         [[ "$file" == *__pycache__* ]] && continue
         [[ "$dst" == .github/workflows ]] && printf '%s\n' "${skip_workflows[@]}" | grep -qxF "$file" && continue
+        # The stubs in .sdlc/claude/ go to .claude/ (their own rows above), not to .sdlc/ too (#205).
+        [[ "$src" == .sdlc && "$file" == claude/* ]] && continue
         install_file "$src/$file" "$dst/$file"
       done < <(cd "$tmp/fw/$src" && find . -type f -print0)
     else

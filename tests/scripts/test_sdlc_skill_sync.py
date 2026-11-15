@@ -42,5 +42,8 @@ def test_agent_allows_the_make_targets_the_skills_run_first():
     assert "Bash(.sdlc/scripts/resolve.sh:*)" in allowed
     settings = json.loads((REPO / ".claude/settings.json").read_text())
     assert "Bash(.sdlc/scripts/resolve.sh:*)" in settings["permissions"]["allow"]
-    for stub in [*REPO.glob(".claude/skills/*/SKILL.md"), *REPO.glob(".claude/agents/*.md")]:
+    for stub in [
+        *REPO.glob(".sdlc/claude/skills/*/SKILL.md"),
+        *REPO.glob(".sdlc/claude/agents/*.md"),
+    ]:
         assert "`.sdlc/scripts/resolve.sh " in stub.read_text(), stub

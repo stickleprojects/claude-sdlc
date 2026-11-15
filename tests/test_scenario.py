@@ -1345,7 +1345,7 @@ def test_an_old_consumer_moves_into_sdlc_in_one_sync(old_consumer, framework_his
         "frontmatter is in the stub"
     )
     stub = old_consumer / ".claude/skills/sdlc-build/SKILL.md"
-    assert stub.read_text() == (REPO / ".claude/skills/sdlc-build/SKILL.md").read_text()
+    assert stub.read_text() == (REPO / ".sdlc/claude/skills/sdlc-build/SKILL.md").read_text()
     assert not (old_consumer / ".claude/skills/build").exists(), "the old skill went"
 
     # The security policy is the project's: it becomes the override, not a merge.
@@ -1582,7 +1582,9 @@ def test_an_upgrade_renames_the_frameworks_commands_agent_and_workflows(unprefix
     assert result.returncode == 0, out
 
     for old, new in RENAMED.items():
-        assert (repo / new).read_text() == (REPO / new).read_text(), new
+        # The framework keeps its stubs in .sdlc/claude/ since #205; consumers get them in .claude/.
+        source = ".sdlc/" + new[1:] if new.startswith(".claude/") else new
+        assert (repo / new).read_text() == (REPO / source).read_text(), new
         if old != ".github/workflows/ci.yml":
             assert not (repo / old).exists(), old
     # An edited old file is the project's now: kept and listed, for the upgrade step to merge.
@@ -1721,3 +1723,61 @@ def test_check_after_review_reaches_the_consumer(consumer):
     assert usage.returncode == 2 and "SDLC_CHECK_AFTER_REVIEW" in usage.stderr
     ci = (consumer / ".github/workflows/sdlc-ci.yml").read_text()
     assert "'check: waits for the Claude review' || 'check'" in ci
+
+
+def test_a_consumer_syncs_across_the_stub_move_and_keeps_its_edits(tmp_path, framework_snapshot):
+    """#205: the stubs moved from the framework's .claude/ to .sdlc/claude/. A consumer that
+    synced the old layout and edited a stub keeps the edit, merged with the framework's change,
+    and still finds every stub in .claude/; nothing lands in its .sdlc/claude/."""
+    fw = framework_snapshot
+    new_rev = git(fw, "rev-parse", "HEAD").strip()
+    # The layout before #205: stubs in .claude/, manifest rows naming them there.
+    git(fw, "mv", ".sdlc/claude/skills", ".claude/skills")
+    (fw / ".claude/agents").mkdir(parents=True, exist_ok=True)
+    git(fw, "mv", ".sdlc/claude/agents/sdlc-verifier.md", ".claude/agents/sdlc-verifier.md")
+    script = fw / ".sdlc/scripts/sync-sdlc.sh"
+    text = script.read_text()
+    for new, old in (
+        ('".sdlc/claude/skills:.claude/skills"', '".claude/skills:.claude/skills"'),
+        ('".sdlc/claude/agents:.claude/agents"', '".claude/agents:.claude/agents"'),
+    ):
+        assert new in text
+        text = text.replace(new, old)
+    script.write_text(text)
+    commit(fw, "chore: the old layout")
+    old_rev = git(fw, "rev-parse", "HEAD").strip()
+
+    consumer = init_repo(tmp_path / "old-consumer")
+    shutil.copy(FIXTURE / "Makefile", consumer / "Makefile")
+    (consumer / ".sdlc/scripts").mkdir(parents=True)
+    shutil.copy(script, consumer / ".sdlc/scripts/sync-sdlc.sh")
+    commit(consumer, "chore: consumer skeleton")
+    result = sync(consumer, fw, old_rev)
+    assert result.returncode == 0, result.stdout + result.stderr
+    commit(consumer, "chore: sync the old layout")
+    stub = ".claude/skills/sdlc-build/SKILL.md"
+    commit(consumer, "chore: our note", {stub: (consumer / stub).read_text() + "\nOur note.\n"})
+
+    # Back to the current layout, with a framework change to the same stub.
+    git(fw, "checkout", "-q", new_rev, "--", ".")
+    git(fw, "rm", "-r", "-q", "--cached", ".claude/skills", ".claude/agents/sdlc-verifier.md")
+    for p in (fw / ".claude/skills", fw / ".claude/agents/sdlc-verifier.md"):
+        shutil.rmtree(p) if p.is_dir() else p.unlink()
+    moved = fw / ".sdlc/claude/skills/sdlc-build/SKILL.md"
+    moved.write_text("<!-- framework change -->\n" + moved.read_text())
+    commit(fw, "refactor: stubs into .sdlc/claude (#205)")
+    assert not (fw / ".claude/skills").exists()
+
+    result = sync(consumer, fw, "main")
+    assert result.returncode == 0, result.stdout + result.stderr
+    text = (consumer / stub).read_text()
+    assert "Our note." in text and "<!-- framework change -->" in text, text
+    assert "kept your local changes" in result.stdout and stub in result.stdout
+    framework_stubs = sorted(
+        str(p.relative_to(REPO / ".sdlc/claude")) for p in (REPO / ".sdlc/claude").rglob("*.md")
+    )
+    for rel in framework_stubs:
+        assert (consumer / ".claude" / rel).is_file(), rel
+    assert not (consumer / ".sdlc/claude").exists(), "the stubs aren't copied into .sdlc/ too"
+    files = (consumer / ".sdlc/files").read_text().splitlines()
+    assert stub in files and not any(f.startswith(".sdlc/claude/") for f in files)

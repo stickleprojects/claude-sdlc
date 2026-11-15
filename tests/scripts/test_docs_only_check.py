@@ -46,7 +46,7 @@ def test_docs_only_branch_is_recognised(docs_repo, files):
     [
         ".sdlc/skills/sdlc/SKILL.md",  # skills, templates, prompts and REVIEW.md are tested
         ".sdlc/REVIEW.md",
-        ".claude/skills/sdlc-next/SKILL.md",
+        ".sdlc/claude/skills/sdlc-next/SKILL.md",
         ".github/pull_request_template.md",
         "changes/0001-x/spec.md",
         "tests/fixtures/consumer/readme.md",
