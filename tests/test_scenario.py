@@ -14,6 +14,10 @@ import pytest
 from conftest import REPO, commit, copy_working_tree, git, hook, init_repo, run
 from sdlc.artifacts import BUG_CHAIN, CHAIN
 
+# Most of the suite's time. `make check` runs these only with FULL=1, which CI sets on pushes
+# to main and the release always sets; `make test` always runs them.
+pytestmark = pytest.mark.scenario
+
 FIXTURE = REPO / "tests" / "fixtures" / "consumer"
 
 
@@ -1718,7 +1722,7 @@ def test_check_after_review_reaches_the_consumer(consumer):
     usage = run([".sdlc/scripts/check-gate.sh"], cwd=consumer)
     assert usage.returncode == 2 and "SDLC_CHECK_AFTER_REVIEW" in usage.stderr
     ci = (consumer / ".github/workflows/sdlc-ci.yml").read_text()
-    assert "'check (runs after the Claude review)' || 'check'" in ci
+    assert "'check: waits for the Claude review' || 'check'" in ci
 
 
 def test_a_consumer_syncs_across_the_stub_move_and_keeps_its_edits(tmp_path, framework_snapshot):

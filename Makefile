@@ -12,7 +12,8 @@
 #   next      each change's next step and the skill that owns it (CHANGE=, REF=origin/main)
 #   clauses   a spec as one JSON block per requirement, for the clause check (CHANGE=, REF=)
 #   check     everything CI requires; exits non-zero on any failure. A docs-only branch skips
-#             `test` (scripts/docs-only.sh, compared with CHECK_BASE); FULL=1 runs everything
+#             `test` (scripts/docs-only.sh, compared with CHECK_BASE), and any other branch
+#             skips the slow scenario tests; FULL=1 runs everything
 
 .PHONY: setup fmt lint test check-test validate check deploy-dev deploy-prod
 
@@ -40,7 +41,7 @@ lint:
 	uv run ruff format --check .
 
 test:
-	uv run pytest -q
+	uv run pytest -q $(TEST_ARGS)
 
 validate:
 	$(SDLC) check
@@ -50,13 +51,21 @@ CHECK_BASE ?= origin/main
 
 check: lint check-test validate exec-bits
 
-# The test suite, unless the branch changes only documentation (#140). FULL=1 always runs it,
-# and CI sets FULL on pushes to main, so every commit there is fully tested.
+# The test suite, unless the branch changes only documentation (#140). The slow scenario tests
+# (tests/test_scenario.py, most of the suite's time) run only when the branch changes something
+# they test (scripts/scenario-needed.sh). FULL=1 runs everything: CI sets it on pushes to main
+# and the release always does, so main and every release are fully tested.
 check-test:
-	@if [ -z "$(FULL)" ] && why="$$(bash scripts/docs-only.sh $(CHECK_BASE))"; then \
-		echo "test: skipped, $$why (FULL=1 runs it)"; \
-	else \
+	@if [ -n "$(FULL)" ]; then \
 		$(MAKE) --no-print-directory test; \
+	elif why="$$(bash scripts/docs-only.sh $(CHECK_BASE))"; then \
+		echo "test: skipped, $$why (FULL=1 runs it)"; \
+	elif why="$$(bash scripts/scenario-needed.sh $(CHECK_BASE))"; then \
+		echo "test: everything, scenario tests included: $$why"; \
+		$(MAKE) --no-print-directory test; \
+	else \
+		echo "test: without the scenario tests, $$why (FULL=1 runs them)"; \
+		$(MAKE) --no-print-directory test TEST_ARGS='-m "not scenario"'; \
 	fi
 
 # Placeholders until there is something to deploy. The production gate hook

@@ -9,7 +9,10 @@ This repo implements the AI-native SDLC playbook: changes flow intent.md → spe
 ```
 make setup       # install deps (uv sync)
 make check       # lint + test + validate; the one command that must exit 0 before a PR
-                 # (a docs-only branch skips test; FULL=1 runs everything)
+                 # (a docs-only branch skips test; the slow scenario tests run only when the
+                 # branch changes something besides docs and other tests, see
+                 # scripts/scenario-needed.sh; FULL=1 runs everything, as CI on main and the
+                 # release do)
 make fmt         # format; FILES="a.py b.py" limits it to those files
 make test        # uv run pytest -q
 uv run pytest tests/artifacts/test_chain.py::test_next_slug_increments   # a single test

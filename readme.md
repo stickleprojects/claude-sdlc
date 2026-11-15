@@ -336,7 +336,7 @@ A breaking change is anything that would break a consumer repo: a renamed `make`
 
 ```
 gh workflow run release.yml                    # dry run: the run summary shows the version it would pick
-gh workflow run release.yml -f dry_run=false   # check, run evals, tag, publish release notes
+gh workflow run release.yml -f dry_run=false   # full checks and evals (always), then tag and publish release notes
 ```
 
 `scripts/next-version.sh --explain` shows the same calculation locally.
