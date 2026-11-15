@@ -4018,8 +4018,10 @@ def test_two_update_branch_merges_in_a_row_keep_the_review(base_merge):
 def test_a_conflict_resolved_by_hand_needs_a_review(base_merge):
     git_, _, go = base_merge
     main_moves_on(git_, "app.py", "a = 9\n")  # the line the PR changed: a conflict
-    run(["git", "merge", "main"], cwd=Path(git_("rev-parse", "--show-toplevel")))
     root = Path(git_("rev-parse", "--show-toplevel"))
+    merge = ["git", "-c", "user.name=t", "-c", "user.email=t@t", "merge", "main"]
+    assert run(merge, cwd=root).returncode != 0, "main's change to app.py should conflict"
+    assert (root / ".git" / "MERGE_HEAD").exists(), "the merge started and stopped on the conflict"
     (root / "app.py").write_text("a = 2\n")
     git_("add", "app.py")
     git_("commit", "-qm", "merge main, keeping the PR's line")
