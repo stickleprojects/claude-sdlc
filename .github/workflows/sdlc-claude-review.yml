@@ -335,8 +335,10 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       PR: ${{ github.event.pull_request.number }}
       HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-      # A push that only merges the base in keeps the review (#182): it compares the diffs.
+      # A push that only merges the base in keeps the review (#182), unless the repo sets
+      # SDLC_REVIEW_CARRY_FORWARD to `off`.
       BASE_REF: ${{ github.event.pull_request.base.ref }}
+      SDLC_REVIEW_CARRY_FORWARD: ${{ vars.SDLC_REVIEW_CARRY_FORWARD }}
     steps:
       - uses: actions/checkout@v4
         with:
