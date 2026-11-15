@@ -1720,4 +1720,4 @@ def test_check_after_review_reaches_the_consumer(consumer):
     usage = run([".sdlc/scripts/check-gate.sh"], cwd=consumer)
     assert usage.returncode == 2 and "SDLC_CHECK_AFTER_REVIEW" in usage.stderr
     ci = (consumer / ".github/workflows/sdlc-ci.yml").read_text()
-    assert "'check (runs after the Claude review)' || 'check'" in ci
+    assert "'check: waits for the Claude review' || 'check'" in ci
