@@ -3956,3 +3956,18 @@ def test_descopes_skip_a_bots_review_as_well_as_its_comments():
 def test_runner_docs_warn_about_old_pull_refs_and_secret_scans():
     doc = (REPO / ".sdlc/docs/self-hosted-runner.md").read_text()
     assert "refs/remotes/pull/*" in doc and "persists between jobs" in doc
+
+
+def test_the_check_job_keeps_a_projects_reports():
+    # #188: spellbound3d's last edit to a synced workflow was its own report upload.
+    workflow = (REPO / ".github/workflows/sdlc-ci.yml").read_text()
+    check = workflow[workflow.index("make check") :]
+    step = check[check.index("- uses: actions/upload-artifact@v4") :][:300]
+    assert "if: always()" in step and "path: reports/" in step
+    assert "if-no-files-found: ignore" in step
+
+
+def test_check_after_review_runs_no_action_after_pr_code():
+    # #188: that job has main's privileges, so no upload (or any action) after `make check`.
+    after = (REPO / ".github/workflows/sdlc-check-after-review.yml").read_text()
+    assert "upload-artifact" not in after[after.index("      - run: make check") :]

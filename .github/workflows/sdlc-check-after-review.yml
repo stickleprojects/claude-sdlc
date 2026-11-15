@@ -142,6 +142,9 @@ jobs:
           }
       - uses: ./.github/actions/setup-stack
       - run: make check
+      # No reports/ upload here, unlike sdlc-ci.yml (#188): this job runs PR code with main's
+      # privileges (workflow_run), and an action that runs after PR code can be tampered with
+      # by it and would get the runtime token, which writes main's Actions cache.
       - name: Post the result
         if: always()
         env:

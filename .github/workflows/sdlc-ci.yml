@@ -38,3 +38,11 @@ jobs:
       # `check` skips the tests on a docs-only PR (#140); a consumer's `check` decides for itself,
       # and on a PR gets no FULL at all, so its own default stands.
       - run: make check ${{ github.event_name == 'push' && 'FULL=1' || '' }}
+      # A project's test reports, if it writes any to reports/ (#188): kept with the run, pass or
+      # fail, so a consumer never has to add an upload step to this synced workflow.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reports
+          path: reports/
+          if-no-files-found: ignore
