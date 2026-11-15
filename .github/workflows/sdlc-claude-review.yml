@@ -185,7 +185,7 @@ jobs:
       # The action can end "successfully" having posted nothing: four tool calls refused on #129,
       # #147 and #155 (#157). Say in the log which calls were refused, keep that run's output,
       # and review once more before failing. The retry is the same step: keep the two identical
-      # (tests/test_scripts.py checks it).
+      # (tests/scripts/test_review_silent_retry.py checks it).
       - name: Check the review posted its summary
         id: posted
         if: steps.workflow_change.outputs.skipped != 'true'
