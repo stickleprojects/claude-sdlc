@@ -53,9 +53,24 @@ def cmd_new(root: Path, name: str, kind: str = "feature") -> int:
         return 1
     # Block markers are for overrides to aim at; the change's own file doesn't need them.
     text = re.sub(r"^[ \t]*<!--\s*/?block\s*:[^>]*-->[ \t]*\n", "", text, flags=re.M)
+    if first == "intent.md" and (root / "docs" / "roadmap.md").is_file():
+        text = add_milestone_line(text)
     (target / first).write_text(text, encoding="utf-8")
     print(target / first)
     return 0
+
+
+def add_milestone_line(text: str) -> str:
+    """With a roadmap, a new intent gets a live `Milestone: M<n>` under `Product owner:` (#187).
+
+    `make validate` fails it until the intent skill fills in the milestone, so no change goes
+    on the roadmap unplaced. Without a roadmap the template's commented hint is all there is.
+    """
+    lines = text.split("\n")
+    for i, line in enumerate(lines):
+        if line.startswith("Product owner:"):
+            return "\n".join([*lines[: i + 1], "Milestone: M<n>", *lines[i + 1 :]])
+    return text
 
 
 # A branch that changes more files than this almost certainly swept in dependencies or build
