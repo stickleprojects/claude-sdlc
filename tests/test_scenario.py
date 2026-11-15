@@ -1578,7 +1578,9 @@ def test_an_upgrade_renames_the_frameworks_commands_agent_and_workflows(unprefix
     assert result.returncode == 0, out
 
     for old, new in RENAMED.items():
-        assert (repo / new).read_text() == (REPO / new).read_text(), new
+        # The framework keeps its stubs in .sdlc/claude/ since #205; consumers get them in .claude/.
+        source = ".sdlc/" + new[1:] if new.startswith(".claude/") else new
+        assert (repo / new).read_text() == (REPO / source).read_text(), new
         if old != ".github/workflows/ci.yml":
             assert not (repo / old).exists(), old
     # An edited old file is the project's now: kept and listed, for the upgrade step to merge.
