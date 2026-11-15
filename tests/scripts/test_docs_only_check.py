@@ -91,7 +91,7 @@ def test_when_unsure_everything_runs(docs_repo):
 @pytest.fixture
 def make_repo(docs_repo, tmp_path):
     """The framework's Makefile in a throwaway repo, with a `uv` that only says it ran."""
-    for path in ("Makefile", ".sdlc/sdlc.mk", "scripts/docs-only.sh"):
+    for path in ("Makefile", ".sdlc/sdlc.mk", "scripts/docs-only.sh", "scripts/scenario-needed.sh"):
         target = docs_repo / path
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(REPO / path, target)
@@ -104,7 +104,14 @@ def make_repo(docs_repo, tmp_path):
     (fake / "uv").chmod(0o755)
     # An outer `make check FULL=1` (CI on main) hands FULL=1 to every make below it through
     # MAKEFLAGS, where it beats the environment, so the inner make starts with none.
-    env = {"PATH": f"{fake}:{os.environ['PATH']}", "FULL": "", "MAKEFLAGS": "", "MAKELEVEL": ""}
+    # TEST_ARGS likewise: `make check` without FULL runs these tests with it set.
+    env = {
+        "PATH": f"{fake}:{os.environ['PATH']}",
+        "FULL": "",
+        "TEST_ARGS": "",
+        "MAKEFLAGS": "",
+        "MAKELEVEL": "",
+    }
     return docs_repo, env
 
 
@@ -123,9 +130,39 @@ def test_make_check_test_runs_the_suite_for_code_or_full(make_repo):
     commit(repo, "docs: change", {"readme.md": "changed\n"})
     full = run(["make", "check-test", "CHECK_BASE=main", "FULL=1"], cwd=repo, env=env)
     assert "uv run pytest -q" in full.stdout and "skipped" not in full.stdout
-    commit(repo, "feat: change", {"src.py": "x = 1\n"})
+    assert "not scenario" not in full.stdout
+    commit(repo, "test: change", {"tests/test_x.py": "x = 1\n"})
+    tests_only = run(["make", "check-test", "CHECK_BASE=main"], cwd=repo, env=env)
+    assert "uv run pytest -q -m not scenario" in tests_only.stdout
+    assert (
+        "test: without the scenario tests, only documentation and other tests changed since "
+        "main (FULL=1 runs them)" in tests_only.stdout
+    )
+    full = run(["make", "check-test", "CHECK_BASE=main", "FULL=1"], cwd=repo, env=env)
+    assert "uv run pytest -q" in full.stdout and "not scenario" not in full.stdout
+
+
+@pytest.mark.parametrize("path", [".sdlc/scripts/x.sh", "src.py", "tests/test_scenario.py"])
+def test_make_check_test_runs_the_scenario_tests_for_what_they_test(make_repo, path):
+    repo, env = make_repo
+    commit(repo, "feat: change", {path: "x = 1\n"})
     code = run(["make", "check-test", "CHECK_BASE=main"], cwd=repo, env=env)
-    assert "uv run pytest -q" in code.stdout and "skipped" not in code.stdout
+    assert code.returncode == 0, code.stderr
+    assert f"test: everything, scenario tests included: {path} changed" in code.stdout
+    assert code.stdout.strip().splitlines()[-1] == "uv run pytest -q"
+
+
+def test_make_test_runs_everything(make_repo):
+    repo, env = make_repo
+    result = run(["make", "test"], cwd=repo, env=env)
+    assert result.stdout.strip().splitlines()[-1] == "uv run pytest -q"
+
+
+def test_the_scenario_tests_are_marked_and_main_and_the_release_run_them():
+    assert "pytestmark = pytest.mark.scenario" in (REPO / "tests/test_scenario.py").read_text()
+    assert '"scenario:' in (REPO / "pyproject.toml").read_text()
+    release = (REPO / ".github/workflows/release.yml").read_text()
+    assert "- run: make check FULL=1" in release
 
 
 def test_check_runs_the_tests_through_check_test_and_main_runs_them_all():
