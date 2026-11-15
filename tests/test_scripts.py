@@ -4,6 +4,7 @@ import json
 import os
 import re
 import shutil
+from pathlib import Path
 
 import pytest
 
@@ -1814,7 +1815,8 @@ case "$path" in
     # Each call takes the next head from $D/heads (the push shows up after a while).
     head="$(head -n 1 "$D/heads")"
     (($(wc -l < "$D/heads") > 1)) && sed -i 1d "$D/heads"
-    echo "{\"head\": {\"sha\": \"$head\"}}" > "$D/pull.json"; serve pull.json ;;
+    ref="$(cat "$D/ref")"
+    echo "{\"head\": {\"sha\": \"$head\", \"ref\": \"$ref\"}}" > "$D/pull.json"; serve pull.json ;;
   repos/o/r/issues/7/labels)
     if ((post)); then [[ ! -e "$D/label-fails" ]] || exit 1; else serve labels.json; fi ;;
   repos/o/r/actions/variables/SDLC_AUTO_MERGE)
@@ -1846,9 +1848,18 @@ def request_review(tmp_path):
     state.mkdir()
 
     def go(
-        variable="", status=200, heads=(PUSHED,), runs=(), labels=(), label_fails=False, sha=PUSHED
+        variable="",
+        status=200,
+        heads=(PUSHED,),
+        runs=(),
+        labels=(),
+        label_fails=False,
+        sha=PUSHED,
+        ref="feat/x",
+        cwd=REPO,
     ):
         (state / "heads").write_text("\n".join(heads) + "\n")
+        (state / "ref").write_text(ref)
         (state / "var-status").write_text(str(status))
         (state / "var.json").write_text(json.dumps({"value": variable}))
         (state / "runs.json").write_text(json.dumps({"workflow_runs": list(runs)}))
@@ -1865,7 +1876,9 @@ def request_review(tmp_path):
             "REQUEST_REVIEW_POLL": "1",
         }
         args = [] if sha is None else [sha]
-        result = run(["bash", str(REPO / ".sdlc/scripts/request-review.sh"), "7", *args], env=env)
+        result = run(
+            ["bash", str(REPO / ".sdlc/scripts/request-review.sh"), "7", *args], cwd=cwd, env=env
+        )
         calls = (state / "calls").read_text()
         labelled = any(c.startswith("api repos/o/r/issues/7/labels -f") for c in calls.splitlines())
         return result, labelled, calls
@@ -1952,6 +1965,53 @@ def test_request_review_leaves_a_label_that_is_already_on(request_review):
     assert not labelled and "already on" in result.stdout
 
 
+@pytest.fixture
+def other_checkout(tmp_path):
+    """A checkout on a branch with one commit of its own, which isn't the PR's head."""
+    repo = tmp_path / "checkout"
+    repo.mkdir()
+    for cmd in (
+        ["git", "init", "-q", "-b", "build/0029-x"],
+        [
+            "git",
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "local",
+        ],
+    ):
+        run(cmd, cwd=repo, check=True)
+    local = run(["git", "rev-parse", "HEAD"], cwd=repo, check=True).stdout.strip()
+    return repo, local
+
+
+def test_request_review_from_another_checkout_names_the_prs_head(request_review, other_checkout):
+    # spellbound3d#183: run from #182's checkout, it named a981ed0 instead of #183's 751a1c7.
+    repo, local = other_checkout
+    result, labelled, calls = request_review(sha=None, ref="spec/0029-amend", cwd=repo)
+    # Labelled at all means it waited for abc1234: with the local commit it would never match.
+    assert result.returncode == 0 and labelled, result.stdout + result.stderr
+    result, labelled, calls = request_review(
+        variable="merge", runs=[review_run()], sha=None, ref="spec/0029-amend", cwd=repo
+    )
+    assert f"actions/runs?head_sha={PUSHED}&" in calls and local not in calls
+
+
+def test_request_review_on_the_prs_branch_names_the_local_push(request_review, other_checkout):
+    # The skills' case: this checkout just pushed, and GitHub may still show the old head (#105).
+    repo, local = other_checkout
+    result, labelled, calls = request_review(
+        variable="merge", runs=[review_run()], sha=None, ref="build/0029-x", cwd=repo
+    )
+    assert result.returncode == 0 and not labelled, result.stdout + result.stderr
+    assert f"actions/runs?head_sha={local}&" in calls and local[:7] in result.stdout
+
+
 def test_request_review_says_when_it_couldnt_add_the_label(request_review):
     result, labelled, _ = request_review(label_fails=True)
     assert result.returncode == 0
@@ -1975,10 +2035,12 @@ def test_skills_ask_for_a_review_through_request_review():
     assert synced(".sdlc/scripts/request-review.sh")
 
 
-def test_request_review_expands_the_checkouts_head_for_the_runs_api(request_review):
-    full = git(REPO, "rev-parse", "HEAD")
-    for sha in (None, full[:7]):  # no sha means the checkout's HEAD; a short one is expanded
-        _, _, calls = request_review(variable="merge", runs=[review_run()], sha=sha)
+def test_request_review_expands_the_checkouts_head_for_the_runs_api(request_review, other_checkout):
+    repo, full = other_checkout
+    for sha in (None, full[:7]):  # no sha on the PR's branch means HEAD; a short one is expanded
+        _, _, calls = request_review(
+            variable="merge", runs=[review_run()], sha=sha, ref="build/0029-x", cwd=repo
+        )
         assert f"actions/runs?head_sha={full}&" in calls
 
 
@@ -3564,6 +3626,200 @@ def test_the_review_runs_once_more_when_it_posts_nothing():
     assert '--calls "$RUNNER_TEMP/claude-execution-output.json" "the review"' in calls
     assert names.index("Review once more") < names.index("List the review's tool calls")
     assert synced(".sdlc/scripts/review-denials.sh")
+
+
+# --- the stack contract (#169) ----------------------------------------------------------------
+# Hooks, CI and evals call only make targets. The language toolchain is named only in the
+# Makefile and in .github/actions/setup-stack/, so a consumer switches language by changing
+# those two. The framework's own tools (python3 for .sdlc/src, npm for Claude Code) aren't the
+# consumer's stack and are allowed.
+
+STACK_CALL = re.compile(
+    r"(?<![\w./-])(?:uvx?|pytest|ruff|pip3?|pipx|poetry)(?![\w.-])"
+    r"|python3?\s+-m\s+(?:pytest|ruff|pip)\b"
+    r"|uses:\s*(?:astral-sh/setup-uv|actions/setup-python|actions/setup-node)@"
+)
+
+
+def stack_calls(text):
+    """Lines that call the stack directly, ignoring comment lines."""
+    return [
+        line.strip()
+        for line in text.splitlines()
+        if not line.lstrip().startswith("#") and STACK_CALL.search(line)
+    ]
+
+
+def stack_contract_files():
+    files = [*(REPO / ".github" / "workflows").glob("*.yml")]
+    files += [p for p in (REPO / ".sdlc" / "hooks").iterdir() if p.is_file()]
+    files += [*(REPO / ".sdlc" / "scripts").glob("*.sh")]
+    files += [
+        p
+        for p in (REPO / ".github" / "actions").glob("*/action.yml")
+        if p.parent.name != "setup-stack"  # the CI half of the contract
+    ]
+    files += [*(REPO / ".sdlc" / "evals").glob("*.sh"), *(REPO / "evals").glob("**/*.sh")]
+    return files
+
+
+def eval_commands():
+    """Each eval task's setup and check commands (its prompt is prose, not a command)."""
+    for task in sorted((REPO / "evals" / "tasks").glob("*.json")):
+        data = json.loads(task.read_text())
+        text = "\n".join(data.get(key) or "" for key in ("setup", "check"))
+        yield task, text
+
+
+def test_ci_hooks_scripts_and_evals_call_only_make_targets():
+    found = {
+        str(p.relative_to(REPO)): calls
+        for p in stack_contract_files()
+        if (calls := stack_calls(p.read_text()))
+    }
+    found |= {
+        str(p.relative_to(REPO)): calls
+        for p, text in eval_commands()
+        if (calls := stack_calls(text))
+    }
+    assert not found, f"call a make target instead (the stack contract): {found}"
+    assert list(eval_commands()), "no eval tasks found to check"
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "      run: uv run pytest -q",
+        "      run: uvx ruff check .",
+        "  pytest tests/",
+        "      - run: ruff format --check",
+        "pip install -r requirements.txt",
+        "python3 -m pytest",
+        "python -m pip install x",
+        "      - uses: astral-sh/setup-uv@v6",
+        "      - uses: actions/setup-python@v5",
+        "      - run: make test && poetry run lint",
+    ],
+)
+def test_the_stack_contract_check_catches_a_direct_call(line):
+    assert stack_calls(f"steps:\n{line}\n") == [line.strip()]
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "      run: make check",
+        "# a Python project might use `uv run sdlc` instead",
+        "exec python3 -m sdlc.cli --root x",
+        'npm install --prefix "$prefix" @anthropic-ai/claude-code',
+        "  cp .ruff_cache/x y",
+        "  echo pytest.ini changed",
+        "  ls ~/.local/share/uv/tools",
+    ],
+)
+def test_the_stack_contract_check_allows_make_and_the_frameworks_own_tools(line):
+    assert stack_calls(line) == []
+
+
+# --- a merge of the base that leaves the PR's diff unchanged keeps its review (#182) ----------
+# PR #176: GitHub's Update branch merged main in, the diff was byte-for-byte the same, and the
+# push still needed the review label and a second review.
+
+
+@pytest.fixture
+def base_merge(tmp_path):
+    """A PR whose commit P was reviewed, after which main moved on (M)."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    def git_(*args):
+        return run(
+            ["git", "-c", "user.name=t", "-c", "user.email=t@t", *args], cwd=repo, check=True
+        ).stdout.strip()
+
+    git_("init", "-q", "-b", "main")
+    (repo / "app.py").write_text("a = 1\n")
+    (repo / "other.py").write_text("b = 1\n")
+    git_("add", "-A")
+    git_("commit", "-qm", "base")
+    git_("checkout", "-qb", "pr")
+    (repo / "app.py").write_text("a = 2\n")
+    git_("commit", "-qam", "P: the PR's change")
+    reviewed = git_("rev-parse", "HEAD")
+    git_("checkout", "-q", "main")
+    (repo / "other.py").write_text("b = 2\n")
+    git_("commit", "-qam", "M: main moves on")
+    git_("update-ref", "refs/remotes/origin/main", "main")
+    git_("checkout", "-q", "pr")
+    fake = tmp_path / "bin"
+    fake.mkdir()
+    (fake / "gh").write_text(FAKE_GH_REVIEW_CURRENT)
+    (fake / "gh").chmod(0o755)
+    state = tmp_path / "gh"
+    state.mkdir()
+
+    def go(head, base_ref="main"):
+        # As GitHub lists a PR's commits: those on its head that aren't on the base.
+        commits = git_("rev-list", "--reverse", f"origin/main..{head}").split()
+        (state / "commits").write_text("".join(f"{c}\n" for c in commits))
+        for f in state.glob("status-*"):
+            f.unlink()
+        (state / f"status-{reviewed}").write_text(
+            json.dumps([{"context": "claude-review", "state": "success"}])
+        )
+        (state / "posted").unlink(missing_ok=True)
+        env = {"PATH": f"{fake}:{os.environ['PATH']}", "D": str(state), "GITHUB_REPOSITORY": "o/r"}
+        if base_ref is not None:
+            env["BASE_REF"] = base_ref
+        result = run(
+            ["bash", str(REPO / ".sdlc/scripts/review-current.sh"), "7", head], cwd=repo, env=env
+        )
+        posted = state / "posted"
+        return result, posted.read_text() if posted.exists() else ""
+
+    return git_, reviewed, go
+
+
+def test_a_merge_of_the_base_with_the_same_diff_keeps_the_review(base_merge):
+    git_, reviewed, go = base_merge
+    git_("merge", "-q", "--no-edit", "main")
+    result, posted = go(git_("rev-parse", "HEAD"))
+    assert result.returncode == 0, result.stderr
+    assert "state=success" in posted, posted
+    assert f"The Claude review of {reviewed[:7]} still holds: only main was merged in" in posted
+
+
+def test_a_merge_that_changes_the_prs_diff_still_needs_a_review(base_merge):
+    git_, _, go = base_merge
+    git_("merge", "-q", "--no-commit", "main")
+    (Path(git_("rev-parse", "--show-toplevel")) / "app.py").write_text("a = 3\n")  # slipped in
+    git_("add", "app.py")
+    git_("commit", "-qm", "merge main, and a change")
+    _, posted = go(git_("rev-parse", "HEAD"))
+    assert "state=failure" in posted and "Not reviewed: 1 commit since the review" in posted
+
+
+def test_a_plain_commit_after_the_review_still_needs_one(base_merge):
+    git_, _, go = base_merge
+    (Path(git_("rev-parse", "--show-toplevel")) / "app.py").write_text("a = 4\n")
+    git_("commit", "-qam", "another change")
+    _, posted = go(git_("rev-parse", "HEAD"))
+    assert "state=failure" in posted
+
+
+@pytest.mark.parametrize("base_ref", [None, "no-such-branch"])
+def test_without_a_readable_base_every_push_needs_a_review(base_merge, base_ref):
+    git_, _, go = base_merge
+    git_("merge", "-q", "--no-edit", "main")
+    _, posted = go(git_("rev-parse", "HEAD"), base_ref=base_ref)
+    assert "state=failure" in posted
+
+
+def test_the_unreviewed_push_job_gives_the_script_the_base_and_history():
+    workflow = (REPO / ".github/workflows/sdlc-claude-review.yml").read_text()
+    job = workflow[workflow.index("  unreviewed-push:") :]
+    assert "BASE_REF: ${{ github.event.pull_request.base.ref }}" in job
+    assert "fetch-depth: 0" in job
 
 
 # --- a build PR that amends its plan (#174) ---------------------------------------------------
