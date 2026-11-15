@@ -33,10 +33,10 @@ changes, and the rest still comes from the framework, updates included.
 
 ```markdown
 <!-- extends -->
-Why: our intents name a roadmap milestone (change 0011).
+Why: our intents name the part of the game they change, for the art team.
 
 <!-- append: header -->
-Milestone: M<n>
+Area: <levels, characters, UI or audio>
 <!-- /append -->
 
 <!-- replace: Constraints -->
