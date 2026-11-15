@@ -51,6 +51,8 @@ A review that asks for changes then never costs a `check` run ([settings.md](set
 - `node` and `npm` on the `PATH`, for the jobs that run Claude Code outside the action (spec from intent, the clause check, agent evals). `.sdlc/scripts/install-claude.sh` installs a pinned version into the job's `$RUNNER_TEMP`, never globally, so it can't collide with the `claude` that `claude-code-action` leaves in `~/.local/bin` or leak into other jobs (#136). The JavaScript actions need nothing: the runner brings its own Node for them, and `claude-code-action` installs Bun itself.
 - `actions/cache` works, but it saves to GitHub's cache service, so the runner still needs to reach GitHub.
 
+- **A workspace that persists between jobs keeps every ref it has fetched.** If the project's `make check` scans git history for secrets (gitleaks or similar) across all refs, a secret pushed once to a PR branch stays in `refs/remotes/pull/*` after the PR closes, and fails every later job, on any branch. Drop those refs when a job starts, in the runner's job-start hook (`git for-each-ref --format='%(refname)' refs/remotes/pull/ | xargs -r -n1 git update-ref -d`), or have the scan cover only the refs the job checked out. On a GitHub-hosted runner each job starts clean, so this doesn't arise. (From spellbound3d's runner.)
+
 Change the runner service's user between jobs, never during one. A job that's running when the service restarts fails with "The runner has received a shutdown signal".
 
 ## Allowed actions
