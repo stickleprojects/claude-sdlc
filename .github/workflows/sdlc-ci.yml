@@ -16,32 +16,43 @@ concurrency:
 jobs:
   check:
     # With SDLC_CHECK_AFTER_REVIEW on (#163), a same-repo PR's `check` waits for a clean Claude
-    # review and runs in sdlc-check-after-review.yml, which posts it as a commit status. The job
-    # here is then skipped under another name: a skipped check run named `check` would count as
-    # passing for branch protection. Pushes to main and fork PRs run here as before.
+    # review and runs in sdlc-check-after-review.yml, which posts it as a commit status. This job
+    # is then DEFERRED: it still runs, under another name, and skips every step. Its name must
+    # never be `check` then, since that check run would count toward the required `check`
+    # (#206). It isn't skipped at the job level because GitHub doesn't evaluate a skipped job's
+    # name and would show the expression's text. Pushes to main and fork PRs run here as before.
     name: >-
       ${{ github.event_name == 'pull_request' &&
       vars.SDLC_CHECK_AFTER_REVIEW != '' && vars.SDLC_CHECK_AFTER_REVIEW != 'off' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
-      'check (runs after the Claude review)' || 'check' }}
-    if: >-
-      !(github.event_name == 'pull_request' &&
-      vars.SDLC_CHECK_AFTER_REVIEW != '' && vars.SDLC_CHECK_AFTER_REVIEW != 'off' &&
-      github.event.pull_request.head.repo.full_name == github.repository)
+      'check: waits for the Claude review' || 'check' }}
     runs-on: ${{ vars.SDLC_RUNNER && !github.event.issue.pull_request && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && vars.SDLC_RUNNER || 'ubuntu-latest' }}
+    env:
+      DEFERRED: >-
+        ${{ github.event_name == 'pull_request' &&
+        vars.SDLC_CHECK_AFTER_REVIEW != '' && vars.SDLC_CHECK_AFTER_REVIEW != 'off' &&
+        github.event.pull_request.head.repo.full_name == github.repository }}
     steps:
+      - name: make check runs after the Claude review
+        if: env.DEFERRED == 'true'
+        run: >-
+          echo "SDLC_CHECK_AFTER_REVIEW is on: make check runs in 'Check after review' once the
+          Claude review is clean, and posts the required check status."
       - uses: actions/checkout@v4
+        if: env.DEFERRED != 'true'
         with:
           fetch-depth: 0  # make validate and the docs-only check compare the branch with main
       - uses: ./.github/actions/setup-stack
+        if: env.DEFERRED != 'true'
       # Pushes to main pass FULL=1, so every commit there is fully tested. This repo's own
       # `check` skips the tests on a docs-only PR (#140); a consumer's `check` decides for itself,
       # and on a PR gets no FULL at all, so its own default stands.
       - run: make check ${{ github.event_name == 'push' && 'FULL=1' || '' }}
+        if: env.DEFERRED != 'true'
       # A project's test reports, if it writes any to reports/ (#188): kept with the run, pass or
       # fail, so a consumer never has to add an upload step to this synced workflow.
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: always() && env.DEFERRED != 'true'
         with:
           name: reports
           path: reports/
