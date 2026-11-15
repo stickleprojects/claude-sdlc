@@ -3740,10 +3740,12 @@ def base_merge(tmp_path):
     git_("init", "-q", "-b", "main")
     (repo / "app.py").write_text("a = 1\n")
     (repo / "other.py").write_text("b = 1\n")
+    (repo / "notes.md").write_text("one\ntwo\nthree\n")
     git_("add", "-A")
     git_("commit", "-qm", "base")
     git_("checkout", "-qb", "pr")
     (repo / "app.py").write_text("a = 2\n")
+    (repo / "notes.md").write_text("one\ntwo\nthe PR's line\nthree\n")
     git_("commit", "-qam", "P: the PR's change")
     reviewed = git_("rev-parse", "HEAD")
     git_("checkout", "-q", "main")
@@ -3758,7 +3760,7 @@ def base_merge(tmp_path):
     state = tmp_path / "gh"
     state.mkdir()
 
-    def go(head, base_ref="main"):
+    def go(head, base_ref="main", carry=None):
         # As GitHub lists a PR's commits: those on its head that aren't on the base.
         commits = git_("rev-list", "--reverse", f"origin/main..{head}").split()
         (state / "commits").write_text("".join(f"{c}\n" for c in commits))
@@ -3771,6 +3773,8 @@ def base_merge(tmp_path):
         env = {"PATH": f"{fake}:{os.environ['PATH']}", "D": str(state), "GITHUB_REPOSITORY": "o/r"}
         if base_ref is not None:
             env["BASE_REF"] = base_ref
+        if carry is not None:
+            env["SDLC_REVIEW_CARRY_FORWARD"] = carry
         result = run(
             ["bash", str(REPO / ".sdlc/scripts/review-current.sh"), "7", head], cwd=repo, env=env
         )
@@ -3971,3 +3975,85 @@ def test_check_after_review_runs_no_action_after_pr_code():
     # #188: that job has main's privileges, so no upload (or any action) after `make check`.
     after = (REPO / ".github/workflows/sdlc-check-after-review.yml").read_text()
     assert "upload-artifact" not in after[after.index("      - run: make check") :]
+
+
+def main_moves_on(git_, path, text):
+    """Commit to main, as another PR's merge would, and update origin/main."""
+    git_("checkout", "-q", "main")
+    (Path(git_("rev-parse", "--show-toplevel")) / path).write_text(text)
+    git_("commit", "-qam", f"main changes {path}")
+    git_("update-ref", "refs/remotes/origin/main", "main")
+    git_("checkout", "-q", "pr")
+
+
+def test_update_branch_needs_a_review_when_main_changed_a_file_the_pr_changes(base_merge):
+    # PR #193: main (#186) edited the readme next to the PR's own line. The merge is clean, but
+    # two edits to one file can reword the same rule, which only a review sees.
+    git_, _, go = base_merge
+    main_moves_on(git_, "notes.md", "one\nmain's line\ntwo\nthree\n")
+    git_("merge", "-q", "--no-edit", "main")
+    _, posted = go(git_("rev-parse", "HEAD"))
+    assert "state=failure" in posted, posted
+    assert "Not reviewed: main changed notes.md too, which this PR changes" in posted
+
+
+def test_update_branch_keeps_the_review_when_main_changed_other_files(base_merge):
+    git_, reviewed, go = base_merge
+    main_moves_on(git_, "other.py", "b = 5\n")
+    git_("merge", "-q", "--no-edit", "main")
+    _, posted = go(git_("rev-parse", "HEAD"))
+    assert "state=success" in posted, posted
+    assert f"The Claude review of {reviewed[:7]} still holds" in posted
+
+
+def test_two_update_branch_merges_in_a_row_keep_the_review(base_merge):
+    git_, _, go = base_merge
+    git_("merge", "-q", "--no-edit", "main")
+    main_moves_on(git_, "other.py", "b = 3\n")
+    git_("merge", "-q", "--no-edit", "main")
+    _, posted = go(git_("rev-parse", "HEAD"))
+    assert "state=success" in posted, posted
+
+
+def test_a_conflict_resolved_by_hand_needs_a_review(base_merge):
+    git_, _, go = base_merge
+    main_moves_on(git_, "app.py", "a = 9\n")  # the line the PR changed: a conflict
+    root = Path(git_("rev-parse", "--show-toplevel"))
+    merge = ["git", "-c", "user.name=t", "-c", "user.email=t@t", "merge", "main"]
+    assert run(merge, cwd=root).returncode != 0, "main's change to app.py should conflict"
+    assert (root / ".git" / "MERGE_HEAD").exists(), "the merge started and stopped on the conflict"
+    (root / "app.py").write_text("a = 2\n")
+    git_("add", "app.py")
+    git_("commit", "-qm", "merge main, keeping the PR's line")
+    _, posted = go(git_("rev-parse", "HEAD"))
+    assert "state=failure" in posted and "Not reviewed" in posted
+
+
+def test_a_merge_of_a_branch_that_isnt_the_base_needs_a_review(base_merge):
+    git_, _, go = base_merge
+    git_("checkout", "-qb", "side", "main~1")
+    (Path(git_("rev-parse", "--show-toplevel")) / "side.py").write_text("s = 1\n")
+    git_("add", "side.py")
+    git_("commit", "-qm", "a side branch")
+    git_("checkout", "-q", "pr")
+    git_("merge", "-q", "--no-edit", "side")
+    _, posted = go(git_("rev-parse", "HEAD"))
+    assert "state=failure" in posted
+
+
+@pytest.mark.parametrize(
+    ("carry", "kept"), [(None, True), ("on", True), ("", True), ("off", False)]
+)
+def test_review_carry_forward_can_be_turned_off(base_merge, carry, kept):
+    git_, _, go = base_merge
+    git_("merge", "-q", "--no-edit", "main")
+    _, posted = go(git_("rev-parse", "HEAD"), carry=carry)
+    assert ("state=success" in posted) == kept, posted
+
+
+def test_review_carry_forward_is_a_documented_repo_variable():
+    workflow = (REPO / ".github/workflows/sdlc-claude-review.yml").read_text()
+    job = workflow[workflow.index("  unreviewed-push:") :]
+    assert "SDLC_REVIEW_CARRY_FORWARD: ${{ vars.SDLC_REVIEW_CARRY_FORWARD }}" in job
+    settings = (REPO / ".sdlc/docs/settings.md").read_text()
+    assert "| `SDLC_REVIEW_CARRY_FORWARD` | `on`, `off` | on |" in settings

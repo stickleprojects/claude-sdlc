@@ -92,6 +92,10 @@ main() {
   local plan_amend_settings=(
     "variable SDLC_BUILD_AMENDS_PLAN"
   )
+  # Optional (#182): turn off carrying a review forward over a base merge. Not reported when unset.
+  local carry_forward_settings=(
+    "variable SDLC_REVIEW_CARRY_FORWARD"
+  )
 
   cd "$(git rev-parse --show-toplevel)"
   if [[ -n "$(git status --porcelain)" ]]; then
