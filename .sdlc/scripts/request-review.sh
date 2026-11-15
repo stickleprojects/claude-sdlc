@@ -26,6 +26,12 @@ set -uo pipefail
 
 pr="${1:-}"
 [[ "$pr" =~ ^[0-9]+$ ]] || { sed -n '2,24p' "$0" >&2; exit 2; }
+# A sha given as an argument is checked before anything else, so a bad one is a usage error
+# wherever the script runs, even where it can't tell which repo this is.
+if [[ -n "${2:-}" ]]; then
+  given="$(git rev-parse --verify --quiet "$2^{commit}" 2>/dev/null || echo "$2")"
+  [[ "$given" =~ ^[0-9a-f]{7,40}$ ]] || { echo "request-review: no commit to review" >&2; exit 2; }
+fi
 repo="${GITHUB_REPOSITORY:-$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)}"
 [[ -n "$repo" ]] || { echo "Not adding the review label: can't tell which repo this is."; exit 0; }
 sha="${2:-}"

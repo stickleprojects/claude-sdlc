@@ -1,3 +1,4 @@
+import os
 import shutil
 
 import pytest
@@ -142,6 +143,18 @@ def test_request_review_says_when_it_couldnt_add_the_label(request_review):
 def test_request_review_usage():
     assert run(["bash", ".sdlc/scripts/request-review.sh"]).returncode == 2
     assert run(["bash", ".sdlc/scripts/request-review.sh", "7", "not-a-sha"]).returncode == 2
+
+
+def test_request_review_rejects_a_bad_sha_even_when_it_cant_tell_the_repo(tmp_path):
+    # With no GITHUB_REPOSITORY and no gh login (CI aside), the repo lookup used to come first
+    # and exit 0, so a bad sha went unreported.
+    fake = tmp_path / "bin"
+    fake.mkdir()
+    (fake / "gh").write_text("#!/usr/bin/env bash\nexit 1\n")
+    (fake / "gh").chmod(0o755)
+    env = {"PATH": f"{fake}:{os.environ['PATH']}", "GITHUB_REPOSITORY": ""}
+    result = run(["bash", ".sdlc/scripts/request-review.sh", "7", "not-a-sha"], env=env)
+    assert result.returncode == 2 and "no commit to review" in result.stderr
 
 
 def test_skills_ask_for_a_review_through_request_review():
