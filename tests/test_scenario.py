@@ -77,6 +77,9 @@ def test_sync_installs_framework_owned_files(consumer):
         assert (consumer / rel).exists(), rel
     assert not (consumer / ".github/workflows/release.yml").exists(), "framework-only workflow"
     assert not (consumer / "scripts/next-version.sh").exists(), "framework-only script"
+    assert not (consumer / "scripts/backlog-labels.sh").exists(), "framework-only script (#204)"
+    assert not (consumer / ".claude/skills/backlog").exists(), "framework-only skill (#204)"
+    assert (consumer / ".claude/skills/sdlc-build/SKILL.md").exists(), "the stubs still arrive"
     assert not (consumer / ".vscode").exists(), "framework's own editor colours"
 
 
@@ -1731,7 +1734,15 @@ def test_a_consumer_syncs_across_the_stub_move_and_keeps_its_edits(tmp_path, fra
     and still finds every stub in .claude/; nothing lands in its .sdlc/claude/."""
     fw = framework_snapshot
     new_rev = git(fw, "rev-parse", "HEAD").strip()
-    # The layout before #205: stubs in .claude/, manifest rows naming them there.
+    # The layout before #205: stubs in .claude/, manifest rows naming them there. The
+    # framework's own skills (#204: .claude/skills/backlog) came later, so they go first.
+    own = (
+        sorted(p.name for p in (fw / ".claude/skills").iterdir())
+        if (fw / ".claude/skills").is_dir()
+        else []
+    )
+    if own:
+        git(fw, "rm", "-r", "-q", ".claude/skills")
     git(fw, "mv", ".sdlc/claude/skills", ".claude/skills")
     (fw / ".claude/agents").mkdir(parents=True, exist_ok=True)
     git(fw, "mv", ".sdlc/claude/agents/sdlc-verifier.md", ".claude/agents/sdlc-verifier.md")
@@ -1763,10 +1774,13 @@ def test_a_consumer_syncs_across_the_stub_move_and_keeps_its_edits(tmp_path, fra
     git(fw, "rm", "-r", "-q", "--cached", ".claude/skills", ".claude/agents/sdlc-verifier.md")
     for p in (fw / ".claude/skills", fw / ".claude/agents/sdlc-verifier.md"):
         shutil.rmtree(p) if p.is_dir() else p.unlink()
+    if own:  # the framework's own skills are back, and must not reach the consumer
+        git(fw, "checkout", "-q", new_rev, "--", ".claude/skills")
     moved = fw / ".sdlc/claude/skills/sdlc-build/SKILL.md"
     moved.write_text("<!-- framework change -->\n" + moved.read_text())
     commit(fw, "refactor: stubs into .sdlc/claude (#205)")
-    assert not (fw / ".claude/skills").exists()
+    have = sorted(p.name for p in (fw / ".claude/skills").iterdir()) if own else []
+    assert have == own, "only the framework's own skills are left in its .claude/skills"
 
     result = sync(consumer, fw, "main")
     assert result.returncode == 0, result.stdout + result.stderr
@@ -1779,5 +1793,7 @@ def test_a_consumer_syncs_across_the_stub_move_and_keeps_its_edits(tmp_path, fra
     for rel in framework_stubs:
         assert (consumer / ".claude" / rel).is_file(), rel
     assert not (consumer / ".sdlc/claude").exists(), "the stubs aren't copied into .sdlc/ too"
+    for name in own:
+        assert not (consumer / ".claude/skills" / name).exists(), f"{name} is framework-only"
     files = (consumer / ".sdlc/files").read_text().splitlines()
     assert stub in files and not any(f.startswith(".sdlc/claude/") for f in files)
