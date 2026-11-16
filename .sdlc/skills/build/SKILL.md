@@ -31,7 +31,7 @@ Ask whenever something is ambiguous, but **one decision at a time**. Use AskUser
 - **Follow `.sdlc/skills/scope.md`.** Silence is not permission, and a rule's scope is a minimum. Never leave something undone, untested or unchecked (a descope) unless plan.md's **Descopes** records it with an `Approved:` line, or the engineer has answered it as a deviation. That includes descopes carried forward from earlier milestones or neighbouring code ("not tested, like the rest of …"): each new piece of work meets the bar on its own. Test each criterion at the level it describes; a UI criterion is tested through the UI. Meet every row of the definition of done that plan.md's `Definition of done:` line names (`.sdlc/templates/definition-of-done.md`, with the repo's `docs/definition-of-done.md` on top). In a single session, ask; a worker returns `BLOCKED`. <!-- rule: build.scope -->
 - **Follow CLAUDE.md**, including any repo-specific rules about data, fixtures and outbound actions. <!-- rule: build.claude-md -->
 - **Follow the `sdlc-agent-identity` skill** whenever you commit, push, open the PR or post on GitHub: the `Requested-by:` trailer, signing with `— Claude` (or `(posted from Claude Code)` when acting as the person), no @-mentions, and fetch-and-merge before every push.
-- **Commit by explicit path** (`git add <file> …`), never `git add -A` or `git add .`. Check `git status` before each commit.
+- **Check `git status` before each commit.**
 - **Commit and push after each plan step,** so a dropped session loses little. <!-- rule: build.commit-each-step -->
   - Code commits: `feat(<slug>): <what>` (in a large build, `feat(<slug>): M<n> <what>`).
   - Commits that only change build.md: `chore(<slug>): <what>`.
@@ -55,7 +55,7 @@ Ask whenever something is ambiguous, but **one decision at a time**. Use AskUser
   - **Below a threshold: write the missing tests.** Never lower a threshold or add an exclusion to get green. Generated code, test helpers and the tests themselves may be excluded; record each exclusion as a deviation with `Engineer decides: yes`. <!-- rule: build.never-lower-threshold -->
 - **Stay inside the current unit.** Don't start the next milestone, even with time left. <!-- rule: build.one-unit -->
 - **If context is getting heavy before a milestone is done:** commit and push what is finished and tested, write precise notes in build.md (what's done, what's next, any decision half-made), leave the milestone `in progress`, and stop.
-- **Use `gh api` (REST) for GitHub.** `gh pr create`, `gh pr edit` and `gh issue view` use GraphQL, which fails in some orgs and in cloud sessions. Open a PR with `gh api repos/{owner}/{repo}/pulls -f title=… -f head=build/<slug> -f base=main -f body=…`, and check the result. <!-- rule: build.rest-api -->
+- **Open the PR with `gh api`** (REST, as the `sdlc-agent-identity` skill says): `gh api repos/{owner}/{repo}/pulls -f title=… -f head=build/<slug> -f base=main -f body=…`, and check the result.
 
 ## 1. Work out which change to build
 
@@ -171,7 +171,6 @@ For a small build after its steps, and for a large build as part of its last mil
    - Body, in this order, so the reviewer sees what needs a decision first: **Descope: needs approval** with each of the verifier's unapproved large gaps, or "None"; the descopes, each quoted with who approved it; the deviations; a **To check by hand** list with each of the plan's human checks (`Human check:` entries), for the owner to try before merging, or "None"; then what was built; the verifier's per-criterion results; the coverage per suite against its threshold. End it with the attribution line the session asks for. <!-- rule: build.pr-body-order -->
    - Don't add the `review` label. The review already runs when the PR opens.
 5. **Large build:** record the PR in build.md (`Status: PR open (#N)`), commit and push.
-6. **Never approve or merge.** A person merges. <!-- rule: build.never-merge -->
 
 ## When build.md says PR open
 

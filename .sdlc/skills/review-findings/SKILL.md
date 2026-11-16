@@ -3,13 +3,11 @@ file with an override in .sdlc-local/ (see .sdlc/docs/overrides.md), never by ed
 
 # Work through the review findings on a PR
 
-The person talks to you in the terminal; they don't need to use GitHub for feedback. You walk them through the findings, make the changes, push, and answer every thread on GitHub. Never approve or merge the PR: a person merges. <!-- rule: findings.never-merge -->
+The person talks to you in the terminal; they don't need to use GitHub for feedback. You walk them through the findings, make the changes, push, and answer every thread on GitHub.
 
 For an `intent:`, `bug:` or `spec:` PR, use the `sdlc-po-review` skill instead (`/sdlc-pr` picks it). It follows the shared rules below.
 
 ## 1. Load the PR
-
-Use the REST API. `gh pr view`, `gh pr edit` and `gh issue view` can fail in orgs hit by the Projects (classic) GraphQL deprecation.
 
 ```
 gh api repos/{owner}/{repo}/pulls/<N>                    # title, head branch
@@ -48,27 +46,17 @@ Collect every decision first. Then make the changes. <!-- rule: findings.decide-
 
 ## One actor per finding
 
-A finding is handled by one actor: either this session, or the GitHub bot (`@claude`). Never both, because two agents fixing the same finding produce conflicting commits. <!-- rule: findings.one-actor -->
-
-- **A finding the bot owns** has an `@claude` comment on its thread, or an `@claude` PR comment that names it. Leave it to the bot, and tell the person which ones you skipped.
-- **Before you push,** fetch and check whether anyone else has pushed to the branch: the bot (`claude[bot]`, `github-actions[bot]`), a person, or another session under the agent's own identity (`<app>[bot]`). Any commit on the remote that you don't have counts, whoever wrote it. <!-- rule: findings.fetch-before-push -->
-
-  ```
-  git fetch origin <branch>
-  git log --format='%h %an %s' HEAD..origin/<branch>
-  ```
-
-  If there are new commits, show them to the person, merge them in (never rebase), re-run `make check`, and then push.
+Follow the `sdlc-agent-identity` skill's rules 3 and 4 (`.sdlc/skills/agent-identity/SKILL.md`): leave a finding the bot owns, and tell the person which ones you skipped; before every push, fetch and merge in anything someone else pushed.
 
 ## Before you push
 
-Run the check above. Then, so the next review doesn't find what this push left stale (spellbound3d#183, #173):
+Fetch and merge first (*One actor per finding*). Then, so the next review doesn't find what this push left stale (spellbound3d#183, #173):
 
 1. **Nothing out of date.** Run `make next REF=origin/main` and act on anything it reports for this change: a build.md, plan or spec the push makes stale is fixed in the same push.
 2. **Every changed requirement traced.** For each requirement or criterion the push adds or rewords, run `make clauses CHANGE=<slug>` and check that each of its clauses traces to a criterion, to the design text that depends on it (the plan's Approach and Steps) and to a test. Fix the whole requirement, not only the clause a finding named. <!-- rule: findings.requirements-traced -->
 3. **The PR body still true.** Reread the PR body (`gh api repos/{owner}/{repo}/pulls/<N> --jq .body`) and update any statement the push makes false, such as "the spec wasn't amended" or a test count (`gh api -X PATCH repos/{owner}/{repo}/pulls/<N> -F body=@<file>`). <!-- rule: findings.pr-body-true -->
 
-Add files by explicit path (`git add <file>…`), never `git add -A` or `git add .`. Follow the `sdlc-agent-identity` skill (`.sdlc/skills/agent-identity/SKILL.md`) for commit trailers, and never @-mention anyone.
+Commit and post as the `sdlc-agent-identity` skill says (explicit paths, commit trailers, no @-mentions).
 
 ## Reply and resolve
 

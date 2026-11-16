@@ -34,7 +34,7 @@ A holder can hold part of a rule only, such as the plan gate holding "no code be
 | `review.dependent-design` | Plan text a requirement change makes stale is reported in the same review | `eval: review-flags-design-text-a-requirement-change-makes-stale` |
 | `review.rereview-first-split` | On a re-review, unchanged text gets no new clause findings | `eval: review-rereview-keeps-the-first-split` |
 | `review.clause-check-input` | Start from the clause check's output; an `unchecked` entry is never covered | nothing |
-| `review.descopes` | Report unapproved descopes, definition-of-done gaps and unlisted human checks as Important | `check: .sdlc/src/sdlc/artifacts.py::check_descopes`, `check: .sdlc/src/sdlc/artifacts.py::check_dod` |
+| `review.descopes` | Report unapproved descopes (approved only as scope.md records one), definition-of-done gaps and unlisted human checks as Important | `check: .sdlc/src/sdlc/artifacts.py::check_descopes`, `check: .sdlc/src/sdlc/artifacts.py::check_dod` |
 | `review.delivery-gap` | A delivery that lacks a requirement's main verb or noun is a `Descope: needs approval` finding | nothing |
 | `review.plan-amendments` | With SDLC_BUILD_AMENDS_PLAN on, all plan amendments go in one approval thread | `eval: review-raises-plan-amendments-as-one-thread`, `check: .sdlc/scripts/descopes-decided.sh`, `check: .sdlc/scripts/check-pr-title.sh` |
 | `review.project-rules` | Apply the repo's docs/review-rules.md | nothing |
@@ -49,8 +49,6 @@ A holder can hold part of a rule only, such as the plan gate holding "no code be
 | `review.hidden-count` | The summary ends with the hidden findings count | `check: .sdlc/scripts/review-findings.sh` |
 | `review.one-summary` | One summary comment per PR, replaced on each review, in a fixed order | nothing |
 | `review.claim-only-checked` | The summary claims only what was compared | nothing |
-| `review.one-actor` | A finding is handled by the terminal session or the bot, never both | nothing |
-| `review.reply-every-thread` | Every thread gets a reply before it's resolved | nothing |
 
 ## `.sdlc/skills/scope.md`
 
@@ -64,6 +62,7 @@ A holder can hold part of a rule only, such as the plan gate holding "no code be
 | `scope.plan-descope-entry` | A plan descope is a Descopes entry with `Approved:`, approved one at a time | `check: .sdlc/src/sdlc/artifacts.py::check_descopes` |
 | `scope.not-approved` | No `Approved:`, in Risks, or inherited means not approved | nothing |
 | `scope.delivery-gaps` | Only a large unapproved delivery gap pulls a person in, via `Descope: needs approval` | `eval: verifier-flags-unapproved-delivery-gap`, `eval: verifier-passes-an-approved-delivery-gap` |
+| `scope.clauses` | A requirement's clauses, and checking coverage one clause at a time | `eval: review-flags-uncovered-clause-in-spec`, `eval: review-flags-uncovered-clause-in-plan` |
 | `scope.human-checks` | A human check is an approved descope; the verifier reports it PENDING | nothing |
 | `scope.test-before-asking` | Write the test before handing a person something to try | `eval: build-scripts-checks-before-handing-them-over` |
 | `scope.test-level` | Test each criterion at the level it describes | nothing |
@@ -101,7 +100,6 @@ A holder can hold part of a rule only, such as the plan gate holding "no code be
 | `build.coverage` | Every build runs `make coverage`; a large build adds it | nothing |
 | `build.never-lower-threshold` | Never lower a coverage threshold or add an exclusion to get green | nothing |
 | `build.one-unit` | Stay inside the current unit of work | nothing |
-| `build.rest-api` | Use `gh api` (REST), not GraphQL-based gh commands | nothing |
 | `build.plan-approved` | Build only from a plan merged on main | `hook: .sdlc/hooks/plan-gate.sh`, `check: .sdlc/scripts/check-plan-first.sh` |
 | `build.sizing` | Size a build by work and certainty, not by file count | nothing |
 | `build.no-hidden-decisions` | Decisions go in Questions before approval, never in notes or folded into approve | nothing |
@@ -111,7 +109,6 @@ A holder can hold part of a rule only, such as the plan gate holding "no code be
 | `build.roadmap-row` | Mark the roadmap row done in the build PR; ask before marking a milestone done | `check: .sdlc/src/sdlc/roadmap.py::check_roadmap` |
 | `build.verifier` | Run the verifier before the PR; open it with unapproved large gaps listed first | nothing |
 | `build.pr-body-order` | The build PR body leads with what needs a decision | nothing |
-| `build.never-merge` | Never approve or merge | `hook: .sdlc/hooks/production-gate.sh` |
 | `build.all-stop-conditions` | `/sdlc-build all` stops on PR open, FAILED, no progress, or milestones plus three workers | nothing |
 | `build.worker-never-asks` | A worker never asks the person; it returns BLOCKED | nothing |
 | `build.worker-descope-blocked` | A worker with an unapproved descope returns BLOCKED | nothing |
@@ -168,7 +165,6 @@ A holder can hold part of a rule only, such as the plan gate holding "no code be
 
 | Id | Rule | Held by |
 |---|---|---|
-| `pr.never-merge` | Never approve or merge | `hook: .sdlc/hooks/production-gate.sh` |
 | `pr.route-by-title` | Route a PR to the walkthrough for whoever decides, by its title | nothing |
 | `pr.fast-path-both` | A fast-path PR gets the product owner's walkthrough, then the engineer's | nothing |
 | `pr.not-the-decider` | Say who decides when the person running it doesn't | nothing |
@@ -185,7 +181,6 @@ A holder can hold part of a rule only, such as the plan gate holding "no code be
 
 | Id | Rule | Held by |
 |---|---|---|
-| `sdlc.never-merge` | Never merge the sync PR | `hook: .sdlc/hooks/production-gate.sh` |
 | `sdlc.declined-not-offered` | Don't offer features the project declined | `check: .sdlc/src/sdlc/artifacts.py::check_features` |
 | `sdlc.clean-tree` | Never stash or discard the person's work | nothing |
 | `sdlc.conflicts-with-person` | Resolve each sync conflict with the person | nothing |
@@ -200,14 +195,11 @@ A holder can hold part of a rule only, such as the plan gate holding "no code be
 
 | Id | Rule | Held by |
 |---|---|---|
-| `findings.never-merge` | Never approve or merge | `hook: .sdlc/hooks/production-gate.sh` |
 | `findings.descopes-first` | Descope findings first, with the PR's descopes, risks and human checks shown up front | nothing |
 | `findings.decide-then-change` | Collect every decision, then make the changes | nothing |
 | `findings.fix-whole-requirement` | Fix the whole requirement and the plan text that depends on it | nothing |
-| `findings.one-actor` | One actor per finding: this session or the bot | nothing |
-| `findings.fetch-before-push` | Before pushing, fetch and merge anyone else's commits | nothing |
 | `findings.pr-body-true` | Before pushing, nothing is stale: artifacts, traced requirements, the PR body | `eval: review-fix-updates-a-stale-pr-body` |
-| `findings.reply-then-resolve` | Reply on every thread before resolving it | nothing |
+| `findings.reply-then-resolve` | Reply on every thread before resolving it; never resolve one silently | nothing |
 | `findings.descope-person-decides` | Only a person's reply decides a descope thread; never approve one for them | `check: .sdlc/scripts/descopes-decided.sh`, `check: .sdlc/scripts/descopes-status.sh` |
 | `findings.request-review` | Ask for a review with request-review.sh, never by adding the label | nothing |
 | `findings.requirements-traced` | Before pushing, every changed requirement traces to a criterion, design text and a test | nothing |
@@ -217,7 +209,6 @@ A holder can hold part of a rule only, such as the plan gate holding "no code be
 
 | Id | Rule | Held by |
 |---|---|---|
-| `po.never-merge` | Never approve or merge | `hook: .sdlc/hooks/production-gate.sh` |
 | `po.out-of-scope-first` | A spec's Out of scope items come first in the brief | nothing |
 | `po.engineer-findings` | Engineer findings are handed on, not decided here | nothing |
 | `po.edit-only-artifact` | Edit only the artifact under review; word the whole requirement | nothing |
@@ -228,12 +219,13 @@ A holder can hold part of a rule only, such as the plan gate holding "no code be
 |---|---|---|
 | `identity.who-is-who` | The agent App is never the person; the CI reviewer isn't yours to act as | nothing |
 | `identity.signing` | Sign with `— Claude` as the agent, `(posted from Claude Code)` as the person | nothing |
+| `identity.rest-api` | Use `gh api` (REST), not GraphQL-based gh commands | nothing |
 | `identity.explicit-add` | Add files by explicit path | nothing |
 | `identity.auto-merge` | Turn on auto-merge only through auto-merge.sh, right after opening the PR | `hook: .sdlc/hooks/production-gate.sh` |
 | `identity.act-when-asked` | Act only when a person asks | nothing |
 | `identity.no-mentions` | Never @-mention anyone | nothing |
-| `identity.one-actor` | One actor per finding | nothing |
-| `identity.fetch-merge` | Before every push, fetch and merge; never rebase a pushed branch | nothing |
+| `identity.one-actor` | One actor per finding: this session or the bot, which owns a thread an `@claude` comment is on or names | nothing |
+| `identity.fetch-merge` | Before every push, fetch and merge anyone's commits; never rebase a pushed branch | nothing |
 | `identity.no-force-push` | Never force-push or delete someone else's branch | `hook: .sdlc/hooks/production-gate.sh` |
 | `identity.people-approve` | Approving and merging stay with people | `hook: .sdlc/hooks/production-gate.sh` |
 

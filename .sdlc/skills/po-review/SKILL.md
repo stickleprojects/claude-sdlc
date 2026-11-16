@@ -3,13 +3,11 @@ file with an override in .sdlc-local/ (see .sdlc/docs/overrides.md), never by ed
 
 # Product owner review of a PR
 
-The product owner decides; you explain and do the typing. This is the main way findings get handled: the product owner talks to you in the terminal and doesn't need to comment on GitHub. You walk them through the findings, edit the artifact, push, and reply on every thread. The acceptance is recorded on GitHub, where approving and merging the PR **is** the acceptance. Never approve or merge the PR yourself. <!-- rule: po.never-merge -->
+The product owner decides; you explain and do the typing. This is the main way findings get handled: the product owner talks to you in the terminal and doesn't need to comment on GitHub. You walk them through the findings, edit the artifact, push, and reply on every thread. The acceptance is recorded on GitHub, where approving and merging the PR **is** the acceptance.
 
 Replies, resolving threads and checking for bot commits follow the shared rules in `.sdlc/skills/review-findings/SKILL.md` (sections *One actor per finding*, *Before you push* and *Reply and resolve*). Read them before step 4, along with the `sdlc-agent-identity` skill (signatures, commit trailers, no @-mentions).
 
 ## 1. Load the PR
-
-Use the REST API: `gh pr view`, `gh pr edit` and `gh issue view` can fail in orgs hit by the Projects (classic) GraphQL deprecation.
 
 ```
 gh api repos/{owner}/{repo}/pulls/<N>                    # title, head branch, body

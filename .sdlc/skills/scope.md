@@ -42,6 +42,10 @@ Some things no test can settle: how a game feels, timing, real hardware, a look 
 
 The same holds for anything you hand a person to try during a build or review, in the plan or not ("try the lift exit", "check that B closes the menu") (#171). Before asking, look for a test that already checks it, and if a script could check it, write that test first and run it. Ask the person only for what no test can settle, or for a quick smoke test when scripting it is a big effort; then say which test is still owed, and treat it as a descope (`Engineer decides: yes` in build.md, or the PR body for a small build) until a person approves it. <!-- rule: scope.test-before-asking -->
 
+## Clauses
+
+A requirement's clauses are its separate outcomes: each thing it "shows", "has", "is" or "combines with", each "otherwise" or fallback, and each "when … then". A criterion can cite a requirement and still test only some of its clauses (#47), so the spec, plan, review and verifier each check coverage one clause at a time, one requirement at a time (`make clauses CHANGE=<slug>` lists each requirement with the criteria and plan lines that cite it). <!-- rule: scope.clauses -->
+
 ## Testing at the level the criterion describes
 
 A criterion is tested at the level it is written at. Behaviour a user sees through a UI is tested through that UI (widget, input or end-to-end tests, or inside the real host such as an editor), not only through the model beneath it. A data format is tested with a schema and fixtures. A command is tested by running it. A test file that exists, or a suite that is green, is not evidence that a criterion passes. <!-- rule: scope.test-level -->

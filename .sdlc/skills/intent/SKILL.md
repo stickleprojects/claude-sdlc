@@ -46,4 +46,4 @@ Do not write a spec, a plan or any code at this stage. (A bug on the fast path, 
 
 ## Committing
 
-When you commit, add the change's files by explicit path (`git add changes/<slug>/intent.md` or `…/bug.md`, with `…/spec.md` on the fast path, plus `docs/roadmap.md` and any adjustment record), never `git add -A` or `git add .`. Follow the `sdlc-agent-identity` skill for the commit trailer and PR signature.
+When you commit, add the change's files by explicit path (`git add changes/<slug>/intent.md` or `…/bug.md`, with `…/spec.md` on the fast path, plus `docs/roadmap.md` and any adjustment record), following the `sdlc-agent-identity` skill (explicit paths, commit trailer, PR signature).
