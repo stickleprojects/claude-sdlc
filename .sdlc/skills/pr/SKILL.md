@@ -3,7 +3,7 @@ file with an override in .sdlc-local/ (see .sdlc/docs/overrides.md), never by ed
 
 # Work through the review on a PR
 
-This is the one skill to remember for PR reviews. It works out what kind of PR it is and hands over to the skill that knows how to walk this person through it. Never approve or merge a PR: a person does that. <!-- rule: pr.never-merge -->
+This is the one skill to remember for PR reviews. It works out what kind of PR it is and hands over to the skill that knows how to walk this person through it.
 
 ## 1. Which PR
 

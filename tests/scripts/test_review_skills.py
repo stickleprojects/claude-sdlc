@@ -23,7 +23,12 @@ def test_review_skills_sign_replies_and_avoid_graphql_pr_commands(path):
 def test_review_findings_resolves_threads_and_checks_for_bot_commits():
     skill = (REPO / ".sdlc/skills/review-findings/SKILL.md").read_text()
     assert "resolveReviewThread" in skill
-    assert "HEAD..origin/<branch>" in skill
+    # The fetch-and-merge check lives in agent-identity, which the findings skill points to.
+    assert "`sdlc-agent-identity` skill's rules 3 and 4" in skill
+    identity = (REPO / ".sdlc/skills/agent-identity/SKILL.md").read_text()
+    assert "3. **One actor per finding.**" in identity
+    assert "4. **Before every push, fetch and merge.**" in identity
+    assert "HEAD..origin/<branch>" in identity
 
 
 def test_pr_title_accepts_bug_artifact_prs():
