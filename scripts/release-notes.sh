@@ -7,6 +7,8 @@
 #   for what titles can't say, such as a new optional feature and how to adopt it.
 #   A release with a breaking change must have one, with an "## Upgrade steps" section that
 #   tells /sdlc what to do in a consumer repo (#20): without it this fails, dry runs included.
+#   SDLC_TRIAL, if set, is the result of the consumer trial before the release (#200); it goes
+#   in a "## Consumer trial" section.
 set -euo pipefail
 
 version="${1:?usage: release-notes.sh <version> [owner/repo]}"
@@ -71,6 +73,9 @@ fi
 if [[ -f "$notes_file" ]]; then
   printf '\n'
   cat "$notes_file"
+fi
+if [[ -n "${SDLC_TRIAL:-}" ]]; then
+  printf '\n## Consumer trial\n\n%s\n' "$SDLC_TRIAL"
 fi
 cat <<EOF
 

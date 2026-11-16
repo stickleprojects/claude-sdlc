@@ -12,6 +12,10 @@ on:
         description: "Only show the version that would be released"
         type: boolean
         default: true
+      trial:
+        description: "Consumer trial result for the notes, e.g. 'stickleprojects/sdlc-sandbox#12: make check and CI passed' (/release skill; required unless a dry run)"
+        type: string
+        default: ""
       # No option to skip the agent evals: every release runs every test (make check FULL=1)
       # and every eval before it tags, so nothing is released less checked than the last one.
 
@@ -30,7 +34,14 @@ jobs:
           fetch-depth: 0
       - name: Work out the next version
         id: version
+        env:
+          SDLC_TRIAL: ${{ inputs.trial }}
+          DRY_RUN: ${{ inputs.dry_run }}
         run: |
+          # A release is tried in a consumer first (#200, scripts/consumer-trial.sh).
+          if [[ "$DRY_RUN" != true && -z "$SDLC_TRIAL" ]]; then
+            echo "::error::no consumer trial: run the /release checklist and pass its result as -f trial=..."; exit 1
+          fi
           version=$(scripts/next-version.sh --explain 2> explain.txt) || { cat explain.txt; echo "::error::nothing to release"; exit 1; }
           cat explain.txt
           echo "version=$version" >> "$GITHUB_OUTPUT"

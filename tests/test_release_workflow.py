@@ -17,7 +17,8 @@ def label(step):
 
 def test_there_is_no_input_to_skip_a_check():
     inputs = load(RELEASE)["on"]["workflow_dispatch"]["inputs"]
-    assert set(inputs) == {"dry_run"}
+    # trial (#200) skips nothing: a real release needs it (tests/scripts/test_consumer_trial.py).
+    assert set(inputs) == {"dry_run", "trial"}
     assert inputs["dry_run"]["default"] is True
 
 

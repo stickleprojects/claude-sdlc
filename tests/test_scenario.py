@@ -79,6 +79,8 @@ def test_sync_installs_framework_owned_files(consumer):
     assert not (consumer / "scripts/next-version.sh").exists(), "framework-only script"
     assert not (consumer / "scripts/backlog-labels.sh").exists(), "framework-only script (#204)"
     assert not (consumer / ".claude/skills/backlog").exists(), "framework-only skill (#204)"
+    assert not (consumer / "scripts/consumer-trial.sh").exists(), "framework-only script (#200)"
+    assert not (consumer / ".claude/skills/release").exists(), "framework-only skill (#200)"
     assert (consumer / ".claude/skills/sdlc-build/SKILL.md").exists(), "the stubs still arrive"
     assert not (consumer / ".vscode").exists(), "framework's own editor colours"
 

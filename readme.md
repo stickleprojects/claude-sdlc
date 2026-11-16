@@ -336,8 +336,10 @@ A breaking change is anything that would break a consumer repo: a renamed `make`
 
 ```
 gh workflow run release.yml                    # dry run: the run summary shows the version it would pick
-gh workflow run release.yml -f dry_run=false   # full checks and evals (always), then tag and publish release notes
+gh workflow run release.yml -f dry_run=false -f trial="..."   # full checks and evals (always), then tag and publish release notes
 ```
+
+- **A consumer tries it first.** Before a real release, the `/release` skill syncs `main` into a fresh clone of `stickleprojects/sdlc-sandbox`, runs its `make check` and opens a draft PR there, closed after the release (`scripts/consumer-trial.sh`). The result goes in `trial`, which a real release requires, and from there into the notes.
 
 `scripts/next-version.sh --explain` shows the same calculation locally.
 - **Release notes** list the PR titles.
