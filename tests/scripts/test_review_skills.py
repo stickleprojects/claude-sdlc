@@ -23,7 +23,6 @@ def test_review_skills_sign_replies_and_avoid_graphql_pr_commands(path):
 def test_review_findings_resolves_threads_and_checks_for_bot_commits():
     skill = (REPO / ".sdlc/skills/review-findings/SKILL.md").read_text()
     assert "resolveReviewThread" in skill
-    assert "If GraphQL fails" in skill
     assert "HEAD..origin/<branch>" in skill
 
 

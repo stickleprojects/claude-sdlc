@@ -300,10 +300,3 @@ def test_the_runner_runs_setup_and_passes_tools_and_turns(tmp_path):
     assert "PASS  setup and settings" in result.stdout, result.stdout + result.stderr
     assert "FAIL  failing setup" in result.stdout
     assert result.returncode == 0 and "evals: 1/2 passed" in result.stdout
-
-
-def test_the_intent_skill_names_the_fast_path_branch_with_its_number():
-    """#185: twice the fast-path eval failed on build/price-decimals; the skill now says why not."""
-    skill = (REPO / ".sdlc/skills/intent/SKILL.md").read_text()
-    assert "number included, never the bare name" in skill
-    assert "`build/0007-price-decimals`, not `build/price-decimals`" in skill

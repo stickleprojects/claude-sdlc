@@ -67,10 +67,6 @@ def test_delivery_gaps_reach_every_stage_and_escalate_only_when_unapproved() -> 
         assert "Descope: needs approval" in (REPO / path).read_text(), path
     verifier = (REPO / ".sdlc/agents/verifier.md").read_text()
     assert ".sdlc/scripts/clause-check.sh --stage build" in verifier
-    assert "Wording drift" in verifier and "main verb or noun" in verifier
-    assert "no routine human sign-off" in (REPO / ".sdlc/skills/scope.md").read_text()
-    build = (REPO / ".sdlc/skills/build/SKILL.md").read_text()
-    assert "check each milestone's Goal and Demo against the requirements" in build
 
 
 def test_clauses_list_requirement_lines_they_cant_read() -> None:

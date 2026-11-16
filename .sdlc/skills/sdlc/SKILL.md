@@ -83,7 +83,7 @@ Push, open the PR, run `.sdlc/scripts/auto-merge.sh <N>` on it (the `sdlc-agent-
 
 For each optional feature the repo hasn't adopted or declined, offer in one line to start it, for example drafting proposed ADRs for the decisions this repo has already made, for the tech lead to accept. Don't start one without a yes.
 
-Then list the optional features in these releases that the project has declined, without offering them, so nobody wonders where they went. Use this wording, one line per feature with who declined it, when, and their reason:
+Then list the optional features in these releases that the project has declined, without offering them, so nobody wonders where they went. Use this wording, one line per feature with who declined it, when, and their reason: <!-- rule: sdlc.list-declined -->
 
 > Not offered, since you've said no to these before:
 > - architecture decision records (ADRs): declined by Sam on 6 Nov 2026 ("a short-lived prototype; the plan's Risks line is enough")
@@ -92,7 +92,7 @@ Then list the optional features in these releases that the project has declined,
 
 Leave the list out when nothing in these releases was declined.
 
-When the person says no, ask with AskUserQuestion which they mean:
+When the person says no, ask with AskUserQuestion which they mean: <!-- rule: sdlc.not-now-or-not-for-us -->
 - **Not now:** nothing is recorded, and the next update offers it again.
 - **Not for us:** record it, so no update offers it again. Add an entry to `.sdlc.toml`, which belongs to the project, and which the sync never writes:
   ```toml

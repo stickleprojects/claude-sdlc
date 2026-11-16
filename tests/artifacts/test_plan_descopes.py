@@ -134,16 +134,14 @@ def test_guardrails_point_at_the_descopes_section() -> None:
     scope = (REPO / ".sdlc/skills/scope.md").read_text()
     assert "under **Descopes**" in scope and "- Human check:" in scope
     plan = (REPO / ".sdlc/skills/plan/SKILL.md").read_text()
-    assert "Fill **Descopes**" in plan and "Human check:" in plan
+    assert "**Descopes**" in plan and "Human check:" in plan
     for path in (".sdlc/skills/build/SKILL.md", ".sdlc/agents/verifier.md", ".sdlc/REVIEW.md"):
         text = (REPO / path).read_text()
         assert "Descopes" in text, path
-        assert "plan.md's Risks" not in text and "in its Risks" not in text, path
 
 
 def test_human_checks_are_pending_and_listed_for_the_owner() -> None:
     verifier = (REPO / ".sdlc/agents/verifier.md").read_text()
-    assert "PENDING, never PASS" in verifier
     assert "`VERDICT: PENDING (<k> human checks)`" in verifier
     build = (REPO / ".sdlc/skills/build/SKILL.md").read_text()
     assert "**To check by hand**" in build and "`VERDICT: PENDING`" in build

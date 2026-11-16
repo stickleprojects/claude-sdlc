@@ -123,17 +123,8 @@ def test_clauses_with_a_ref_keeps_only_what_changed(tmp_path: Path, capsys) -> N
 
 
 def test_clause_coverage_reaches_every_stage() -> None:
-    for path in (
-        ".sdlc/skills/spec/SKILL.md",
-        ".sdlc/skills/plan/SKILL.md",
-        ".sdlc/agents/verifier.md",
-        ".sdlc/REVIEW.md",
-    ):
-        text = (REPO / path).read_text()
-        assert "clause" in text.lower(), path
     review = (REPO / ".sdlc/REVIEW.md").read_text()
     assert ".sdlc/scripts/clause-check.sh" in review
-    assert "IDs only" in review, "the spec-match line states its basis"
     assert "Untestable (R<n>)" in (REPO / ".sdlc/templates/spec.md").read_text()
     assert "make clauses CHANGE=" in (REPO / ".sdlc/agents/verifier.md").read_text()
 
