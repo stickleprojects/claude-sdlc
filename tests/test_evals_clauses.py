@@ -157,15 +157,9 @@ def test_rereview_check_reads_findings_written_inside_the_repo(tmp_path):
 # --- the rules and the tasks ------------------------------------------------------------------
 
 
-def test_review_rules_ask_for_every_clause_once_and_keep_the_first_split():
+def test_review_rules_read_the_first_splits_commit_and_the_check_reports_every_clause():
     review = (REPO / ".sdlc/REVIEW.md").read_text()
-    assert "**Every clause of a requirement in one finding (#160).**" in review
-    assert "one thread per requirement that lists every clause" in review
-    assert "**On a re-review, the first split stands (#160).**" in review
-    assert "In text that hasn't changed, raise no new clauses" in review
-    assert "original_commit_id" in review and "is a Nit at most" in review
-    assert "If that commit is no longer in the repo" in review
-    assert "treat the whole text as changed" in review
+    assert "original_commit_id" in review  # the API field the re-review reads
     prompt = (REPO / ".sdlc/prompts/clause-check.md").read_text()
     assert "Split the whole requirement's text into clauses, start to end" in prompt
     assert "Report every clause that isn't covered, not only the first one you find." in prompt

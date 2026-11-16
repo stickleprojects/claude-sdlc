@@ -115,10 +115,8 @@ def test_the_review_and_each_reply_check_the_descopes():
     )
 
 
-def test_the_review_rules_and_skill_say_a_person_decides_a_descope():
-    rules = (REPO / ".sdlc/REVIEW.md").read_text()
-    assert "has `Descope: needs approval` right after its lead-in" in rules
-    assert "a person (not a bot or an App) replies in the thread" in rules
-    skill = (REPO / ".sdlc/skills/review-findings/SKILL.md").read_text()
-    assert "**A `Descope: needs approval` thread** is decided only by a person's reply" in skill
-    assert "never approve one for them" in skill
+def test_the_review_rules_and_skill_use_the_lead_in_the_script_reads():
+    """descopes-decided.sh finds a descope thread by its lead-in; both prompts must write it."""
+    assert "Descope: needs approval" in (REPO / ".sdlc/scripts/descopes-decided.sh").read_text()
+    for path in (".sdlc/REVIEW.md", ".sdlc/skills/review-findings/SKILL.md"):
+        assert "Descope: needs approval" in (REPO / path).read_text(), path

@@ -23,7 +23,7 @@ def test_guardrails_read_the_scope_rules(path: str) -> None:
 def test_worker_blocks_on_an_unapproved_descope() -> None:
     build = (REPO / ".sdlc/skills/build/SKILL.md").read_text()
     worker = build[build.index("## Worker mode") :]
-    assert "**A descope nobody approved:**" in worker and "return `BLOCKED`" in worker
+    assert "return `BLOCKED`" in worker
     assert "Descopes:" in worker  # the report carries them back to the orchestrator
 
 

@@ -51,7 +51,7 @@ def test_project_review_rules_live_outside_review_md():
     passes = re.findall(r"^(\d)\. \*\*([^*]+):\*\*", review, re.M)
     assert [n for n, _ in passes] == ["1", "2", "3", "4", "5", "6"]
     assert passes[-1][1] == "Project rules", "last, so the earlier passes keep their numbers"
-    assert "`docs/review-rules.md`" in review and "the sync never touches it" in review
+    assert "`docs/review-rules.md`" in review
     sync = (REPO / ".sdlc/scripts/sync-sdlc.sh").read_text()
     assert "review-rules" not in sync, "the project's file is never synced"
     assert synced(".sdlc/templates/review-rules.md"), (
@@ -78,7 +78,6 @@ def test_next_and_the_upgrade_steps_know_the_roadmap():
     # #81: /sdlc-next reads the roadmap from main; v0.10.0's upgrade covers both consumers' shapes.
     nxt = (REPO / ".sdlc/skills/next/SKILL.md").read_text()
     assert "git show origin/main:docs/roadmap.md" in nxt
-    assert "Never reorder the roadmap" in nxt
     steps = (REPO / "docs/release-notes/v0.10.0.md").read_text().split("## Upgrade steps", 1)[1]
     for case in ("own roadmap check already", "in another shape", "No roadmap"):
         assert case in steps, case

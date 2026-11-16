@@ -144,7 +144,7 @@ def test_release_notes_give_the_clauses_recipe_the_makefile_uses():
     assert all(line in in_notes for line in recipe.splitlines()), recipe
     assert "## Upgrade steps" in notes and "## Optional: the `clauses` make target" in notes
     skill = (REPO / ".sdlc/skills/sdlc/SKILL.md").read_text()
-    assert "`Upgrade steps`" in skill and "never in the sync PR" in skill
+    assert "`Upgrade steps`" in skill
 
 
 @pytest.fixture

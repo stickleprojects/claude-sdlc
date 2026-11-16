@@ -115,6 +115,10 @@ A holder can hold part of a rule only, such as the plan gate holding "no code be
 | `build.all-stop-conditions` | `/sdlc-build all` stops on PR open, FAILED, no progress, or milestones plus three workers | nothing |
 | `build.worker-never-asks` | A worker never asks the person; it returns BLOCKED | nothing |
 | `build.worker-descope-blocked` | A worker with an unapproved descope returns BLOCKED | nothing |
+| `build.milestone-goals-match-requirements` | A milestone Goal or Demo that delivers less than its requirement is raised as a question before approval | nothing |
+| `build.fast-path-tests-first` | A fast-path bug's criteria are its steps: failing tests committed alone first, then the fix | `check: .sdlc/scripts/tests-locked.sh` |
+| `build.fast-path-pr-body` | A fast-path PR body says approving it ships the fix, and who checks what | nothing |
+| `build.all-orchestrator-opens-pr` | In `/sdlc-build all`, the orchestrator opens the PR itself, with the run's decisions | nothing |
 
 ## `.sdlc/skills/plan/SKILL.md`
 
@@ -145,6 +149,8 @@ A holder can hold part of a rule only, such as the plan gate holding "no code be
 | `intent.no-real-data` | Never real personal data in a bug report | nothing |
 | `intent.bug-path` | `Bug path: full` forces the full path; otherwise take the fast path when its conditions hold | `eval: bug-fast-path`, `eval: bug-needs-decision-full-path`, `eval: bug-path-full-setting` |
 | `intent.fast-path-open-question` | An open product question ends the fast path | `eval: bug-needs-decision-full-path` |
+| `intent.bug-pr-branch` | A full-path bug PR never comes from `build/<slug>` | nothing |
+| `intent.fast-path-branch` | A fast-path bug is built on `build/<slug>` with the number | `hook: .sdlc/hooks/plan-gate.sh`, `check: .sdlc/scripts/check-plan-first.sh` |
 
 ## `.sdlc/skills/spec/SKILL.md`
 
@@ -187,6 +193,8 @@ A holder can hold part of a rule only, such as the plan gate holding "no code be
 | `sdlc.upgrade-steps` | Do every upgrade step; artifact changes go on their own change's PR; decisions go to their owner | `check: .sdlc/src/sdlc/cli.py::check_upgrade` |
 | `sdlc.no-framework-edits` | Don't edit framework files to make the sync pass | nothing |
 | `sdlc.decline-reason` | Record a declined feature with the person's own reason | `check: .sdlc/src/sdlc/artifacts.py::check_features` |
+| `sdlc.list-declined` | After the update, list declined features once, without offering them | nothing |
+| `sdlc.not-now-or-not-for-us` | A no is either not now (nothing recorded) or not for us (recorded in .sdlc.toml) | `check: .sdlc/src/sdlc/artifacts.py::check_features` |
 
 ## `.sdlc/skills/review-findings/SKILL.md`
 
@@ -202,6 +210,8 @@ A holder can hold part of a rule only, such as the plan gate holding "no code be
 | `findings.reply-then-resolve` | Reply on every thread before resolving it | nothing |
 | `findings.descope-person-decides` | Only a person's reply decides a descope thread; never approve one for them | `check: .sdlc/scripts/descopes-decided.sh`, `check: .sdlc/scripts/descopes-status.sh` |
 | `findings.request-review` | Ask for a review with request-review.sh, never by adding the label | nothing |
+| `findings.requirements-traced` | Before pushing, every changed requirement traces to a criterion, design text and a test | nothing |
+| `findings.graphql-fallback` | If resolving fails, leave the thread and tell the person which to resolve by hand | nothing |
 
 ## `.sdlc/skills/po-review/SKILL.md`
 
@@ -249,3 +259,5 @@ A holder can hold part of a rule only, such as the plan gate holding "no code be
 | `verifier.definition-of-done` | Each named definition-of-done row is met or approved | nothing |
 | `verifier.human-checks` | Human checks are PENDING, never PASS | nothing |
 | `verifier.report-order` | The report leads with descopes and ends with the VERDICT line | nothing |
+| `verifier.fast-path` | A fast-path bug is verified from bug.md, with its failing tests committed before the fix | nothing |
+

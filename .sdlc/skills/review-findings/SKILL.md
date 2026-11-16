@@ -65,7 +65,7 @@ A finding is handled by one actor: either this session, or the GitHub bot (`@cla
 Run the check above. Then, so the next review doesn't find what this push left stale (spellbound3d#183, #173):
 
 1. **Nothing out of date.** Run `make next REF=origin/main` and act on anything it reports for this change: a build.md, plan or spec the push makes stale is fixed in the same push.
-2. **Every changed requirement traced.** For each requirement or criterion the push adds or rewords, run `make clauses CHANGE=<slug>` and check that each of its clauses traces to a criterion, to the design text that depends on it (the plan's Approach and Steps) and to a test. Fix the whole requirement, not only the clause a finding named.
+2. **Every changed requirement traced.** For each requirement or criterion the push adds or rewords, run `make clauses CHANGE=<slug>` and check that each of its clauses traces to a criterion, to the design text that depends on it (the plan's Approach and Steps) and to a test. Fix the whole requirement, not only the clause a finding named. <!-- rule: findings.requirements-traced -->
 3. **The PR body still true.** Reread the PR body (`gh api repos/{owner}/{repo}/pulls/<N> --jq .body`) and update any statement the push makes false, such as "the spec wasn't amended" or a test count (`gh api -X PATCH repos/{owner}/{repo}/pulls/<N> -F body=@<file>`). <!-- rule: findings.pr-body-true -->
 
 Add files by explicit path (`git add <file>…`), never `git add -A` or `git add .`. Follow the `sdlc-agent-identity` skill (`.sdlc/skills/agent-identity/SKILL.md`) for commit trailers, and never @-mention anyone.
@@ -98,5 +98,5 @@ A thread is closed with a reply that says what was decided or changed. Never res
      mutation($id:ID!) { resolveReviewThread(input:{threadId:$id}) { thread { isResolved } } }'
    ```
 
-   **If GraphQL fails**, for example with the Projects (classic) deprecation error some orgs get, leave the thread unresolved. Tell the person which threads to resolve by hand on GitHub; your reply is already on each one.
+   **If GraphQL fails**, for example with the Projects (classic) deprecation error some orgs get, leave the thread unresolved. Tell the person which threads to resolve by hand on GitHub; your reply is already on each one. <!-- rule: findings.graphql-fallback -->
 3. **Ask for a fresh review** of the push with `.sdlc/scripts/request-review.sh <N>`, never by adding the `review` label yourself. In a repo with auto-merge on, the push has already started a review, and adding the label would cancel it (#105). The script waits for GitHub to show the push, then adds the label only when the push didn't start a review. Pass on the line it prints, both to the person and in your reply on the PR, so whoever reads the PR's checks knows which review run to expect. <!-- rule: findings.request-review -->
