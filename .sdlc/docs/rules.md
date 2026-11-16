@@ -8,7 +8,7 @@ Every rule in `.sdlc/REVIEW.md`, the skills (`.sdlc/skills/`, `scope.md` and `ro
 - `test: <path>::<name>`: a test of the code the rule describes.
 - `nothing`: only the prompt holds it.
 
-A holder can hold part of a rule only, such as the plan gate holding "no code before the plan" for edits but not for shell writes. `tests/test_rules_index.py` keeps this file and the markers in step: every marker has one row, every row one marker in the file under whose heading it sits, and every holder exists.
+A holder can hold part of a rule only, such as the plan gate holding "no code before the plan" for edits but not for shell writes. In the framework repo, `tests/test_rules_index.py` keeps this file and the markers in step: every marker has one row, every row one marker in the file under whose heading it sits, and every holder exists.
 
 **Adding or changing a rule:** put the marker at the end of the rule's line, add the row here, and name what holds it. A rule held by `nothing` that must always hold needs a hook or a CI check (`.sdlc/skills/security-policy/SKILL.md`). Before adding one, look for a rule here that already says it: one rule, one home.
 
