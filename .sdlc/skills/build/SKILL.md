@@ -8,7 +8,7 @@ How much ceremony a build gets depends on its size:
 - **Small** (most bug fixes, copy changes, a few files): built in **this session**, straight from plan.md, ending in one PR. No build.md, no milestones, no approval round. The plan was already approved. A bug on the fast path is small too, built from its spec with no plan.md (section 3c).
 - **Large** (more than one session's work): first a **build plan**, `changes/<slug>/build.md`, which splits the plan into milestones. The person reviews it as a file and approves it. Then one milestone per session, and one PR at the end.
 
-Milestones are sessions, not PRs. Every build, small or large, ends in exactly one PR.
+Milestones are sessions, not PRs. Every build, small or large, ends in exactly one PR. <!-- rule: build.one-pr -->
 
 For a large build the chat holds nothing between sessions. All state lives in git: the branch `build/<slug>` and `changes/<slug>/build.md`.
 
@@ -18,44 +18,44 @@ For a large build the chat holds nothing between sessions. All state lives in gi
 - **All (`/sdlc-build all`, `/sdlc-build all 0001`):** this session doesn't write code. It runs each unit in a fresh subagent until the PR is open or something needs the person. See [Running every milestone](#running-every-milestone-sdlc-build-all). A small build just runs in this session.
 - **Worker:** a subagent started by `/sdlc-build all`. It does one milestone and never asks the person directly. See [Worker mode](#worker-mode).
 
-Ask whenever something is ambiguous, but **one decision at a time**. Use AskUserQuestion for a single decision with your recommendation first (a worker returns the question instead). Never use it to review a list, a breakdown or a document: put that in a file and ask the person to read the file. Never guess on:
+Ask whenever something is ambiguous, but **one decision at a time**. Use AskUserQuestion for a single decision with your recommendation first (a worker returns the question instead). Never use it to review a list, a breakdown or a document: put that in a file and ask the person to read the file. Never guess on: <!-- rule: build.one-decision-at-a-time -->
 - which change to build;
 - what to do with leftover work;
 - a plan that doesn't hold up.
 
 ## Rules for every session
 
-- **spec.md is never edited on a build branch,** unless the repo opts in to plan amendments (below).
-- **plan.md isn't edited here either.** If the plan is wrong or can't be built, stop and ask, offering to send the change back to plan (`/sdlc-plan`, which amends it through a plan PR; build.md then goes back to draft). A small implementation detail can be recorded as a deviation for the engineer. Anything that changes behaviour or a Verification row needs a plan PR first.
-- **When the repo opts in to plan amendments** (`gh variable get SDLC_BUILD_AMENDS_PLAN` prints `on`, #174): a decision the person makes during the build that changes the plan, or a spec clause, can go into the build PR instead of a plan or spec PR. Record it in build.md's Deviations as it happens: what changes, who decided, when, and their words, quoted. Then amend plan.md (and spec.md for a clause) on the build branch, and list each amendment under `## Plan changes` in the PR body. The review raises them all as one "Plan changes: needs approval" thread, and the person approves them with one reply on GitHub. Never treat the build.md record as the approval. Without the setting, the two rules above hold.
-- **Follow `.sdlc/skills/scope.md`.** Silence is not permission, and a rule's scope is a minimum. Never leave something undone, untested or unchecked (a descope) unless plan.md's **Descopes** records it with an `Approved:` line, or the engineer has answered it as a deviation. That includes descopes carried forward from earlier milestones or neighbouring code ("not tested, like the rest of …"): each new piece of work meets the bar on its own. Test each criterion at the level it describes; a UI criterion is tested through the UI. Meet every row of the definition of done that plan.md's `Definition of done:` line names (`.sdlc/templates/definition-of-done.md`, with the repo's `docs/definition-of-done.md` on top). In a single session, ask; a worker returns `BLOCKED`.
-- **Follow CLAUDE.md**, including any repo-specific rules about data, fixtures and outbound actions.
+- **spec.md is never edited on a build branch,** unless the repo opts in to plan amendments (below). <!-- rule: build.no-spec-edit -->
+- **plan.md isn't edited here either.** If the plan is wrong or can't be built, stop and ask, offering to send the change back to plan (`/sdlc-plan`, which amends it through a plan PR; build.md then goes back to draft). A small implementation detail can be recorded as a deviation for the engineer. Anything that changes behaviour or a Verification row needs a plan PR first. <!-- rule: build.no-plan-edit -->
+- **When the repo opts in to plan amendments** (`gh variable get SDLC_BUILD_AMENDS_PLAN` prints `on`, #174): a decision the person makes during the build that changes the plan, or a spec clause, can go into the build PR instead of a plan or spec PR. Record it in build.md's Deviations as it happens: what changes, who decided, when, and their words, quoted. Then amend plan.md (and spec.md for a clause) on the build branch, and list each amendment under `## Plan changes` in the PR body. The review raises them all as one "Plan changes: needs approval" thread, and the person approves them with one reply on GitHub. Never treat the build.md record as the approval. Without the setting, the two rules above hold. <!-- rule: build.plan-amendments -->
+- **Follow `.sdlc/skills/scope.md`.** Silence is not permission, and a rule's scope is a minimum. Never leave something undone, untested or unchecked (a descope) unless plan.md's **Descopes** records it with an `Approved:` line, or the engineer has answered it as a deviation. That includes descopes carried forward from earlier milestones or neighbouring code ("not tested, like the rest of …"): each new piece of work meets the bar on its own. Test each criterion at the level it describes; a UI criterion is tested through the UI. Meet every row of the definition of done that plan.md's `Definition of done:` line names (`.sdlc/templates/definition-of-done.md`, with the repo's `docs/definition-of-done.md` on top). In a single session, ask; a worker returns `BLOCKED`. <!-- rule: build.scope -->
+- **Follow CLAUDE.md**, including any repo-specific rules about data, fixtures and outbound actions. <!-- rule: build.claude-md -->
 - **Follow the `sdlc-agent-identity` skill** whenever you commit, push, open the PR or post on GitHub: the `Requested-by:` trailer, signing with `— Claude` (or `(posted from Claude Code)` when acting as the person), no @-mentions, and fetch-and-merge before every push.
 - **Commit by explicit path** (`git add <file> …`), never `git add -A` or `git add .`. Check `git status` before each commit.
-- **Commit and push after each plan step,** so a dropped session loses little.
+- **Commit and push after each plan step,** so a dropped session loses little. <!-- rule: build.commit-each-step -->
   - Code commits: `feat(<slug>): <what>` (in a large build, `feat(<slug>): M<n> <what>`).
   - Commits that only change build.md: `chore(<slug>): <what>`.
 
   These messages reach `main` when the PR merges with a merge commit. That's why they don't use `build(...)`, which in conventional commits means build-system changes.
-- **Merge, never rebase, on `build/<slug>`.** build.md records commit shas, and a rebase rewrites them all, so every `done` milestone would reopen. Bring in `origin/main` with `git merge`.
-- **Bug fixes: the failing test comes first, then it's locked.** If the plan's first step is a failing test (per the `sdlc-plan` skill):
+- **Merge, never rebase, on `build/<slug>`.** build.md records commit shas, and a rebase rewrites them all, so every `done` milestone would reopen. Bring in `origin/main` with `git merge`. <!-- rule: build.merge-never-rebase -->
+- **Bug fixes: the failing test comes first, then it's locked.** If the plan's first step is a failing test (per the `sdlc-plan` skill): <!-- rule: build.failing-test-locked -->
   1. The first commit is the failing test on its own: `test(<slug>): failing test for <symptom>`. Push it. For a change with `bug.md`, that commit locks the files it touched: the protect-paths hook asks `.sdlc/scripts/tests-locked.sh` on every edit. New tests in other files (coverage, regression guards) can still be written.
   2. Those test files must not change. In a large build, record them in build.md's **Locked tests** line (`<sha>`: the files) and add `git diff --exit-code <sha> -- <files>` to the **Done when** of every milestone. The checks then catch an edit in every later session, whatever the session's environment.
   3. In a small build, run that same `git diff --exit-code` before opening the PR.
   4. If the repo has its own lock as well (a mechanism CLAUDE.md names), use it too. The `git diff` check also catches an edit made some other way than the edit tools, such as `sed`. If the test itself is wrong, stop and ask; never edit it to get past the check.
-- **Flaky tests are bugs. Fix them; don't rerun past them.** A test is flaky if it fails and then passes on a rerun with no change, or passes on its own but fails in the full suite. When you see one:
+- **Flaky tests are bugs. Fix them; don't rerun past them.** A test is flaky if it fails and then passes on a rerun with no change, or passes on its own but fails in the full suite. When you see one: <!-- rule: build.flaky-tests -->
   1. **Reproduce it.** Run it repeatedly, for example 20 times: on its own, in the full suite, and under load (parallel workers, a cold cache).
   2. **Find the cause.** Usually timing (real timers, sleeps, tight timeouts), state shared between tests, the real clock, async work that isn't awaited, network, or a cold cache.
   3. **Fix the cause, not the symptom:** fake timers, waiting on the condition, isolated state, a fixed clock. A longer timeout or a retry is a fix only if you've shown that the slow path is slow by design.
   4. **Show it's fixed.** The same repeated run passes every time.
 
   **Try at least three different approaches before giving up.** If it's still flaky after that, record it under **Flaky tests** in build.md (or in the PR body for a small build): the test, how it fails, how often, each approach and its result, and `Engineer decides: yes`. Never skip a test, quarantine it or wrap it in retries without the engineer's agreement.
-- **Coverage is part of every build, in every language.** Every build runs `make coverage`, which runs each test suite with coverage and fails when a suite is below its threshold. The thresholds live in the stack's own config (for example `pyproject.toml`, `package.json`).
+- **Coverage is part of every build, in every language.** Every build runs `make coverage`, which runs each test suite with coverage and fails when a suite is below its threshold. The thresholds live in the stack's own config (for example `pyproject.toml`, `package.json`). <!-- rule: build.coverage -->
   - **No `make coverage` yet:** a large build's first milestone adds it for every language in the stack (the tool as a pinned dev dependency, the thresholds, coverage output in `.gitignore`). Default thresholds: 90% lines and 80% branches per suite. A small build doesn't add it; it says in the PR that the repo has no coverage target.
-  - **Below a threshold: write the missing tests.** Never lower a threshold or add an exclusion to get green. Generated code, test helpers and the tests themselves may be excluded; record each exclusion as a deviation with `Engineer decides: yes`.
-- **Stay inside the current unit.** Don't start the next milestone, even with time left.
+  - **Below a threshold: write the missing tests.** Never lower a threshold or add an exclusion to get green. Generated code, test helpers and the tests themselves may be excluded; record each exclusion as a deviation with `Engineer decides: yes`. <!-- rule: build.never-lower-threshold -->
+- **Stay inside the current unit.** Don't start the next milestone, even with time left. <!-- rule: build.one-unit -->
 - **If context is getting heavy before a milestone is done:** commit and push what is finished and tested, write precise notes in build.md (what's done, what's next, any decision half-made), leave the milestone `in progress`, and stop.
-- **Use `gh api` (REST) for GitHub.** `gh pr create`, `gh pr edit` and `gh issue view` use GraphQL, which fails in some orgs and in cloud sessions. Open a PR with `gh api repos/{owner}/{repo}/pulls -f title=… -f head=build/<slug> -f base=main -f body=…`, and check the result.
+- **Use `gh api` (REST) for GitHub.** `gh pr create`, `gh pr edit` and `gh issue view` use GraphQL, which fails in some orgs and in cloud sessions. Open a PR with `gh api repos/{owner}/{repo}/pulls -f title=… -f head=build/<slug> -f base=main -f body=…`, and check the result. <!-- rule: build.rest-api -->
 
 ## 1. Work out which change to build
 
@@ -71,7 +71,7 @@ Ask whenever something is ambiguous, but **one decision at a time**. Use AskUser
    - **None:** don't just stop. Follow routing step 4 in `.sdlc/skills/routing.md`: if a change is ready to plan (its spec merged), say so and offer to run `/sdlc-plan` for it; otherwise say what each change is waiting on.
 
    `make next REF=origin/main` (see the routing file) lists every change's next step, which gives you the candidates directly.
-4. **Check the plan is approved.** It must be merged on `origin/main` (a fast-path bug has no plan: its bug and spec are approved with its PR). If an open PR changes this change's `spec.md` or `plan.md`, ask whether to wait for it or build against what's on `main`.
+4. **Check the plan is approved.** It must be merged on `origin/main` (a fast-path bug has no plan: its bug and spec are approved with its PR). If an open PR changes this change's `spec.md` or `plan.md`, ask whether to wait for it or build against what's on `main`. <!-- rule: build.plan-approved -->
 
 ## 2. Get onto the branch and check what the last session left
 
@@ -90,7 +90,7 @@ Then:
 
 Read CLAUDE.md, then `intent.md` (or `bug.md`), `spec.md` and `plan.md` in full. Decide whether this is one session's work.
 
-Size it by how much work there is and how well it's understood, not by how many files or artefacts it adds (#160). The plan's review already weighed the risk: a build plan only splits work that won't fit in one session.
+Size it by how much work there is and how well it's understood, not by how many files or artefacts it adds (#160). The plan's review already weighed the risk: a build plan only splits work that won't fit in one session. <!-- rule: build.sizing -->
 
 **Small: build it now** when you expect to build, test and open the PR comfortably within this session. As a guide, that's a plan of up to about four steps whose approach is settled. A fix that touches ten files, adds assets, data files or fixtures, or changes a format that only this change's code reads can still be small. Changing a message, fixing a bug with a known cause or adjusting a style is small. When it's borderline, prefer small: a build that runs out of room can still write a build plan from where it got to.
 
@@ -124,9 +124,9 @@ If it turns out bigger than it looked, stop at the end of a finished, passing st
    - every descope (`scope.md`) in the plan without an `Approved:` line, and any the build would add, each one separately;
    - more than eight milestones, or a backend-first order.
 
-   Never put a decision in a milestone's notes, and never fold one into "approve". Anything that would change the spec belongs to the product owner: say so and stop, without writing the draft.
+   Never put a decision in a milestone's notes, and never fold one into "approve". Anything that would change the spec belongs to the product owner: say so and stop, without writing the draft. <!-- rule: build.no-hidden-decisions -->
 7. **Write `changes/<slug>/build.md`** from `.sdlc/templates/build.md`, on `build/<slug>`, with `Status: draft, awaiting approval`, `Approved: not yet` and the `origin/main` sha it was built against.
-8. **Run `make validate`, then commit and push the draft** on its own (`chore(<slug>): draft build plan`). It's committed so that a session that ends now loses nothing; its draft status stops any session building from it.
+8. **Run `make validate`, then commit and push the draft** on its own (`chore(<slug>): draft build plan`). It's committed so that a session that ends now loses nothing; its draft status stops any session building from it. <!-- rule: build.draft-never-built -->
 9. **Ask for approval of the file** (section 4).
 
 ### 3c. Bug fast path (no plan.md)
@@ -143,7 +143,7 @@ A bug whose `bug.md` and short `spec.md` are committed on `build/<slug>`, with n
    - Don't repeat the breakdown or the questions in the chat, and don't put them in AskUserQuestion.
    - Wait for their reply. Apply each change (re-read the file first if they edited it), commit and push it, and ask again. Repeat until they approve.
    - Each answer to a question moves to where it belongs (a milestone, or **Deviations**). **Questions before approval** reads `None.` before approval.
-2. **On approval:** set `Status: in progress` and `Approved: <their name>, <date>`. Run `make validate` (it fails on an approval with open questions), commit `chore(<slug>): approve build plan`, and push.
+2. **On approval:** set `Status: in progress` and `Approved: <their name>, <date>`. Run `make validate` (it fails on an approval with open questions), commit `chore(<slug>): approve build plan`, and push. <!-- rule: build.approval-no-open-questions -->
 3. **Stop.** In a single session, tell the person: start a new conversation, then run `/sdlc-build`. In `/sdlc-build all`, go on to the loop.
 
 ## 5. build.md is approved: check the previous session, then do the next milestone
@@ -151,7 +151,7 @@ A bug whose `bug.md` and short `spec.md` are committed on `build/<slug>`, with n
 1. **Check the finished milestones.** For each milestone marked `done`, its recorded commit must be on `origin/build/<slug>` and an ancestor of `HEAD`.
 2. **Re-run the checks.** Run `make setup` if dependencies are missing. Then run `make check`, `make coverage` and the **Done when** commands of every `done` milestone.
    - **A build.md written before these rules** (no **Questions before approval**, **First demo**, **Demo** lines or **Coverage** line, or no `make coverage` in Done when): bring it up to date before new work, from `.sdlc/templates/build.md`. Add `Approved:` with the person who approved the original breakdown if build.md or the git log says who; otherwise ask. Commit as `chore(<slug>): update the build plan to the template`.
-3. **If anything fails, or a recorded commit is missing:** mark that milestone `reopened` with the reason. This session's work is to fix it: fix, re-run the checks, commit `feat(<slug>): M<n> fix <what>`, update build.md and push. Don't start new work until everything already done is green again.
+3. **If anything fails, or a recorded commit is missing:** mark that milestone `reopened` with the reason. This session's work is to fix it: fix, re-run the checks, commit `feat(<slug>): M<n> fix <what>`, update build.md and push. Don't start new work until everything already done is green again. <!-- rule: build.repair-first -->
 4. **Flaky tests that earlier sessions noted** and nobody fixed or handed over are repair work for this session, before new work.
 5. **Pick the milestone:** one marked `in progress` (continue from its notes and commits), otherwise the first `todo`. Say which, and what it covers, before starting.
 6. **Build it, step by step, from the plan.** Commit and push after each step. Keep the milestone's notes current. Record each deviation under **Deviations** with its reason and whether the engineer needs to decide.
@@ -162,16 +162,16 @@ A bug whose `bug.md` and short `spec.md` are committed on `build/<slug>`, with n
 
 For a small build after its steps, and for a large build as part of its last milestone:
 
-1. **If the repo has a roadmap** (`docs/roadmap.md`), mark the change's row `✅ done` in this PR. If that finishes its milestone (every row done or withdrawn) and every exit criterion is met, ask the person whether to mark the milestone ``· ✅ `done` `` too, ticking each criterion with how it was met; don't tick one on your own judgement. `make check` fails while the row disagrees with the build.
+1. **If the repo has a roadmap** (`docs/roadmap.md`), mark the change's row `✅ done` in this PR. If that finishes its milestone (every row done or withdrawn) and every exit criterion is met, ask the person whether to mark the milestone ``· ✅ `done` `` too, ticking each criterion with how it was met; don't tick one on your own judgement. `make check` fails while the row disagrees with the build. <!-- rule: build.roadmap-row -->
 2. **Run `make check` and `make coverage`.** Both must exit 0.
-3. **Run the `sdlc-verifier` subagent** on `changes/<slug>`. `VERDICT: PENDING` (only human checks left) is a clean result: the PR lists them. Fix any FAIL that's within the plan. If a fix would change the plan or the spec, stop and ask.
+3. **Run the `sdlc-verifier` subagent** on `changes/<slug>`. `VERDICT: PENDING` (only human checks left) is a clean result: the PR lists them. Fix any FAIL that's within the plan. If a fix would change the plan or the spec, stop and ask. <!-- rule: build.verifier -->
    - **Descope: needs approval** (a large gap between a requirement and what was built, with no approval): build what the requirement says if the plan covers it. If it doesn't, don't stop for a sign-off. Open the PR with each such gap first in its body under **Descope: needs approval**, quoting the requirement and what was delivered instead; the review raises it for the product owner. A worker in `/sdlc-build all` returns it in its report rather than opening the PR itself.
 4. **Open the PR** with `gh api` (see the rules above), then run `.sdlc/scripts/auto-merge.sh <N>` on it (the `sdlc-agent-identity` skill).
    - Title: `feat(<slug>): <summary>` (a change with `bug.md`: `fix(<slug>): <summary>`).
-   - Body, in this order, so the reviewer sees what needs a decision first: **Descope: needs approval** with each of the verifier's unapproved large gaps, or "None"; the descopes, each quoted with who approved it; the deviations; a **To check by hand** list with each of the plan's human checks (`Human check:` entries), for the owner to try before merging, or "None"; then what was built; the verifier's per-criterion results; the coverage per suite against its threshold. End it with the attribution line the session asks for.
+   - Body, in this order, so the reviewer sees what needs a decision first: **Descope: needs approval** with each of the verifier's unapproved large gaps, or "None"; the descopes, each quoted with who approved it; the deviations; a **To check by hand** list with each of the plan's human checks (`Human check:` entries), for the owner to try before merging, or "None"; then what was built; the verifier's per-criterion results; the coverage per suite against its threshold. End it with the attribution line the session asks for. <!-- rule: build.pr-body-order -->
    - Don't add the `review` label. The review already runs when the PR opens.
 5. **Large build:** record the PR in build.md (`Status: PR open (#N)`), commit and push.
-6. **Never approve or merge.** A person merges.
+6. **Never approve or merge.** A person merges. <!-- rule: build.never-merge -->
 
 ## When build.md says PR open
 
@@ -201,7 +201,7 @@ This session is the **orchestrator**. It starts one worker subagent per mileston
    - **`READY-FOR-VERIFY`:** run the `sdlc-verifier` subagent on `changes/<slug>` from this session (workers can't start subagents). An unapproved descope: ask the person about each one first (build it, or approve it), and pass the answers on. Any other FAIL: start a worker with the report to fix the FAILs within the plan, at most two rounds, then ask the person. No FAIL: open the PR from this session (section 6 steps 4–5, with the per-criterion results): it holds the person's answers and decisions from the whole run, which the PR body records, and a worker sees only its own unit (#170). Start a worker with the results and those decisions instead only when this session is short of room.
    - **`PR-OPEN`:** the build is finished.
    - **`FAILED`:** stop and show the person the report.
-4. **Stop when** the PR is open; a worker reports `FAILED`; two workers in a row leave build.md unchanged; or the number of workers reaches the number of milestones plus three.
+4. **Stop when** the PR is open; a worker reports `FAILED`; two workers in a row leave build.md unchanged; or the number of workers reaches the number of milestones plus three. <!-- rule: build.all-stop-conditions -->
 5. **Final report:** first the descopes, anything marked `Engineer decides: yes` and the plan's manual end-to-end steps; then each milestone done in this run with its commit, the test counts and the PR link; and what's left for the person: review the PR, run those steps, merge.
 
 ## Worker mode
@@ -210,8 +210,8 @@ A worker follows sections 1, 2, 5 and 6 like a single session, with these differ
 
 - **The change is the one named in the prompt.**
 - **No build.md, or a draft one:** return `BLOCKED`, saying the build plan is missing or not approved. Never build from a draft.
-- **Never use AskUserQuestion.** Wherever this skill says to ask: commit and push only what is finished and passing, write the half-made decision into the milestone's notes, commit and push that, and return `BLOCKED`.
-- **A descope nobody approved:** if the milestone would leave something undone, untested or unchecked (`scope.md`) that plan.md's Descopes doesn't approve and no answer in your prompt covers, return `BLOCKED`. Don't take the plan's or an earlier worker's word for it, and don't report `DONE` with it written into the notes. Options: build it to the bar (recommended unless it's far outside the plan), approve the descope, or send the change back to `/sdlc-plan`.
+- **Never use AskUserQuestion.** Wherever this skill says to ask: commit and push only what is finished and passing, write the half-made decision into the milestone's notes, commit and push that, and return `BLOCKED`. <!-- rule: build.worker-never-asks -->
+- **A descope nobody approved:** if the milestone would leave something undone, untested or unchecked (`scope.md`) that plan.md's Descopes doesn't approve and no answer in your prompt covers, return `BLOCKED`. Don't take the plan's or an earlier worker's word for it, and don't report `DONE` with it written into the notes. Options: build it to the bar (recommended unless it's far outside the plan), approve the descope, or send the change back to `/sdlc-plan`. <!-- rule: build.worker-descope-blocked -->
 - **Uncommitted changes from a previous session:** return `BLOCKED` with keep, stash and discard as options and your recommendation.
 - **The last milestone:** do its own steps and section 6 steps 1–2, then return `READY-FOR-VERIFY`. Mark the roadmap row done, but not the milestone: say in Detail if the milestone looks finished, for the person to decide. With the verifier's FAILs in the prompt, fix those within the plan and return `READY-FOR-VERIFY` again. With a clean result in the prompt (the orchestrator usually opens the PR itself), do section 6 steps 4–5 and return `PR-OPEN`.
 - **Return this report**, and nothing after it:

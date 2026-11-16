@@ -15,7 +15,7 @@
 #             `test` (scripts/docs-only.sh, compared with CHECK_BASE), and any other branch
 #             skips the slow scenario tests; FULL=1 runs everything
 
-.PHONY: setup fmt lint test check-test validate check deploy-dev deploy-prod
+.PHONY: setup fmt lint test check-test validate check prompt-budget deploy-dev deploy-prod
 
 # How to run the pipeline's own CLI (Python, via uv). Repos on another stack point this
 # at their copy of the tool, e.g. `uv run --project tools/sdlc sdlc`.
@@ -49,7 +49,12 @@ validate:
 
 CHECK_BASE ?= origin/main
 
-check: lint check-test validate exec-bits
+check: lint check-test validate exec-bits prompt-budget
+
+# Each prompt's size against its word budget (#201). A warning only, for now:
+# PROMPT_BUDGET_STRICT=1 makes it fail.
+prompt-budget:
+	@bash scripts/prompt-budget.sh
 
 # The test suite, unless the branch changes only documentation (#140). The slow scenario tests
 # (tests/test_scenario.py, most of the suite's time) run only when the branch changes something

@@ -1,0 +1,24 @@
+# A word budget for each prompt the pipeline puts in a model's context (#201). Read by
+# scripts/prompt-budget.sh, which `make check` runs. Each budget is the file's size when the
+# budget was set (rounded up to 50 words), so growth shows up as a warning in `make check`.
+# Lower a budget when a file shrinks; raise one only with a reason in the PR.
+#
+# Columns, tab-separated: file, budget in words (rule markers, `<!-- rule: … -->`, don't count).
+.sdlc/REVIEW.md	2900
+.sdlc/agents/verifier.md	900
+.sdlc/prompts/clause-check.md	400
+.sdlc/prompts/delivery-check.md	400
+.sdlc/prompts/spec-from-intent.md	100
+.sdlc/skills/agent-identity/SKILL.md	550
+.sdlc/skills/build/SKILL.md	4950
+.sdlc/skills/intent/SKILL.md	1250
+.sdlc/skills/next/SKILL.md	450
+.sdlc/skills/plan/SKILL.md	1450
+.sdlc/skills/po-review/SKILL.md	800
+.sdlc/skills/pr/SKILL.md	450
+.sdlc/skills/review-findings/SKILL.md	1200
+.sdlc/skills/routing.md	1350
+.sdlc/skills/scope.md	1050
+.sdlc/skills/sdlc/SKILL.md	1850
+.sdlc/skills/security-policy/SKILL.md	150
+.sdlc/skills/spec/SKILL.md	650

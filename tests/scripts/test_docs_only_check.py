@@ -167,7 +167,9 @@ def test_the_scenario_tests_are_marked_and_main_and_the_release_run_them():
 
 def test_check_runs_the_tests_through_check_test_and_main_runs_them_all():
     makefile = (REPO / "Makefile").read_text()
-    assert re.search(r"^check: lint check-test validate exec-bits$", makefile, re.MULTILINE)
+    assert re.search(
+        r"^check: lint check-test validate exec-bits prompt-budget$", makefile, re.MULTILINE
+    )
     ci = (REPO / ".github/workflows/sdlc-ci.yml").read_text()
     assert "- run: make check ${{ github.event_name == 'push' && 'FULL=1' || '' }}" in ci
     assert "fetch-depth: 0" in ci

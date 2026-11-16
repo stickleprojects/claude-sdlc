@@ -4,17 +4,17 @@ Shared rules for every stage: the plan, build, review and verify steps all follo
 
 ## Principles
 
-- **Silence is not permission.** Where no rule speaks, do what a careful engineer would expect of this kind of work, not the least that passes the checks.
-- **A rule's scope is a minimum, never a limit.** "Every class in `core/` has a test" doesn't mean code outside `core/` goes untested. A tool's exclusion list is for vendored or generated code, not for first-party code that happens to live in the same folder.
-- **Agents propose descopes; people decide them.** No agent, worker or reviewer drops scope on its own judgement, and none carries forward a descope that a person hasn't explicitly approved.
+- **Silence is not permission.** Where no rule speaks, do what a careful engineer would expect of this kind of work, not the least that passes the checks. <!-- rule: scope.silence -->
+- **A rule's scope is a minimum, never a limit.** "Every class in `core/` has a test" doesn't mean code outside `core/` goes untested. A tool's exclusion list is for vendored or generated code, not for first-party code that happens to live in the same folder. <!-- rule: scope.minimum -->
+- **Agents propose descopes; people decide them.** No agent, worker or reviewer drops scope on its own judgement, and none carries forward a descope that a person hasn't explicitly approved. <!-- rule: scope.people-decide -->
 
 ## The definition of done
 
-`.sdlc/templates/definition-of-done.md` says what done means for each kind of work (any code, UI, a plugin, a command, data, …), and a repo's own `docs/definition-of-done.md` adds kinds or replaces a row. Each plan names the kinds it is under Verification (`- **Definition of done:** Any code, UI`), and every stage holds the work to those rows. A row is a minimum. Leaving out a kind the change plainly is (a UI change that doesn't name UI), or doing less than a named row asks, is a descope.
+`.sdlc/templates/definition-of-done.md` says what done means for each kind of work (any code, UI, a plugin, a command, data, …), and a repo's own `docs/definition-of-done.md` adds kinds or replaces a row. Each plan names the kinds it is under Verification (`- **Definition of done:** Any code, UI`), and every stage holds the work to those rows. A row is a minimum. Leaving out a kind the change plainly is (a UI change that doesn't name UI), or doing less than a named row asks, is a descope. <!-- rule: scope.definition-of-done -->
 
 ## What counts as a descope
 
-Anything the change would leave undone, untested or unchecked that someone would reasonably expect it to cover. It shows up in wording such as "not tested", "not unit-tested", "manual", "by hand", "skipped", "out of scope", "not covered", "later", "follow-up", "TODO", "like the rest of …", or "the rule only covers …". It also shows up without the wording:
+Anything the change would leave undone, untested or unchecked that someone would reasonably expect it to cover. It shows up in wording such as "not tested", "not unit-tested", "manual", "by hand", "skipped", "out of scope", "not covered", "later", "follow-up", "TODO", "like the rest of …", or "the rule only covers …". It also shows up without the wording: <!-- rule: scope.what-is-a-descope -->
 
 - a criterion whose test drives it at a lower level than it describes (see below);
 - a step the engineer must do by hand that a test could do;
@@ -27,25 +27,25 @@ Anything the change would leave undone, untested or unchecked that someone would
 A descope is valid only when it's written down with its reason and a person's approval:
 
 - **In a spec:** under **Out of scope**. The product owner approves it by merging the spec PR.
-- **In a plan:** an entry under **Descopes**: `- Descope: <what isn't done, tested or checked> because <reason>. Approved: <name>, <date>.` The engineer approves each one explicitly while planning, one at a time, never as part of approving the whole plan. A plan with none says `None.`; `make validate` fails a plan the branch adds or edits whose Descopes is missing, still the template's text, or has an entry without `Approved:`.
+- **In a plan:** an entry under **Descopes**: `- Descope: <what isn't done, tested or checked> because <reason>. Approved: <name>, <date>.` The engineer approves each one explicitly while planning, one at a time, never as part of approving the whole plan. A plan with none says `None.`; `make validate` fails a plan the branch adds or edits whose Descopes is missing, still the template's text, or has an entry without `Approved:`. <!-- rule: scope.plan-descope-entry -->
 - **During a build:** a deviation in build.md (or the PR body for a small build) marked `Engineer decides: yes`. Until the person answers, it is a question, not a decision.
 
-A descope with no `Approved:`, one written in Risks rather than Descopes, or one inherited from an earlier milestone or a neighbouring file ("not tested, like the rest of the dock"), is not approved.
+A descope with no `Approved:`, one written in Risks rather than Descopes, or one inherited from an earlier milestone or a neighbouring file ("not tested, like the rest of the dock"), is not approved. <!-- rule: scope.not-approved -->
 
 ## Delivery gaps: who is asked
 
-The AI compares what was delivered with each requirement's wording (the verifier, through `.sdlc/scripts/clause-check.sh --stage build`). There is no routine human sign-off step. A person is pulled in only for a **large** gap nothing has approved: the delivery lacks the requirement's main verb or noun (generates, opens, sends, saves, a scene), not just a modifier. Such a gap goes first in the PR body under **Descope: needs approval**, and the review raises it as an Important thread for the product owner, who approves it (recording it as a descope or under the spec's Out of scope) or sends it back to be built. A small gap is noted as wording drift; an approved or absent one needs nobody.
+The AI compares what was delivered with each requirement's wording (the verifier, through `.sdlc/scripts/clause-check.sh --stage build`). There is no routine human sign-off step. A person is pulled in only for a **large** gap nothing has approved: the delivery lacks the requirement's main verb or noun (generates, opens, sends, saves, a scene), not just a modifier. Such a gap goes first in the PR body under **Descope: needs approval**, and the review raises it as an Important thread for the product owner, who approves it (recording it as a descope or under the spec's Out of scope) or sends it back to be built. A small gap is noted as wording drift; an approved or absent one needs nobody. <!-- rule: scope.delivery-gaps -->
 
 ## Human checks
 
-Some things no test can settle: how a game feels, timing, real hardware, a look in the real editor. A check a person must try by hand is a descope of automation, recorded the same way under the plan's **Descopes**: `- Human check: <what to try, and how> because <why a test can't>. Approved: <name>, <date>.` A manual step that a test could do is a plain descope, not a human check. The verifier reports each human check as PENDING, never PASS, and the PR lists them under **To check by hand** for the owner to try before merging.
+Some things no test can settle: how a game feels, timing, real hardware, a look in the real editor. A check a person must try by hand is a descope of automation, recorded the same way under the plan's **Descopes**: `- Human check: <what to try, and how> because <why a test can't>. Approved: <name>, <date>.` A manual step that a test could do is a plain descope, not a human check. The verifier reports each human check as PENDING, never PASS, and the PR lists them under **To check by hand** for the owner to try before merging. <!-- rule: scope.human-checks -->
 
-The same holds for anything you hand a person to try during a build or review, in the plan or not ("try the lift exit", "check that B closes the menu") (#171). Before asking, look for a test that already checks it, and if a script could check it, write that test first and run it. Ask the person only for what no test can settle, or for a quick smoke test when scripting it is a big effort; then say which test is still owed, and treat it as a descope (`Engineer decides: yes` in build.md, or the PR body for a small build) until a person approves it.
+The same holds for anything you hand a person to try during a build or review, in the plan or not ("try the lift exit", "check that B closes the menu") (#171). Before asking, look for a test that already checks it, and if a script could check it, write that test first and run it. Ask the person only for what no test can settle, or for a quick smoke test when scripting it is a big effort; then say which test is still owed, and treat it as a descope (`Engineer decides: yes` in build.md, or the PR body for a small build) until a person approves it. <!-- rule: scope.test-before-asking -->
 
 ## Testing at the level the criterion describes
 
-A criterion is tested at the level it is written at. Behaviour a user sees through a UI is tested through that UI (widget, input or end-to-end tests, or inside the real host such as an editor), not only through the model beneath it. A data format is tested with a schema and fixtures. A command is tested by running it. A test file that exists, or a suite that is green, is not evidence that a criterion passes.
+A criterion is tested at the level it is written at. Behaviour a user sees through a UI is tested through that UI (widget, input or end-to-end tests, or inside the real host such as an editor), not only through the model beneath it. A data format is tested with a schema and fixtures. A command is tested by running it. A test file that exists, or a suite that is green, is not evidence that a criterion passes. <!-- rule: scope.test-level -->
 
 ## Handing work to a person
 
-When a person reviews or approves anything (a plan, a build plan, a PR, a verifier report), show them first, quoted: the descopes, the risks, the deviations and the open questions. Then the steps or the summary of what was built. Put the parts that need a decision before the parts that don't.
+When a person reviews or approves anything (a plan, a build plan, a PR, a verifier report), show them first, quoted: the descopes, the risks, the deviations and the open questions. Then the steps or the summary of what was built. Put the parts that need a decision before the parts that don't. <!-- rule: scope.decisions-first -->

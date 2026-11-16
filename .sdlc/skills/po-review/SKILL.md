@@ -3,7 +3,7 @@ file with an override in .sdlc-local/ (see .sdlc/docs/overrides.md), never by ed
 
 # Product owner review of a PR
 
-The product owner decides; you explain and do the typing. This is the main way findings get handled: the product owner talks to you in the terminal and doesn't need to comment on GitHub. You walk them through the findings, edit the artifact, push, and reply on every thread. The acceptance is recorded on GitHub, where approving and merging the PR **is** the acceptance. Never approve or merge the PR yourself.
+The product owner decides; you explain and do the typing. This is the main way findings get handled: the product owner talks to you in the terminal and doesn't need to comment on GitHub. You walk them through the findings, edit the artifact, push, and reply on every thread. The acceptance is recorded on GitHub, where approving and merging the PR **is** the acceptance. Never approve or merge the PR yourself. <!-- rule: po.never-merge -->
 
 Replies, resolving threads and checking for bot commits follow the shared rules in `.sdlc/skills/review-findings/SKILL.md` (sections *One actor per finding*, *Before you push* and *Reply and resolve*). Read them before step 4, along with the `sdlc-agent-identity` skill (signatures, commit trailers, no @-mentions).
 
@@ -27,7 +27,7 @@ Check out the PR's head branch and pull it.
 - What the change is, in one sentence taken from `intent.md`.
 - What this PR asks them to accept: the intent or the spec.
 - How many open items there are: unresolved review findings, plus anything under "Open questions".
-- For a spec, what it leaves out: its **Out of scope** items, quoted. Leaving something out is a product decision, so it comes before the rest.
+- For a spec, what it leaves out: its **Out of scope** items, quoted. Leaving something out is a product decision, so it comes before the rest. <!-- rule: po.out-of-scope-first -->
 
 ## 3. Go through each item, one at a time
 
@@ -38,11 +38,11 @@ Skip findings that are already resolved: ones with a reply that says how they we
 3. **Recommend** a fix, with the replacement wording.
 4. **Ask** for a decision with AskUserQuestion: accept the recommendation, keep the text as it is (with a reason), or write their own wording.
 
-Findings that belong to the engineer (plan or code) get noted and handed on, not decided here.
+Findings that belong to the engineer (plan or code) get noted and handed on, not decided here. <!-- rule: po.engineer-findings -->
 
 ## 4. Apply and record
 
-1. Edit only the artifact under review (`intent.md` or `spec.md`). For a clause finding, word the whole requirement so every clause the finding lists is covered at once, not only the first one (#172); plan text it makes stale is the engineer's, so name it in your reply. Record each decision where the template expects it. For a spec, that's the "Product owner decisions" section.
+1. Edit only the artifact under review (`intent.md` or `spec.md`). For a clause finding, word the whole requirement so every clause the finding lists is covered at once, not only the first one (#172); plan text it makes stale is the engineer's, so name it in your reply. Record each decision where the template expects it. For a spec, that's the "Product owner decisions" section. <!-- rule: po.edit-only-artifact -->
 2. Run `make validate`.
 3. Check the branch for commits pushed by anyone else (*One actor per finding*), and follow *Before you push*: nothing out of date, every changed requirement traced, the PR body still true. Then commit the artifact by explicit path (`git add changes/<slug>/<artifact>.md`) with `<stage>: address review (product owner decisions)`, and push.
 4. Ask for a fresh review with `.sdlc/scripts/request-review.sh <N>`, never by adding the `review` label yourself: with auto-merge on, the push already started one, and the label would cancel it (#105). Tell the product owner the line it prints, and include it in your reply on the PR.
