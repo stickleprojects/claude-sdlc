@@ -3,7 +3,7 @@ file with an override in .sdlc-local/ (see .sdlc/docs/overrides.md), never by ed
 
 # Work through the review findings on a PR
 
-The person talks to you in the terminal; they don't need to use GitHub for feedback. You walk them through the findings, make the changes, push, and answer every thread on GitHub. Never approve or merge the PR: a person merges.
+The person talks to you in the terminal; they don't need to use GitHub for feedback. You walk them through the findings, make the changes, push, and answer every thread on GitHub. Never approve or merge the PR: a person merges. <!-- rule: findings.never-merge -->
 
 For an `intent:`, `bug:` or `spec:` PR, use the `sdlc-po-review` skill instead (`/sdlc-pr` picks it). It follows the shared rules below.
 
@@ -22,7 +22,7 @@ Check out the PR's head branch and pull it.
 
 ## 2. Go through each open finding, one at a time
 
-Take descope findings first (`.sdlc/skills/scope.md`), then the rest by severity. Before the first finding, show the engineer the PR's descopes, the plan's Descopes and Risks, and its human checks, quoted, so they see what needs a decision before the details.
+Take descope findings first (`.sdlc/skills/scope.md`), then the rest by severity. Before the first finding, show the engineer the PR's descopes, the plan's Descopes and Risks, and its human checks, quoted, so they see what needs a decision before the details. <!-- rule: findings.descopes-first -->
 
 Skip a finding that is already resolved: one with a reply saying how it was handled, or one the latest summary marks resolved. Skip one the bot owns (see [One actor per finding](#one-actor-per-finding)).
 
@@ -33,11 +33,11 @@ For each remaining finding:
 3. **Recommend** a fix.
 4. **Ask** for a decision with AskUserQuestion: fix as recommended, fix another way, or dismiss with a reason.
 
-Collect every decision first. Then make the changes.
+Collect every decision first. Then make the changes. <!-- rule: findings.decide-then-change -->
 
 ## 3. Apply, push and reply
 
-1. Make the changes. For a clause or design finding, fix the whole requirement it names and the plan text that depends on it, not only the clause or line quoted (#172). Run `make check`; it must exit 0.
+1. Make the changes. For a clause or design finding, fix the whole requirement it names and the plan text that depends on it, not only the clause or line quoted (#172). Run `make check`; it must exit 0. <!-- rule: findings.fix-whole-requirement -->
 2. Follow [Before you push](#before-you-push), then commit the files you changed by explicit path and push.
 3. Reply on every thread you handled, then resolve it ([Reply and resolve](#reply-and-resolve)).
 4. Tell the person what changed, which threads are resolved, any you couldn't resolve, and that a fresh review is on its way.
@@ -48,10 +48,10 @@ Collect every decision first. Then make the changes.
 
 ## One actor per finding
 
-A finding is handled by one actor: either this session, or the GitHub bot (`@claude`). Never both, because two agents fixing the same finding produce conflicting commits.
+A finding is handled by one actor: either this session, or the GitHub bot (`@claude`). Never both, because two agents fixing the same finding produce conflicting commits. <!-- rule: findings.one-actor -->
 
 - **A finding the bot owns** has an `@claude` comment on its thread, or an `@claude` PR comment that names it. Leave it to the bot, and tell the person which ones you skipped.
-- **Before you push,** fetch and check whether anyone else has pushed to the branch: the bot (`claude[bot]`, `github-actions[bot]`), a person, or another session under the agent's own identity (`<app>[bot]`). Any commit on the remote that you don't have counts, whoever wrote it.
+- **Before you push,** fetch and check whether anyone else has pushed to the branch: the bot (`claude[bot]`, `github-actions[bot]`), a person, or another session under the agent's own identity (`<app>[bot]`). Any commit on the remote that you don't have counts, whoever wrote it. <!-- rule: findings.fetch-before-push -->
 
   ```
   git fetch origin <branch>
@@ -66,13 +66,13 @@ Run the check above. Then, so the next review doesn't find what this push left s
 
 1. **Nothing out of date.** Run `make next REF=origin/main` and act on anything it reports for this change: a build.md, plan or spec the push makes stale is fixed in the same push.
 2. **Every changed requirement traced.** For each requirement or criterion the push adds or rewords, run `make clauses CHANGE=<slug>` and check that each of its clauses traces to a criterion, to the design text that depends on it (the plan's Approach and Steps) and to a test. Fix the whole requirement, not only the clause a finding named.
-3. **The PR body still true.** Reread the PR body (`gh api repos/{owner}/{repo}/pulls/<N> --jq .body`) and update any statement the push makes false, such as "the spec wasn't amended" or a test count (`gh api -X PATCH repos/{owner}/{repo}/pulls/<N> -F body=@<file>`).
+3. **The PR body still true.** Reread the PR body (`gh api repos/{owner}/{repo}/pulls/<N> --jq .body`) and update any statement the push makes false, such as "the spec wasn't amended" or a test count (`gh api -X PATCH repos/{owner}/{repo}/pulls/<N> -F body=@<file>`). <!-- rule: findings.pr-body-true -->
 
 Add files by explicit path (`git add <file>…`), never `git add -A` or `git add .`. Follow the `sdlc-agent-identity` skill (`.sdlc/skills/agent-identity/SKILL.md`) for commit trailers, and never @-mention anyone.
 
 ## Reply and resolve
 
-A thread is closed with a reply that says what was decided or changed. Never resolve one silently.
+A thread is closed with a reply that says what was decided or changed. Never resolve one silently. <!-- rule: findings.reply-then-resolve -->
 
 1. **Reply** on the thread, signed as the `sdlc-agent-identity` skill says. Under the agent's own identity (`SDLC_AGENT_IDENTITY` set), end with `— Claude`. Otherwise the reply appears under the person's GitHub account, so end it with `(posted from Claude Code)`:
 
@@ -83,7 +83,7 @@ A thread is closed with a reply that says what was decided or changed. Never res
 
    For a dismissed finding, say why it was kept as it is.
 
-   **A `Descope: needs approval` thread** is decided only by a person's reply (#132): the `claude-review` status stays failed until one is there, and a reply from a bot or the agent's App doesn't count.
+   **A `Descope: needs approval` thread** is decided only by a person's reply (#132): the `claude-review` status stays failed until one is there, and a reply from a bot or the agent's App doesn't count. <!-- rule: findings.descope-person-decides -->
    - **Approved:** the reply says `Approved: <name>, <date>`, with the name of the person who approved it, in their words. Under the agent's identity your reply doesn't count, so ask the person to post that line on the thread themselves and leave it unresolved. Under the person's account, post it only after they've said yes to that descope in this session; never approve one for them.
    - **Sent back:** reply with what will be built, and resolve the thread only once it is. The next review checks the work (add the `review` label), and the status clears when that review has run.
 2. **Resolve** the thread with the GraphQL `resolveReviewThread` mutation. First find the thread id for the comment:
@@ -99,4 +99,4 @@ A thread is closed with a reply that says what was decided or changed. Never res
    ```
 
    **If GraphQL fails**, for example with the Projects (classic) deprecation error some orgs get, leave the thread unresolved. Tell the person which threads to resolve by hand on GitHub; your reply is already on each one.
-3. **Ask for a fresh review** of the push with `.sdlc/scripts/request-review.sh <N>`, never by adding the `review` label yourself. In a repo with auto-merge on, the push has already started a review, and adding the label would cancel it (#105). The script waits for GitHub to show the push, then adds the label only when the push didn't start a review. Pass on the line it prints, both to the person and in your reply on the PR, so whoever reads the PR's checks knows which review run to expect.
+3. **Ask for a fresh review** of the push with `.sdlc/scripts/request-review.sh <N>`, never by adding the `review` label yourself. In a repo with auto-merge on, the push has already started a review, and adding the label would cancel it (#105). The script waits for GitHub to show the push, then adds the label only when the push didn't start a review. Pass on the line it prints, both to the person and in your reply on the PR, so whoever reads the PR's checks knows which review run to expect. <!-- rule: findings.request-review -->

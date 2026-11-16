@@ -11,7 +11,7 @@ People remember six skills:
 | `/sdlc-next [change]` | "where is everything, and what's next?" |
 | `/sdlc` | the pipeline itself: which version, what's new, update it (sync PR) |
 
-Every other skill (`sdlc-spec`, `sdlc-po-review`, `sdlc-review-findings`, `sdlc-agent-identity`, `sdlc-security-policy`) is internal: hidden from the `/` menu, and reached only through these six. Each entry skill except `/sdlc` (which is about the framework, not a change) starts with the steps below. If the change isn't at its stage, it says where the change is and offers the right skill instead of failing or guessing.
+Every other skill (`sdlc-spec`, `sdlc-po-review`, `sdlc-review-findings`, `sdlc-agent-identity`, `sdlc-security-policy`) is internal: hidden from the `/` menu, and reached only through these six. Each entry skill except `/sdlc` (which is about the framework, not a change) starts with the steps below. If the change isn't at its stage, it says where the change is and offers the right skill instead of failing or guessing. <!-- rule: routing.entry-skills -->
 
 ## 1. Find out where each change is
 
@@ -33,7 +33,7 @@ Then check what isn't on main yet:
 ## 2. Pick the change
 
 - **The person named one** (`0002` or `0002-breadcrumbs`): use it.
-- **Otherwise:** the candidates are the changes whose next step is this skill's. One: use it, and say which. Several: ask which with AskUserQuestion, any already under way first. None: go to step 4.
+- **Otherwise:** the candidates are the changes whose next step is this skill's. One: use it, and say which. Several: ask which with AskUserQuestion, any already under way first. None: go to step 4. <!-- rule: routing.pick-change -->
 
 ## 3. The table
 
@@ -53,7 +53,7 @@ Then check what isn't on main yet:
 | `Withdrawn:` line | | nothing: binned | |
 | an artifact `out of date:` | | update it, or confirm it still holds | its owner: `sdlc-spec`, `/sdlc-plan` or `/sdlc-build` |
 
-An open PR for the change's next artifact comes before the row for what's on main: if `plan(0002)` is open, the next step is its review, not another plan.
+An open PR for the change's next artifact comes before the row for what's on main: if `plan(0002)` is open, the next step is its review, not another plan. <!-- rule: routing.open-pr-first -->
 
 ## 4. When the change isn't at this skill's stage
 
@@ -65,18 +65,18 @@ Say in one line where it is and what comes next, then ask with AskUserQuestion, 
 > 3. Replace the plan: start planning again
 > 4. Stop
 
-- **On "go to the next step":** invoke that skill with the Skill tool, passing the slug, and follow it from its start. Don't ask the person to type it.
-- **Never redo a finished stage silently.** Replacing a merged intent, spec or plan needs the person to choose it, and goes through a new PR like the first one.
+- **On "go to the next step":** invoke that skill with the Skill tool, passing the slug, and follow it from its start. Don't ask the person to type it. <!-- rule: routing.invoke-next -->
+- **Never redo a finished stage silently.** Replacing a merged intent, spec or plan needs the person to choose it, and goes through a new PR like the first one. <!-- rule: routing.no-silent-redo -->
 - **Nothing for this skill at all** (for example `/sdlc-build` with nothing planned): look one stage back and offer that. `/sdlc-build` offers `/sdlc-plan` when there's something to plan, which in turn offers the spec or the intent. When everything is done or waiting on someone else, say so, with what each change is waiting on, and stop.
-- **Waiting on someone else** (a PR the product owner must review, a spec the workflow is still generating): say who, and link the PR. Don't offer to do their part.
+- **Waiting on someone else** (a PR the product owner must review, a spec the workflow is still generating): say who, and link the PR. Don't offer to do their part. <!-- rule: routing.waiting -->
 
 ## Going back and pushback
 
-A change's column is worked out from git, so going back a column means **amending an earlier artifact** through its own PR, never setting a status. Once the amendment merges, everything after it is out of date, and `make next` sends the change back to it.
+A change's column is worked out from git, so going back a column means **amending an earlier artifact** through its own PR, never setting a status. Once the amendment merges, everything after it is out of date, and `make next` sends the change back to it. <!-- rule: routing.go-back-by-amending -->
 
 - **Out of date:** an artifact whose base (spec after intent or bug, plan after spec, an unfinished build after plan or spec) changed after it was last committed. Its owner either updates it, or confirms it still holds by re-committing it with its base line noting the check, e.g. `Spec: ./spec.md (checked against abc1234, no change)`. A typo fix upstream doesn't force rework. A merged build stays done whatever changes later: what's shipped stays shipped.
 - **Amend:** offered by an entry skill run on a change past its stage. Amending an intent or spec is the product owner's decision (offer it, and route it to them through `/sdlc-pr` on the amendment PR); amending a plan is the engineer's.
-- **Withdraw (bin it):** add `Withdrawn: <who>, <date>: <why>` to the intent.md or bug.md, in a PR like any other change to it. Close the change's open PRs with that reason. Keep the build branch, so the work can be recovered. Only someone who can accept the intent (the product owner) decides it.
+- **Withdraw (bin it):** add `Withdrawn: <who>, <date>: <why>` to the intent.md or bug.md, in a PR like any other change to it. Close the change's open PRs with that reason. Keep the build branch, so the work can be recovered. Only someone who can accept the intent (the product owner) decides it. <!-- rule: routing.withdraw -->
 
 **Where pushback goes.** The aim is to build and deploy fast enough that work rarely sits in dev long enough to be pushed back, so most pushback should arrive as bugs:
 
@@ -86,4 +86,4 @@ A change's column is worked out from git, so going back a column means **amendin
 | The plan is wrong (found building or testing) | amend the plan (`/sdlc-plan`); build.md goes back to draft for approval |
 | The spec or intent is wrong | amend it (product owner); the plan and the build go out of date |
 | Bin it | withdraw it |
-| **Anything found after merge or release** | **a new bug change** (`/sdlc-intent`, which takes the bug path), with `Came from:` naming the change it was found in. Never reopen a merged change |
+| **Anything found after merge or release** | **a new bug change** (`/sdlc-intent`, which takes the bug path), with `Came from:` naming the change it was found in. Never reopen a merged change <!-- rule: routing.after-merge-is-a-bug --> |
