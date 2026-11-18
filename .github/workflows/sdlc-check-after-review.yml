@@ -11,6 +11,9 @@
 # place of sdlc-ci.yml's check run. Until it runs, the status is pending and says what it waits
 # for. The gate looks again when that can change:
 #   - a Claude review finishes (workflow_run);
+#   - Descope decisions finishes (workflow_run, #223): a person's `Approved:` reply starts it and
+#     this gate at the same moment, so the gate's own run reads `claude-review` before Descope
+#     decisions has flipped it. This run looks again once it has;
 #   - someone replies in a review thread or reviews the PR: resolving a thread sends no event,
 #     so a finding settled without a push needs a reply or an approval;
 #   - someone adds the `check` label, which runs `make check` whatever the review says.
@@ -24,7 +27,7 @@ name: Check after review
 
 on:
   workflow_run:
-    workflows: [Claude review]
+    workflows: [Claude review, Descope decisions]
     types: [completed]
   pull_request:
     types: [opened, reopened, synchronize, ready_for_review, labeled]
@@ -45,7 +48,9 @@ jobs:
     if: >-
       vars.SDLC_CHECK_AFTER_REVIEW != '' && vars.SDLC_CHECK_AFTER_REVIEW != 'off' && (
         (github.event_name == 'workflow_run' &&
-          github.event.workflow_run.event == 'pull_request' &&
+          (github.event.workflow_run.event == 'pull_request' ||
+            (github.event.workflow_run.name == 'Descope decisions' &&
+              github.event.workflow_run.conclusion == 'success')) &&
           github.event.workflow_run.head_repository.full_name == github.repository) ||
         (github.event_name != 'workflow_run' &&
           github.event.pull_request.head.repo.full_name == github.repository &&
@@ -80,6 +85,7 @@ jobs:
           EVENT: ${{ github.event_name }}
           RUN_HEAD: ${{ github.event.workflow_run.head_sha }}
           RUN_PR: ${{ github.event.workflow_run.pull_requests[0].number }}
+          RUN_NAME: ${{ github.event.workflow_run.name }}
           PR_HEAD: ${{ github.event.pull_request.head.sha }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
@@ -87,6 +93,11 @@ jobs:
             head="$RUN_HEAD" pr="$RUN_PR"
             [[ -n "$pr" ]] || pr="$(gh api "repos/$GITHUB_REPOSITORY/commits/$head/pulls" \
               --jq '[.[] | select(.state == "open")][0].number // empty')"
+            # A Descope decisions run comes from a review event, whose head_sha needn't be the
+            # PR's head: gate the PR's head as it is now (#223).
+            if [[ "$RUN_NAME" == "Descope decisions" && -n "$pr" ]]; then
+              head="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$pr" --jq .head.sha)"
+            fi
           else
             head="$PR_HEAD" pr="$PR_NUMBER"
           fi

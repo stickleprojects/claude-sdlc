@@ -334,8 +334,18 @@ def gate_if():
     return expr(load(AFTER)["jobs"]["gate"]["if"])
 
 
-def run_event(repo="o/r", event="pull_request"):
-    return {"workflow_run": {"event": event, "head_repository": {"full_name": repo}}}
+def run_event(repo="o/r", event="pull_request", name="Claude review", conclusion="success"):
+    return {
+        "workflow_run": {
+            "event": event,
+            "name": name,
+            "conclusion": conclusion,
+            "head_repository": {"full_name": repo},
+        }
+    }
+
+
+DESCOPES = "Descope decisions"
 
 
 @pytest.mark.parametrize(
@@ -346,6 +356,28 @@ def run_event(repo="o/r", event="pull_request"):
         ("workflow_run", run_event(), OFF, False),
         ("workflow_run", run_event("stranger/r"), ON, False),
         ("workflow_run", run_event(event="push"), ON, False),
+        # #223: Descope decisions runs on review events, after it has flipped `claude-review`.
+        ("workflow_run", run_event(event="pull_request_review_comment", name=DESCOPES), ON, True),
+        ("workflow_run", run_event(event="pull_request_review", name=DESCOPES), ON, True),
+        (
+            "workflow_run",
+            run_event(event="pull_request_review_comment", name=DESCOPES, conclusion="skipped"),
+            ON,
+            False,
+        ),
+        (
+            "workflow_run",
+            run_event("stranger/r", event="pull_request_review_comment", name=DESCOPES),
+            ON,
+            False,
+        ),
+        (
+            "workflow_run",
+            run_event(event="pull_request_review_comment", name=DESCOPES),
+            UNSET,
+            False,
+        ),
+        ("workflow_run", run_event(event="pull_request_review_comment"), ON, False),
         ("pull_request", {"pull_request": SAME, "action": "synchronize"}, ON, True),
         ("pull_request", {"pull_request": FORK, "action": "synchronize"}, ON, False),
         (
@@ -399,6 +431,12 @@ def run_event(repo="o/r", event="pull_request"):
         "off",
         "fork review",
         "not a PR's review",
+        "descopes decided after a reply",
+        "descopes decided after a review",
+        "descopes skipped (a bot's comment)",
+        "descopes on a fork",
+        "descopes, setting unset",
+        "a review run from a comment event",
         "new push",
         "fork push",
         "check label",
@@ -480,9 +518,19 @@ def test_the_gate_feeds_the_script_and_the_label_forces_it():
     )
     assert "labels/check" in gate["Clear the check label"]["run"]
     on = load(AFTER)["on"]
-    assert on["workflow_run"] == {"workflows": ["Claude review"], "types": ["completed"]}
+    assert on["workflow_run"] == {
+        "workflows": ["Claude review", DESCOPES],
+        "types": ["completed"],
+    }
     review = load(REPO / ".github/workflows/sdlc-claude-review.yml")
     assert review["name"] == "Claude review", "workflow_run names the review workflow"
+    descopes = load(REPO / ".github/workflows/sdlc-descopes.yml")
+    assert descopes["name"] == DESCOPES, "workflow_run and the gate's if name it"
+    # A Descope decisions run gates the PR's head as it is now, not the run's head_sha (#223).
+    find = steps("gate")["Find the PR and its head"]
+    assert find["env"]["RUN_NAME"] == "${{ github.event.workflow_run.name }}"
+    assert f'"$RUN_NAME" == "{DESCOPES}"' in find["run"]
+    assert 'repos/$GITHUB_REPOSITORY/pulls/$pr" --jq .head.sha' in find["run"]
 
 
 def test_the_gate_runs_on_sdlc_runner_and_make_check_on_the_heavy_one():
