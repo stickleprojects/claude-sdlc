@@ -134,6 +134,22 @@ jobs:
           if git cat-file -e "$BASE:.sdlc-local" 2>/dev/null; then paths+=(.sdlc-local); fi
           git archive "$BASE" "${paths[@]}" | tar -x -C "$base"
           "$base/.sdlc/scripts/resolve.sh" REVIEW.md > .review-rules.md
+      # The PR's review threads and whether each is resolved (#220). REST comments don't say, and
+      # the review's tools can't run GraphQL, so without this it guessed: a second needs-approval
+      # thread, a fixed finding counted as open. Read with the job's token, from the base's copy
+      # of the script, so a PR can't change what its own review sees.
+      - name: Read the review threads
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          script="$RUNNER_TEMP/review-threads.sh"
+          git show "$BASE:.sdlc/scripts/review-threads.sh" > "$script" 2>/dev/null \
+            || cp .sdlc/scripts/review-threads.sh "$script"
+          if ! bash "$script" "$PR" > .review-threads.json 2> "$RUNNER_TEMP/review-threads.err"; then
+            jq -n --arg e "$(tail -n 3 "$RUNNER_TEMP/review-threads.err" 2>/dev/null)" \
+              '{unreadable: ("the review threads could not be read: " + $e)}' > .review-threads.json
+          fi
+          echo "Review threads: $(jq 'if type == "array" then length else "unreadable" end' .review-threads.json)"
       - name: Review
         id: review
         uses: anthropics/claude-code-action@v1
@@ -163,10 +179,15 @@ jobs:
             the rules' "Where the clauses come from" says. If it doesn't exist, the PR changes
             no spec.md or plan.md.
 
-            This PR may have been reviewed before. First read the existing inline comments:
-              gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments
-            Post an inline comment only for a finding that is new or still not addressed
-            in a different way; never repeat one that is already there.
+            This PR may have been reviewed before. The file .review-threads.json lists its
+            review threads as they were when this review started: each one's path, line,
+            whether it is resolved or outdated, its first comment and its replies (`bot`
+            is true for a bot or an App). Take thread state only from it. Never post a
+            finding again whose thread is still unresolved, a needs-approval thread
+            included. Post an inline comment only for a finding that is new or still not
+            addressed in a different way. If the file holds {"unreadable": ...} instead,
+            the threads couldn't be read: post no needs-approval thread that may already
+            exist, and say in the summary that thread state couldn't be read.
 
             Every Important finding is its own thread starting with **Important (the rules'
             "Posting findings"), never only in the summary. When no line in the diff fits it,
@@ -177,7 +198,11 @@ jobs:
               gh pr comment ${{ github.event.pull_request.number }} --edit-last --body "..."
             Only if that fails because there is none, create it with `gh pr comment`.
             End it with the hidden count line, <!-- review-findings: important=<N> nit=<M> -->:
-            the job checks N against the open Important threads, and fails if they differ.
+            N is the unresolved threads in .review-threads.json whose first comment is the
+            review's own (author `claude`, bot true) and starts with **Important, plus the
+            Important threads you post now. A resolved
+            thread never counts. The job checks N against the open Important threads, and
+            fails if they differ.
           # Automation mode allows only the tools listed here: read the PR, comment on it.
           claude_args: >-
             --max-turns 30
@@ -199,6 +224,20 @@ jobs:
             .sdlc/scripts/review-denials.sh "$RUNNER_TEMP/claude-execution-output.json" "the first review"
             cp "$RUNNER_TEMP/claude-execution-output.json" "$RUNNER_TEMP/review-attempt-1.json" 2>/dev/null || true
           fi
+      # The first review may have posted threads: read them again for the retry.
+      - name: Read the review threads again
+        if: steps.posted.outputs.posted == 'false'
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          script="$RUNNER_TEMP/review-threads.sh"
+          git show "$BASE:.sdlc/scripts/review-threads.sh" > "$script" 2>/dev/null \
+            || cp .sdlc/scripts/review-threads.sh "$script"
+          if ! bash "$script" "$PR" > .review-threads.json 2> "$RUNNER_TEMP/review-threads.err"; then
+            jq -n --arg e "$(tail -n 3 "$RUNNER_TEMP/review-threads.err" 2>/dev/null)" \
+              '{unreadable: ("the review threads could not be read: " + $e)}' > .review-threads.json
+          fi
+          echo "Review threads: $(jq 'if type == "array" then length else "unreadable" end' .review-threads.json)"
       - name: Review once more
         id: retry
         if: steps.posted.outputs.posted == 'false'
@@ -229,10 +268,15 @@ jobs:
             the rules' "Where the clauses come from" says. If it doesn't exist, the PR changes
             no spec.md or plan.md.
 
-            This PR may have been reviewed before. First read the existing inline comments:
-              gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments
-            Post an inline comment only for a finding that is new or still not addressed
-            in a different way; never repeat one that is already there.
+            This PR may have been reviewed before. The file .review-threads.json lists its
+            review threads as they were when this review started: each one's path, line,
+            whether it is resolved or outdated, its first comment and its replies (`bot`
+            is true for a bot or an App). Take thread state only from it. Never post a
+            finding again whose thread is still unresolved, a needs-approval thread
+            included. Post an inline comment only for a finding that is new or still not
+            addressed in a different way. If the file holds {"unreadable": ...} instead,
+            the threads couldn't be read: post no needs-approval thread that may already
+            exist, and say in the summary that thread state couldn't be read.
 
             Every Important finding is its own thread starting with **Important (the rules'
             "Posting findings"), never only in the summary. When no line in the diff fits it,
@@ -243,7 +287,11 @@ jobs:
               gh pr comment ${{ github.event.pull_request.number }} --edit-last --body "..."
             Only if that fails because there is none, create it with `gh pr comment`.
             End it with the hidden count line, <!-- review-findings: important=<N> nit=<M> -->:
-            the job checks N against the open Important threads, and fails if they differ.
+            N is the unresolved threads in .review-threads.json whose first comment is the
+            review's own (author `claude`, bot true) and starts with **Important, plus the
+            Important threads you post now. A resolved
+            thread never counts. The job checks N against the open Important threads, and
+            fails if they differ.
           # Automation mode allows only the tools listed here: read the PR, comment on it.
           claude_args: >-
             --max-turns 30
