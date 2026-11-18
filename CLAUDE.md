@@ -67,4 +67,4 @@ The framework itself. Its changes are tracked as GitHub issues (label `pipeline`
 
 ## Known mistakes
 
-- The working copy may live on NTFS, where `chmod +x` has no effect and git commits scripts as `100644`. On Linux runners a non-executable hook fails silently, which turns the guardrail off. For every new script, run `git update-index --chmod=+x <file>` and check it with `git ls-files -s`.
+- A new script must be committed as `100755`. On Linux runners a non-executable hook fails silently, which turns the guardrail off. For every new script, `chmod +x <file>` on disk **and** run `git update-index --chmod=+x <file>`, then check the commit with `git ls-tree HEAD <file>`. On ext4 (`core.fileMode` true), a later `git add -A` re-stages the file's disk mode over `update-index`. That shipped `review-threads.sh` as `100644` in #227, and a `make check` run before the commit didn't see it. On NTFS, `chmod` has no effect, so `update-index` is the only way.
