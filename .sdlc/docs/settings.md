@@ -25,6 +25,7 @@ A setting that isn't there takes its default.
 | `SDLC_REVIEW_CARRY_FORWARD` | `on`, `off` | on | Without auto-merge, a push that only merges the base branch in (GitHub's **Update branch**) keeps the PR's review when git's own merge gives exactly that commit, and the base's changes it brings in touch none of the files the PR changes (#182). Otherwise `claude-review` says "Not reviewed" and the `review` label runs a fresh one. `off`: every push needs a fresh review, base merges included. |
 | `SDLC_REVIEW_EXTRA_BOTS` | bot names, comma-separated | none | Bots whose PRs the Claude review accepts, such as `renovate` (see the readme). |
 | `SDLC_RUNNER` | a runner label | `ubuntu-latest` | Runs every framework job on your own runner (`self-hosted-runner.md`). |
+| `SDLC_RUNNER_HEAVY` | a runner label | `SDLC_RUNNER` | Runs the jobs that run `make check` or the evals (CI's `check`, `make check (after review)`, the agent evals) on a bigger runner, while the rest stay on `SDLC_RUNNER` (#222, `self-hosted-runner.md`). |
 | `SDLC_AGENT_APP_ID`, `SDLC_AGENT_APP_SLUG` | the App's id and slug | none | The GitHub App Claude acts as (`setup-agent-apps.md`). |
 
 ## Environment variables

@@ -99,6 +99,23 @@ RUNS_ON = (
     "&& vars.SDLC_RUNNER || 'ubuntu-latest' }}"
 )
 
+# #222: jobs that run `make check` or the evals use SDLC_RUNNER_HEAVY when it's set, falling back
+# to SDLC_RUNNER and then to GitHub's runners, behind the same fork guard.
+RUNS_ON_HEAVY = (
+    "runs-on: ${{ (vars.SDLC_RUNNER_HEAVY || vars.SDLC_RUNNER) && "
+    "!github.event.issue.pull_request && "
+    "(!github.event.pull_request || "
+    "github.event.pull_request.head.repo.full_name == github.repository) "
+    "&& (vars.SDLC_RUNNER_HEAVY || vars.SDLC_RUNNER) || 'ubuntu-latest' }}"
+)
+# The jobs that get RUNS_ON_HEAVY, by workflow. Every other job gets RUNS_ON.
+HEAVY_JOBS = {
+    "release.yml": {"release"},
+    "sdlc-agent-evals.yml": {"evals"},
+    "sdlc-check-after-review.yml": {"make-check"},
+    "sdlc-ci.yml": {"check"},
+}
+
 
 def gh_expr(expr, ctx):
     """Evaluate a GitHub Actions expression made of what RUNS_ON and the job conditions use:

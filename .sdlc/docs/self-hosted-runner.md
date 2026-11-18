@@ -16,7 +16,14 @@ The pipeline's workflows run on GitHub-hosted runners (`ubuntu-latest`) by defau
    ```
 
    The value is one runner label. Runs that were already queued don't move: re-run them (`gh run rerun <id>`), or push a commit.
-4. **To go back to GitHub's runners:** `gh variable delete SDLC_RUNNER`. If the runner was only for an outage, remove it too (Settings → Actions → Runners).
+4. **To give the heavy jobs a bigger runner (optional, #222):** register a second runner with its own label and set
+
+   ```
+   gh variable set SDLC_RUNNER_HEAVY --body <its label>
+   ```
+
+   The jobs that run `make check` or the evals then go there: CI's `check`, `make check (after review)` and the agent evals. Everything else (the title check, the descope gate, the Claude review, `@claude` replies and spec-from-intent) stays on `SDLC_RUNNER`. Unset, the heavy jobs use `SDLC_RUNNER`. Set on its own, only the heavy jobs leave GitHub's runners. The fork guard below applies to both labels.
+5. **To go back to GitHub's runners:** `gh variable delete SDLC_RUNNER` (and `SDLC_RUNNER_HEAVY`, if set). If the runner was only for an outage, remove it too (Settings → Actions → Runners).
 
 Each job asks for:
 
@@ -24,7 +31,9 @@ Each job asks for:
 runs-on: ${{ vars.SDLC_RUNNER && !github.event.issue.pull_request && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && vars.SDLC_RUNNER || 'ubuntu-latest' }}
 ```
 
-In words, the job uses `SDLC_RUNNER` when it's set, except in these cases, which go to GitHub-hosted runners:
+The heavy jobs ask for the same with `(vars.SDLC_RUNNER_HEAVY || vars.SDLC_RUNNER)` in both places `vars.SDLC_RUNNER` appears.
+
+In words, the job uses `SDLC_RUNNER` (or the heavy label) when it's set, except in these cases, which go to GitHub-hosted runners:
 - PRs from forks;
 - PRs whose fork has since been deleted;
 - comments on any PR.

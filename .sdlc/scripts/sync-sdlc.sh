@@ -74,11 +74,13 @@ main() {
     "variable SDLC_AUTO_MERGE_CONFIRMED"
   )
   # Optional runner (#126): every framework job runs on vars.SDLC_RUNNER when it's set, except
-  # for fork PRs, which stay on GitHub-hosted runners. A fork PR can edit that line in its own
-  # copy of the workflow, though, so on a public repo the sync checks that fork PR workflows
-  # wait for a person's approval.
+  # for fork PRs, which stay on GitHub-hosted runners. The jobs that run `make check` or the
+  # evals take vars.SDLC_RUNNER_HEAVY first when it's set (#222). A fork PR can edit that line in
+  # its own copy of the workflow, though, so on a public repo the sync checks that fork PR
+  # workflows wait for a person's approval.
   local runner_settings=(
     "variable SDLC_RUNNER"
+    "variable SDLC_RUNNER_HEAVY"
   )
   # Optional dependency bots the Claude review accepts (#142). Not reported when unset. A
   # Dependabot PR's workflows get only Dependabot secrets, so the review's token must be one too.
@@ -339,16 +341,21 @@ main() {
         out+="  not checked: SDLC_AUTO_MERGE is set, but can't read main's branch protection (needs admin)."$'\n'
       fi
     fi
-    local private policy
+    local private policy runner_var=""
     if set_in variable SDLC_RUNNER; then
+      runner_var=SDLC_RUNNER
+    elif set_in variable SDLC_RUNNER_HEAVY; then
+      runner_var=SDLC_RUNNER_HEAVY
+    fi
+    if [[ -n "$runner_var" ]]; then
       private="$(gh api "repos/$gh_repo" --jq .private 2>/dev/null)" || private=""
       if [[ "$private" != true ]]; then
         policy="$(gh api "repos/$gh_repo/actions/permissions/fork-pr-contributor-approval" \
           --jq .approval_policy 2>/dev/null)" || policy=""
         if [[ -z "$policy" ]]; then
-          out+="  not checked: SDLC_RUNNER is set, but can't read whether fork PR workflows need approval (needs admin). Check Settings > Actions > General (.sdlc/docs/self-hosted-runner.md)."$'\n'
+          out+="  not checked: $runner_var is set, but can't read whether fork PR workflows need approval (needs admin). Check Settings > Actions > General (.sdlc/docs/self-hosted-runner.md)."$'\n'
         elif [[ "$policy" != all_external_contributors ]]; then
-          out+="  WARNING: SDLC_RUNNER is set on a public repo, but some fork PRs run their workflows without approval ($policy). A fork PR can edit its workflow to run on your runner. In Settings > Actions > General, choose 'Require approval for all external contributors' (.sdlc/docs/self-hosted-runner.md)."$'\n'
+          out+="  WARNING: $runner_var is set on a public repo, but some fork PRs run their workflows without approval ($policy). A fork PR can edit its workflow to run on your runner. In Settings > Actions > General, choose 'Require approval for all external contributors' (.sdlc/docs/self-hosted-runner.md)."$'\n'
         fi
       fi
     fi
