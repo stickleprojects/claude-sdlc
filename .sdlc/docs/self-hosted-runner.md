@@ -22,7 +22,7 @@ The pipeline's workflows run on GitHub-hosted runners (`ubuntu-latest`) by defau
    gh variable set SDLC_RUNNER_HEAVY --body <its label>
    ```
 
-   The jobs that run `make check` or the evals then go there: CI's `check`, `make check (after review)` and the agent evals. Everything else (the title check, the descope gate, the Claude review, `@claude` replies and spec-from-intent) stays on `SDLC_RUNNER`. Unset, the heavy jobs use `SDLC_RUNNER`. Set on its own, only the heavy jobs leave GitHub's runners. The fork guard below applies to both labels.
+   The jobs that run `make check` or the evals then go there: CI's `check`, `make check (after review)` (the post-review `make check`) and the agent evals. Everything else (the title check, the descope gate, the Claude review, `@claude` replies and spec-from-intent) stays on `SDLC_RUNNER`. Unset, the heavy jobs use `SDLC_RUNNER`. Set on its own, only the heavy jobs leave GitHub's runners. The fork guard below applies to both labels.
 5. **To go back to GitHub's runners:** `gh variable delete SDLC_RUNNER` (and `SDLC_RUNNER_HEAVY`, if set). If the runner was only for an outage, remove it too (Settings → Actions → Runners).
 
 Each job asks for:
