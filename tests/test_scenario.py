@@ -692,6 +692,20 @@ def test_sync_says_when_it_cant_read_the_fork_approval_policy(
     )
 
 
+def test_sync_warns_when_only_the_heavy_runner_is_set_on_a_public_repo(
+    consumer, framework_snapshot, tmp_path
+):
+    out = sync_with_gh(
+        consumer,
+        framework_snapshot,
+        tmp_path,
+        variables=f"{APP_VARS} SDLC_RUNNER_HEAVY",
+        **ALL_SET,
+        FAKE_GH_FORK_POLICY="first_time_contributors",
+    ).stdout
+    assert "WARNING: SDLC_RUNNER_HEAVY is set on a public repo" in out  # #222
+
+
 def test_sync_says_nothing_about_the_runner_when_sdlc_runner_is_unset(
     consumer, framework_snapshot, tmp_path
 ):

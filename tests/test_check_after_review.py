@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from conftest import REPO, run
-from scripts.helpers import RUNS_ON, gh_expr
+from scripts.helpers import RUNS_ON, RUNS_ON_HEAVY, gh_expr
 
 GATE = REPO / ".sdlc/scripts/check-gate.sh"
 CI = REPO / ".github/workflows/sdlc-ci.yml"
@@ -485,11 +485,11 @@ def test_the_gate_feeds_the_script_and_the_label_forces_it():
     assert review["name"] == "Claude review", "workflow_run names the review workflow"
 
 
-def test_every_job_runs_on_sdlc_runner():
+def test_the_gate_runs_on_sdlc_runner_and_make_check_on_the_heavy_one():
     text = AFTER.read_text()
     assert [line.strip() for line in text.splitlines() if line.strip().startswith("runs-on:")] == [
         RUNS_ON,
-        RUNS_ON,
+        RUNS_ON_HEAVY,  # #222
     ]
 
 

@@ -5,7 +5,7 @@ import pytest
 
 from conftest import REPO, run
 
-from .helpers import RUNS_ON, gh_expr, identity
+from .helpers import HEAVY_JOBS, RUNS_ON, RUNS_ON_HEAVY, gh_expr, identity
 
 # --- agent identity -------------------------------------------------------------------------
 
@@ -155,6 +155,45 @@ def test_runs_on_sends_only_the_repo_own_code_to_sdlc_runner(event, runner):
     ctx = {"github": {"repository": REPO_NAME, "event": event}}
     assert gh_expr(expr, {**ctx, "vars": {"SDLC_RUNNER": "self-hosted"}}) == runner
     assert gh_expr(expr, {**ctx, "vars": {}}) == "ubuntu-latest"  # unset: GitHub's, always
+    # A light job never takes the heavy label (#222).
+    both = {"SDLC_RUNNER": "self-hosted", "SDLC_RUNNER_HEAVY": "big"}
+    assert gh_expr(expr, {**ctx, "vars": both}) == runner
+    assert gh_expr(expr, {**ctx, "vars": {"SDLC_RUNNER_HEAVY": "big"}}) == "ubuntu-latest"
+
+
+@pytest.mark.parametrize(
+    "variables, own_code",
+    [
+        ({"SDLC_RUNNER": "light", "SDLC_RUNNER_HEAVY": "heavy"}, "heavy"),
+        ({"SDLC_RUNNER": "light"}, "light"),  # no heavy label: falls back to SDLC_RUNNER
+        ({"SDLC_RUNNER_HEAVY": "heavy"}, "heavy"),  # heavy only: light jobs stay on GitHub's
+        ({}, "ubuntu-latest"),
+    ],
+    ids=["both", "light only", "heavy only", "neither"],
+)
+@pytest.mark.parametrize(
+    "event", [{"pull_request": SAME}, {"ref": "refs/heads/main"}], ids=["same-repo PR", "push"]
+)
+def test_heavy_jobs_use_sdlc_runner_heavy_then_sdlc_runner(variables, own_code, event):
+    expr = RUNS_ON_HEAVY.removeprefix("runs-on: ${{").removesuffix("}}")
+    ctx = {"github": {"repository": REPO_NAME, "event": event}, "vars": variables}
+    assert gh_expr(expr, ctx) == own_code
+
+
+@pytest.mark.parametrize(
+    "event",
+    [
+        {"pull_request": FORK},
+        {"pull_request": DELETED_FORK},
+        {"issue": {"pull_request": {"url": "x"}}, "comment": {}},
+    ],
+    ids=["fork PR", "deleted fork", "PR comment"],
+)
+def test_heavy_jobs_keep_the_fork_guard(event):
+    expr = RUNS_ON_HEAVY.removeprefix("runs-on: ${{").removesuffix("}}")
+    ctx = {"github": {"repository": REPO_NAME, "event": event}}
+    both = {"SDLC_RUNNER": "light", "SDLC_RUNNER_HEAVY": "heavy"}
+    assert gh_expr(expr, {**ctx, "vars": both}) == "ubuntu-latest"
 
 
 @pytest.mark.parametrize(
@@ -164,7 +203,31 @@ def test_every_job_runs_on_sdlc_runner_with_the_fork_guard(workflow):
     text = (REPO / ".github/workflows" / workflow).read_text()
     lines = [line.strip() for line in text.splitlines() if line.strip().startswith("runs-on:")]
     assert lines, f"{workflow} has no jobs"
-    # A job pinned to a literal runner stays queued in an outage and blocks the merge.
-    assert all(line == RUNS_ON for line in lines), lines
+    # A job pinned to a literal runner stays queued in an outage and blocks the merge. Jobs that
+    # run `make check` or the evals take the heavy label (#222); the rest never do.
+    runs_on, job = {}, None
+    for line in text.splitlines():
+        if m := re.match(r"^  ([a-z][a-z0-9_-]*):$", line):
+            job = m.group(1)
+        elif line.strip().startswith("runs-on:"):
+            runs_on[job] = line.strip()
+    heavy = HEAVY_JOBS.get(workflow, set())
+    assert heavy <= runs_on.keys(), f"{workflow}: no job named {heavy - runs_on.keys()}"
+    assert runs_on == {j: RUNS_ON_HEAVY if j in heavy else RUNS_ON for j in runs_on}, runs_on
     jobs = re.findall(r"^  [a-z][a-z0-9_-]*:\n(?:    .*\n|\n)*?    steps:", text, re.M)
     assert len(lines) == len(jobs), f"{workflow}: a job without runs-on"
+
+
+def test_every_variable_the_synced_workflows_read_is_listed_by_the_sync():
+    used = set()
+    for path in REPO.glob(".github/workflows/sdlc-*.yml"):
+        used |= set(re.findall(r"vars\.([A-Z][A-Z0-9_]*)", path.read_text()))
+    sync = (REPO / ".sdlc/scripts/sync-sdlc.sh").read_text()
+    assert "SDLC_RUNNER_HEAVY" in used
+    assert {v for v in used if f'"variable {v}"' not in sync} == set()
+
+
+def test_sdlc_runner_heavy_is_documented():
+    settings = (REPO / ".sdlc/docs/settings.md").read_text()
+    assert any(line.startswith("| `SDLC_RUNNER_HEAVY`") for line in settings.splitlines())
+    assert "SDLC_RUNNER_HEAVY" in (REPO / ".sdlc/docs/self-hosted-runner.md").read_text()

@@ -116,7 +116,7 @@ jobs:
     name: make check (after review)
     needs: gate
     if: needs.gate.outputs.decision == 'run'
-    runs-on: ${{ vars.SDLC_RUNNER && !github.event.issue.pull_request && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && vars.SDLC_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ (vars.SDLC_RUNNER_HEAVY || vars.SDLC_RUNNER) && !github.event.issue.pull_request && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (vars.SDLC_RUNNER_HEAVY || vars.SDLC_RUNNER) || 'ubuntu-latest' }}
     # One `check` per PR: a newer one (another head, the label) replaces one still running.
     concurrency:
       group: check-after-review-${{ needs.gate.outputs.pr }}
