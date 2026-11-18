@@ -5,7 +5,15 @@ import pytest
 
 from conftest import REPO, run
 
-from .helpers import HEAVY_JOBS, RUNS_ON, RUNS_ON_HEAVY, gh_expr, identity
+from .helpers import (
+    DEFERRABLE_JOBS,
+    HEAVY_JOBS,
+    RUNS_ON,
+    RUNS_ON_DEFERRABLE,
+    RUNS_ON_HEAVY,
+    gh_expr,
+    identity,
+)
 
 # --- agent identity -------------------------------------------------------------------------
 
@@ -196,6 +204,32 @@ def test_heavy_jobs_keep_the_fork_guard(event):
     assert gh_expr(expr, {**ctx, "vars": both}) == "ubuntu-latest"
 
 
+ON = {"SDLC_CHECK_AFTER_REVIEW": "on"}
+
+
+@pytest.mark.parametrize(
+    "event_name, event, setting, runner",
+    [
+        ("pull_request", {"pull_request": SAME}, ON, "light"),  # deferred: only a note
+        ("pull_request", {"pull_request": SAME}, {"SDLC_CHECK_AFTER_REVIEW": "Off"}, "heavy"),
+        ("pull_request", {"pull_request": SAME}, {}, "heavy"),
+        ("push", {"ref": "refs/heads/main"}, ON, "heavy"),  # main runs make check here
+        ("pull_request", {"pull_request": FORK}, ON, "ubuntu-latest"),  # forks: never ours
+    ],
+    ids=["deferred PR", "setting off", "setting unset", "push to main", "fork PR"],
+)
+def test_a_deferred_ci_check_takes_the_light_runner(event_name, event, setting, runner):
+    # #236: a deferred `check` starting a heavy runner for an echo.
+    expr = RUNS_ON_DEFERRABLE.removeprefix("runs-on: ${{").removesuffix("}}")
+    both = {"SDLC_RUNNER": "light", "SDLC_RUNNER_HEAVY": "heavy", **setting}
+    gh = {"event_name": event_name, "repository": REPO_NAME, "event": event}
+    assert gh_expr(expr, {"github": gh, "vars": both}) == runner
+    # Without SDLC_RUNNER a deferred one goes to GitHub's, never the heavy label.
+    heavy_only = {"SDLC_RUNNER_HEAVY": "heavy", **setting}
+    want = "ubuntu-latest" if runner in ("light", "ubuntu-latest") else "heavy"
+    assert gh_expr(expr, {"github": gh, "vars": heavy_only}) == want
+
+
 @pytest.mark.parametrize(
     "workflow", sorted(p.name for p in REPO.glob(".github/workflows/*.yml")), ids=str
 )
@@ -212,8 +246,14 @@ def test_every_job_runs_on_sdlc_runner_with_the_fork_guard(workflow):
         elif line.strip().startswith("runs-on:"):
             runs_on[job] = line.strip()
     heavy = HEAVY_JOBS.get(workflow, set())
-    assert heavy <= runs_on.keys(), f"{workflow}: no job named {heavy - runs_on.keys()}"
-    assert runs_on == {j: RUNS_ON_HEAVY if j in heavy else RUNS_ON for j in runs_on}, runs_on
+    deferrable = DEFERRABLE_JOBS.get(workflow, set())  # #236
+    named = heavy | deferrable
+    assert named <= runs_on.keys(), f"{workflow}: no job named {named - runs_on.keys()}"
+    want = {
+        j: RUNS_ON_DEFERRABLE if j in deferrable else RUNS_ON_HEAVY if j in heavy else RUNS_ON
+        for j in runs_on
+    }
+    assert runs_on == want, runs_on
     jobs = re.findall(r"^  [a-z][a-z0-9_-]*:\n(?:    .*\n|\n)*?    steps:", text, re.M)
     assert len(lines) == len(jobs), f"{workflow}: a job without runs-on"
 

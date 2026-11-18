@@ -14,22 +14,28 @@
 #   run              run `make check` now
 #   wait <reason>    not yet; the `check` status on the head is set to pending with the reason
 #   skip <reason>    nothing to do: the PR is closed, the head is stale, or `check` already
-#                    ran or is running on this head
+#                    ran, is running or is queued on this head
 # --force (the `check` label) runs it whatever the review says, unless the head is stale.
+# Before saying `run` it claims the head (#237): `check` goes to pending "make check is queued",
+# linked to this workflow run, so another gate on the same head (an approval and its Descope
+# decisions run come together) skips rather than starting a second job that cancels the first.
+# The claim holds only while that run is still going: once it's over, a later gate may run.
 # Exits 0 with a decision, 2 on bad arguments, 3 when GitHub can't be read or written.
 #
 # Env: GITHUB_REPOSITORY (owner/name; default: the gh repo of this checkout).
 #      REVIEW_BOT (default: claude[bot], the login claude-code-action comments as).
+#      GITHUB_RUN_ID, GITHUB_SERVER_URL (set by Actions): the run the claim links to.
 set -uo pipefail
 
 pr="${1:-}" head="${2:-}" force="${3:-}"
 [[ "$pr" =~ ^[0-9]+$ && "$head" =~ ^[0-9a-f]{40}$ && "$force" =~ ^(--force)?$ ]] \
-  || { sed -n '2,21p' "$0" >&2; exit 2; }
+  || { sed -n '2,27p' "$0" >&2; exit 2; }
 repo="${GITHUB_REPOSITORY:-$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)}"
 [[ "$repo" == */* ]] || { echo "check-gate: can't tell which repo this is" >&2; exit 3; }
 bot="${REVIEW_BOT:-claude[bot]}"
 login="${bot%\[bot\]}"  # GraphQL names an App's account without the [bot] suffix
 RUNNING="make check is running"
+QUEUED="make check is queued"
 
 fail() { echo "check-gate: $1" >&2; exit 3; }
 
@@ -48,8 +54,36 @@ check="$(latest check)" || fail "can't read the statuses of ${head:0:7}"
 case "$check" in
   success* | failure* | error*) [[ -n "$force" ]] || { echo "skip check already ran on ${head:0:7}"; exit 0; } ;;
   "pending $RUNNING"*) [[ -n "$force" ]] || { echo "skip check is already running on ${head:0:7}"; exit 0; } ;;
+  "pending $QUEUED"*)
+    if [[ -z "$force" ]]; then
+      # The claim's link names the gate run that made it. A run that's over and left the claim
+      # behind (its job was cancelled before it started) no longer holds the head.
+      url="$(gh api "repos/$repo/commits/$head/statuses" --paginate \
+        --jq '[.[] | select(.context == "check")][0].target_url // ""')" \
+        || fail "can't read the statuses of ${head:0:7}"
+      claimer="$(sed -nE 's#.*/actions/runs/([0-9]+).*#\1#p' <<<"$url")"
+      if [[ -n "$claimer" ]]; then
+        run_state="$(gh api "repos/$repo/actions/runs/$claimer" --jq .status)" \
+          || fail "can't read run $claimer"
+        [[ "$run_state" == completed ]] \
+          || { echo "skip check is already queued on ${head:0:7} (run $claimer)"; exit 0; }
+      fi
+    fi
+    ;;
 esac
-[[ -z "$force" ]] || { echo run; exit 0; }
+
+# Claim the head for this run's make-check job, then say run.
+go() {
+  local link=()
+  [[ -z "${GITHUB_RUN_ID:-}" ]] \
+    || link=(-f target_url="${GITHUB_SERVER_URL:-https://github.com}/$repo/actions/runs/$GITHUB_RUN_ID")
+  gh api "repos/$repo/statuses/$head" --silent -f state=pending -f context=check \
+    -f description="$QUEUED: if it never starts, add the check label" "${link[@]}" \
+    || fail "can't set the check status on ${head:0:7}"
+  echo run
+  exit 0
+}
+[[ -z "$force" ]] || go
 
 wait_for() {
   local reason
@@ -83,4 +117,4 @@ threads="$(gh api graphql --paginate -f query="$query" -F owner="${repo%%/*}" \
     | 1")" || fail "can't read PR #$pr's review threads"
 open="$(grep -c . <<<"$threads")"
 ((open == 0)) || wait_for "Waiting: $open open Important thread(s). Resolve them, then reply on one or approve, or add the check label"
-echo run
+go

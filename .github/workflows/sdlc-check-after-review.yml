@@ -18,7 +18,10 @@
 #     so a finding settled without a push needs a reply or an approval;
 #   - someone adds the `check` label, which runs `make check` whatever the review says.
 # A new push cancels a `check` still running on the old head (the shared concurrency group),
-# so a one-job runner moves on to the new head's review.
+# so a one-job runner moves on to the new head's review. On the same head nothing does: a gate
+# that lets `make check` through first sets `check` to "make check is queued", and while its run
+# is going, other gates on that head skip (#237). An approval starts two gates (this one's
+# review event and Descope decisions), and without the claim the second replaced the first's job.
 #
 # workflow_run runs main's copy of this file, with a token that can write statuses, on the PR's
 # code. So it's for same-repo PRs only (forks never get here), and `make check` runs without a
