@@ -120,3 +120,66 @@ def test_the_review_rules_and_skill_use_the_lead_in_the_script_reads():
     assert "Descope: needs approval" in (REPO / ".sdlc/scripts/descopes-decided.sh").read_text()
     for path in (".sdlc/REVIEW.md", ".sdlc/skills/review-findings/SKILL.md"):
         assert "Descope: needs approval" in (REPO / path).read_text(), path
+
+
+SESSION = (
+    "**Important (product owner decides; engineer for plan amendments):** Session decisions: "
+    "needs approval. Three descopes decided in the session (#218)."
+)
+
+
+def test_one_reply_approves_a_session_decisions_thread(descopes):
+    approved = note("kieron", "Approved: Kieron, 18 Nov", "2026-11-18T07:00:00Z")
+    result = descopes([descope_thread(approved, first=SESSION)])
+    assert result.returncode == 0
+    assert (
+        result.stdout.strip()
+        == "descopes decided: session decisions approved by @kieron (2026-11-18)"
+    )
+
+
+def test_a_session_decisions_thread_waits_for_a_person_not_the_app(descopes):
+    app = note("stickle-claude", "Approved: Kieron, 18 Nov", "2026-11-18T07:00:00Z", "Bot")
+    for thread in (descope_thread(first=SESSION), descope_thread(app, first=SESSION)):
+        result = descopes([thread])
+        assert result.returncode == 1
+        assert result.stdout.startswith("A session decision waits for a person's decision: Three")
+
+
+def test_a_session_decisions_thread_sent_back_waits_for_a_re_review(descopes):
+    back = note("kieron", "No, build the export after all.", "2026-11-18T07:00:00Z")
+    result = descopes([descope_thread(back, first=SESSION)], reviewed="2026-11-18T06:00:00Z")
+    assert result.returncode == 1 and "sent a session decision back" in result.stdout
+
+
+def test_an_older_plan_changes_thread_still_counts(descopes):
+    old = (
+        "**Important (engineer decides; product owner for spec clauses):** "
+        "Plan changes: needs approval."
+    )
+    assert descopes([descope_thread(first=old)]).returncode == 1
+    approved = note("kieron", "Approved: Kieron, 18 Nov", "2026-11-18T07:00:00Z")
+    assert descopes([descope_thread(approved, first=old)]).returncode == 0
+
+
+def test_the_session_decisions_lead_in_is_written_where_the_script_reads_it():
+    assert (
+        "Session decisions: needs approval"
+        in (REPO / ".sdlc/scripts/descopes-decided.sh").read_text()
+    )
+    for path in (
+        ".sdlc/REVIEW.md",
+        ".sdlc/skills/build/SKILL.md",
+        ".sdlc/skills/review-findings/SKILL.md",
+    ):
+        assert "Session decisions: needs approval" in (REPO / path).read_text(), path
+    assert "## Descopes decided in session" in (REPO / ".sdlc/skills/build/SKILL.md").read_text()
+    assert "## Descopes decided in session" in (REPO / ".sdlc/REVIEW.md").read_text()
+
+
+def test_descopes_status_clears_a_session_decision_once_approved(descopes):
+    approved = note("kieron", "Approved: Kieron, 18 Nov", "2026-11-18T07:00:00Z")
+    status = ("failure", "A session decision waits for a person's decision: Three items")
+    result = descopes([descope_thread(approved, first=SESSION)], status=status, script="status")
+    assert "state=success" in result.posted
+    assert "session decisions approved by @kieron" in result.posted

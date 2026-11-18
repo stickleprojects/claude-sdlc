@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Has a person decided every "Descope: needs approval" thread on a PR? (#132) And every
-# "Plan changes: needs approval" thread, where a build PR amends its plan (#174): it's read the
-# same way, so a person's reply approves the amendments, never a line in build.md.
+# "Session decisions: needs approval" thread (#218): the one thread for everything a person
+# decided during the build session, its plan amendments (#174) and its descopes. It's read the
+# same way, so one person's reply approves all of them, never a line in build.md. An older
+# review's "Plan changes: needs approval" thread counts as one too.
 #
 # Usage: .sdlc/scripts/descopes-decided.sh <pr-number>
 #
@@ -49,8 +51,9 @@ threads="$(gh api graphql --paginate -f query="$query" -F owner="${repo%%/*}" \
     .data.repository.pullRequest.reviewThreads.nodes[] | .comments.nodes
     | select(length > 0)
     | select((.[0].author.login // \"\" | sub(\"\\\\[bot\\\\]\$\"; \"\")) == \"$login\")
-    | select(.[0].body | test(\"(Descope|Plan changes): needs approval\"))
-    | {kind: (if (.[0].body | test(\"Plan changes: needs approval\")) then \"plan change\" else \"descope\" end),
+    | select(.[0].body | test(\"(Descope|Plan changes|Session decisions): needs approval\"))
+    | {kind: (if (.[0].body | test(\"Session decisions: needs approval\")) then \"session decision\"
+              elif (.[0].body | test(\"Plan changes: needs approval\")) then \"plan change\" else \"descope\" end),
        first: (.[0].body | split(\"\\n\") | map(select(test(\"\\\\S\"))) | .[0] // \"\"),
        people: [.[1:][] | select(.author.__typename == \"User\")
                  | {who: .author.login, at: .createdAt,
@@ -63,6 +66,7 @@ short() {  # the finding's first line, without its markdown lead-in, for a statu
   text="$(sed -E 's/^\s*\*\*Important[^*]*\*\*:?\s*//; s/\*\*//g' <<<"$1")"
   text="${text#Descope: needs approval}"
   text="${text#Plan changes: needs approval}"
+  text="${text#Session decisions: needs approval}"
   text="$(sed -E 's/^[.:]?\s*//' <<<"$text")"
   printf '%s' "${text:0:40}"
 }
@@ -76,11 +80,11 @@ while IFS= read -r thread; do
   kind="$(jq -r .kind <<<"$thread")"
   approval="$(jq -r '[.people[] | select(.approved)] | last | select(.) | "\(.who) (\(.at[:10]))"' <<<"$thread")"
   if [[ -n "$approval" ]]; then
-    if [[ "$kind" == descope ]]; then
-      decided+=("approved by @$approval")
-    else
-      decided+=("plan changes approved by @$approval")
-    fi
+    case "$kind" in
+      descope) decided+=("approved by @$approval") ;;
+      "plan change") decided+=("plan changes approved by @$approval") ;;
+      *) decided+=("session decisions approved by @$approval") ;;
+    esac
     continue
   fi
   reply="$(jq -r '.people | last | select(.) | "\(.who) \(.at)"' <<<"$thread")"

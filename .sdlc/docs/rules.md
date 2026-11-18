@@ -36,7 +36,8 @@ A holder can hold part of a rule only, such as the plan gate holding "no code be
 | `review.clause-check-input` | Start from the clause check's output; an `unchecked` entry is never covered | nothing |
 | `review.descopes` | Report unapproved descopes (approved only as scope.md records one), definition-of-done gaps and unlisted human checks as Important | `check: .sdlc/src/sdlc/artifacts.py::check_descopes`, `check: .sdlc/src/sdlc/artifacts.py::check_dod` |
 | `review.delivery-gap` | A delivery that lacks a requirement's main verb or noun is a `Descope: needs approval` finding | nothing |
-| `review.plan-amendments` | With SDLC_BUILD_AMENDS_PLAN on, all plan amendments go in one approval thread | `eval: review-raises-plan-amendments-as-one-thread`, `check: .sdlc/scripts/descopes-decided.sh`, `check: .sdlc/scripts/check-pr-title.sh` |
+| `review.plan-amendments` | With SDLC_BUILD_AMENDS_PLAN on, all plan amendments go in the one Session decisions thread | `eval: review-raises-plan-amendments-as-one-thread`, `check: .sdlc/scripts/descopes-decided.sh`, `check: .sdlc/scripts/check-pr-title.sh` |
+| `review.session-decisions` | Descopes decided in the session, and plan amendments, go in one Session decisions thread that one person's reply approves | `check: .sdlc/scripts/descopes-decided.sh`, `check: .sdlc/scripts/descopes-status.sh` |
 | `review.project-rules` | Apply the repo's docs/review-rules.md | nothing |
 | `review.severity-important` | Important: wrong behaviour, security, an unmet requirement; always reported | nothing |
 | `review.nit-cap` | At most 3 Nits, none if any Important | nothing |
@@ -91,6 +92,7 @@ A holder can hold part of a rule only, such as the plan gate holding "no code be
 | `build.no-spec-edit` | spec.md isn't edited on a build branch unless the repo opts in to amendments | `check: .sdlc/scripts/check-pr-title.sh` |
 | `build.no-plan-edit` | plan.md isn't edited in a build; a wrong plan goes back through a plan PR | `check: .sdlc/scripts/check-pr-title.sh` |
 | `build.plan-amendments` | With SDLC_BUILD_AMENDS_PLAN on, amendments are recorded in build.md and listed under `## Plan changes` | `check: .sdlc/scripts/check-pr-title.sh`, `check: .sdlc/scripts/descopes-decided.sh` |
+| `build.session-decisions` | A descope decided in the session is recorded in build.md and listed under `## Descopes decided in session`; needs-approval threads stay unresolved | `check: .sdlc/scripts/descopes-decided.sh` |
 | `build.scope` | No descope without an approval; meet the named definition-of-done rows | nothing |
 | `build.claude-md` | Follow the repo's CLAUDE.md | nothing |
 | `build.commit-each-step` | Commit and push after each plan step, with the build's commit types | nothing |

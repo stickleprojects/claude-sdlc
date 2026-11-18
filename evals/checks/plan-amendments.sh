@@ -8,7 +8,7 @@ set -uo pipefail
 sections="$(awk '/^## / { if (sec != "") print sec; sec = "" } { sec = sec " " $0 } END { if (sec != "") print sec }' findings.md)"
 single=0 own=0
 while IFS= read -r sec; do
-  if grep -q 'Plan changes: needs approval' <<<"$sec"; then
+  if grep -qE '(Plan changes|Session decisions): needs approval' <<<"$sec"; then
     ((single += 1))
     grep -qi 'brick' <<<"$sec" && grep -qiE 'two.level|warp' <<<"$sec" \
       || { echo "check: the Plan changes thread doesn't name both recorded amendments:"; cat findings.md; exit 1; }
