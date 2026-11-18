@@ -118,7 +118,7 @@ def test_build_amends_plan_is_wired_through_ci_the_rules_and_the_skill():
         review.count("SDLC_BUILD_AMENDS_PLAN variable is '${{ vars.SDLC_BUILD_AMENDS_PLAN }}'") == 2
     )
     rules = (REPO / ".sdlc/REVIEW.md").read_text()
-    assert "Plan changes: needs approval." in rules  # descopes-decided.sh reads this lead-in
+    assert "Session decisions: needs approval." in rules  # descopes-decided.sh reads this lead-in
     build = (REPO / ".sdlc/skills/build/SKILL.md").read_text()
     assert "gh variable get SDLC_BUILD_AMENDS_PLAN" in build
     settings = (REPO / ".sdlc/docs/settings.md").read_text()
