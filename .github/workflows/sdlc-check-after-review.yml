@@ -43,6 +43,7 @@ permissions:
 
 jobs:
   gate:
+    name: "check gate (after review): the result is the check status"
     # The reviewer's own review and inline comments change nothing, and there are many of them:
     # the review's `workflow_run` is the event that looks at its result.
     if: >-
@@ -123,8 +124,13 @@ jobs:
   # check run of that name counts toward it: a cancelled one blocks the merge and a skipped one
   # passes it. Only the commit status posted below may answer it.
   # tests/test_workflow_names.py holds every workflow to this.
+  # Most copies of this job are skipped or cancelled: each review event and reply starts one,
+  # and only the copy a clean review lets through runs, from main's workflow_run, which GitHub
+  # files under main rather than the PR. The result that counts is the `check` commit status,
+  # which always holds the newest real run and links to it. The name says so, because the PR's
+  # list shows the skipped and cancelled copies and never the one that ran (#219).
   make-check:
-    name: make check (after review)
+    name: "make check (after review): the result is the check status"
     needs: gate
     if: needs.gate.outputs.decision == 'run'
     runs-on: ${{ (vars.SDLC_RUNNER_HEAVY || vars.SDLC_RUNNER) && !github.event.issue.pull_request && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (vars.SDLC_RUNNER_HEAVY || vars.SDLC_RUNNER) || 'ubuntu-latest' }}

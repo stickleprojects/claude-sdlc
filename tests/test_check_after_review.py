@@ -554,3 +554,13 @@ def test_the_setting_is_listed_and_documented():
 def test_the_gate_script_is_executable_in_git():
     out = run(["git", "ls-files", "-s", str(GATE.relative_to(REPO))]).stdout
     assert out.startswith("100755"), out
+
+
+def test_the_jobs_names_say_the_result_is_the_check_status():
+    # The PR lists only skipped or cancelled copies of these jobs: the one that runs comes from
+    # main's workflow_run (#219). A skipped job's name isn't evaluated, so it must be plain text.
+    jobs = load(AFTER)["jobs"]
+    for job in ("gate", "make-check"):
+        name = jobs[job]["name"]
+        assert "${{" not in name and name.endswith("the result is the check status"), name
+        assert name != "check"
