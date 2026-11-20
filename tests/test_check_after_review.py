@@ -98,6 +98,7 @@ printf '%s\n' "${*:2}" >> "$FAKE_DIR/calls"
 case "$2" in
   repos/o/r/pulls/7) file="$FAKE_DIR/pull.json" ;;
   repos/o/r/commits/*/statuses) file="$FAKE_DIR/statuses.json" ;;
+  repos/o/r/actions/runs/*) file="$FAKE_DIR/run-${2##*/}.json" ;;
   graphql) file="$FAKE_DIR/threads.json" ;;
   repos/o/r/statuses/*) [[ -e "$FAKE_DIR/no-write" ]] && exit 1; exit 0 ;;
   *) echo "unexpected: $2" >&2; exit 1 ;;
@@ -109,8 +110,13 @@ jq -r "$jqx" "$file"
 """
 
 
-def status(context, state, description=""):
-    return {"context": context, "state": state, "description": description}
+def status(context, state, description="", target_url=None):
+    return {
+        "context": context,
+        "state": state,
+        "description": description,
+        "target_url": target_url,
+    }
 
 
 def thread(body="**Important:** x", login="claude", resolved=False):
@@ -129,7 +135,9 @@ def gate(tmp_path):
     state = tmp_path / "gh"
     state.mkdir()
 
-    def go(statuses=(), threads=(), head=HEAD, pr_state="open", force=False, broken=()):
+    def go(statuses=(), threads=(), head=HEAD, pr_state="open", force=False, broken=(), runs=None):
+        for run_id, run_state in (runs or {}).items():  # workflow runs: id -> status
+            (state / f"run-{run_id}.json").write_text(json.dumps({"status": run_state}))
         (state / "pull.json").write_text(json.dumps({"state": pr_state, "head": {"sha": head}}))
         (state / "statuses.json").write_text(json.dumps(list(statuses)))  # newest first
         page = {"pageInfo": {"hasNextPage": False, "endCursor": None}, "nodes": list(threads)}
@@ -144,6 +152,8 @@ def gate(tmp_path):
             "PATH": f"{fake}:{os.environ['PATH']}",
             "GITHUB_REPOSITORY": "o/r",
             "FAKE_DIR": str(state),
+            "GITHUB_RUN_ID": "500",
+            "GITHUB_SERVER_URL": "https://github.com",
         }
         args = ["bash", str(GATE), "7", HEAD] + (["--force"] if force else [])
         result = run(args, env=env)
@@ -168,7 +178,12 @@ def test_a_clean_review_runs_check(gate):
     ]
     result, posts = gate(CLEAN, found)
     assert (result.returncode, result.stdout) == (0, "run\n"), result.stderr
-    assert posts == [], "the check job posts `running` itself"
+    # It claims the head for this run before saying run (#237); the job posts `running` itself.
+    assert len(posts) == 1, posts
+    claim = posts[0]
+    assert "state=pending" in claim and "context=check" in claim
+    assert "description=make check is queued" in claim
+    assert "target_url=https://github.com/o/r/actions/runs/500" in claim
 
 
 def test_an_open_important_thread_waits_and_says_why(gate):
@@ -241,6 +256,39 @@ def test_a_cancelled_check_can_run_again(gate):
     assert gate([cancelled, *CLEAN])[0].stdout == "run\n"
 
 
+QUEUED = "make check is queued: if it never starts, add the check label"
+CLAIM = "https://github.com/o/r/actions/runs/400"
+
+
+@pytest.mark.parametrize("run_state", ["queued", "in_progress", "waiting"])
+def test_a_head_claimed_by_a_live_run_is_left_to_it(gate, run_state):
+    # #237: an approval and its Descope decisions run gate the same head moments apart. The
+    # second gate must not start a job that cancels the first one's queued or starting check.
+    claimed = status("check", "pending", QUEUED, CLAIM)
+    result, posts = gate([claimed, *CLEAN], runs={"400": run_state})
+    assert result.stdout == "skip check is already queued on aaaaaaa (run 400)\n"
+    assert posts == []
+
+
+def test_a_claim_left_by_a_finished_run_doesnt_hold_the_head(gate):
+    # Its job was cancelled before it started, so nothing posted a result over the claim.
+    claimed = status("check", "pending", QUEUED, CLAIM)
+    result, posts = gate([claimed, *CLEAN], runs={"400": "completed"})
+    assert result.stdout == "run\n" and len(posts) == 1
+
+
+def test_the_check_label_runs_it_even_when_the_head_is_claimed(gate):
+    claimed = status("check", "pending", QUEUED, CLAIM)
+    result, posts = gate([claimed, *CLEAN], runs={"400": "queued"}, force=True)
+    assert result.stdout == "run\n" and len(posts) == 1
+
+
+def test_it_fails_when_the_claiming_run_cant_be_read(gate):
+    claimed = status("check", "pending", QUEUED, CLAIM)
+    result, _ = gate([claimed, *CLEAN])  # no run-400.json: the API call fails
+    assert result.returncode == 3 and "can't read run 400" in result.stderr
+
+
 def test_a_stale_head_or_closed_pr_does_nothing(gate):
     result, posts = gate(CLEAN, head=NEWER)
     assert result.stdout.startswith("skip a newer push (bbbbbbb) replaced aaaaaaa") and posts == []
@@ -252,7 +300,8 @@ def test_the_check_label_runs_it_whatever_the_review_says(gate):
     ran = status("check", "failure", "make check failed")
     for statuses in ([], [ran, status("claude-review", "failure", "x")]):
         result, posts = gate(statuses, [thread()], force=True)
-        assert result.stdout == "run\n" and posts == []
+        assert result.stdout == "run\n" and len(posts) == 1
+        assert "description=make check is queued" in posts[0]
     assert gate(CLEAN, head=NEWER, force=True)[0].stdout.startswith("skip a newer push")
 
 
@@ -326,8 +375,9 @@ def test_a_deferred_ci_check_runs_nothing_and_never_carries_the_required_name():
             c = ctx("pull_request", event, variables)
             if gh_expr(expr(job["env"]["DEFERRED"]), c):
                 assert gh_expr(expr(job["name"]), c) != "check"
-    # DEFERRED and the name test the same condition.
+    # DEFERRED, the name and the runner (#236: deferred takes the light one) test one condition.
     assert expr(job["env"]["DEFERRED"]) in expr(job["name"])
+    assert expr(job["env"]["DEFERRED"]) in expr(job["runs-on"])
 
 
 def gate_if():

@@ -108,13 +108,24 @@ RUNS_ON_HEAVY = (
     "github.event.pull_request.head.repo.full_name == github.repository) "
     "&& (vars.SDLC_RUNNER_HEAVY || vars.SDLC_RUNNER) || 'ubuntu-latest' }}"
 )
-# The jobs that get RUNS_ON_HEAVY, by workflow. Every other job gets RUNS_ON.
+# #236: sdlc-ci.yml's `check` is heavy, except when SDLC_CHECK_AFTER_REVIEW defers it on a
+# same-repo PR: then it only prints a note and takes SDLC_RUNNER (or GitHub's).
+CI_DEFERRED = (
+    "github.event_name == 'pull_request' && vars.SDLC_CHECK_AFTER_REVIEW != '' && "
+    "vars.SDLC_CHECK_AFTER_REVIEW != 'off' && "
+    "github.event.pull_request.head.repo.full_name == github.repository"
+)
+RUNS_ON_DEFERRABLE = (
+    f"runs-on: ${{{{ {CI_DEFERRED} && (vars.SDLC_RUNNER || 'ubuntu-latest') || "
+    + RUNS_ON_HEAVY.removeprefix("runs-on: ${{ ")
+)
+# The jobs that get RUNS_ON_HEAVY or RUNS_ON_DEFERRABLE, by workflow. Every other job gets RUNS_ON.
 HEAVY_JOBS = {
     "release.yml": {"release"},
     "sdlc-agent-evals.yml": {"evals"},
     "sdlc-check-after-review.yml": {"make-check"},
-    "sdlc-ci.yml": {"check"},
 }
+DEFERRABLE_JOBS = {"sdlc-ci.yml": {"check"}}
 
 
 def gh_expr(expr, ctx):
