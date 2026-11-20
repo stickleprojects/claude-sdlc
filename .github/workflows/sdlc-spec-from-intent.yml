@@ -36,6 +36,9 @@ jobs:
         with:
           token: ${{ steps.agent.outputs.token || github.token }}
       - uses: ./.github/actions/setup-stack
+        # Needs (#239, .sdlc/docs/stack-needs.md): the agent commits a spec and runs make validate.
+        env:
+          SDLC_STACK_NEEDS: commit
       - name: Find intents and bugs without a spec (or an open spec PR)
         id: find
         env:

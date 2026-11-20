@@ -45,6 +45,9 @@ jobs:
         with:
           fetch-depth: 0  # make validate and the docs-only check compare the branch with main
       - uses: ./.github/actions/setup-stack
+        # Needs (#239, .sdlc/docs/stack-needs.md): make check.
+        env:
+          SDLC_STACK_NEEDS: full
         if: env.DEFERRED != 'true'
       # Pushes to main run `make check FULL=1`, so every commit there is fully tested. A PR runs
       # the target SDLC_PR_CHECK_TARGET names (#244), `check` by default, with no FULL, so the

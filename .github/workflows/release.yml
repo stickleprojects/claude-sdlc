@@ -49,6 +49,9 @@ jobs:
           { echo "### Next version: \`$version\`"; echo '```'; cat explain.txt; echo '```';
             echo; echo "### Release notes preview"; cat notes.md; } >> "$GITHUB_STEP_SUMMARY"
       - uses: ./.github/actions/setup-stack
+        # Needs (#239, .sdlc/docs/stack-needs.md): make check FULL=1 and the evals.
+        env:
+          SDLC_STACK_NEEDS: full
         if: ${{ !inputs.dry_run }}
       - run: make check FULL=1  # a release always runs every test (#140)
         if: ${{ !inputs.dry_run }}
