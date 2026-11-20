@@ -21,6 +21,7 @@ A holder can hold part of a rule only, such as the plan gate holding "no code be
 | `review.security` | Apply the security policy; watch for secrets, unvalidated input, unexplained dependencies | nothing |
 | `review.chain` | The change folder has its artifacts; flag code without a requirement and requirements without code or test | `check: .sdlc/scripts/check-pr-title.sh`, `hook: .sdlc/hooks/plan-gate.sh`, `check: .sdlc/scripts/check-plan-first.sh` |
 | `review.bug-fast-path` | A fast-path fix PR needs no plan; failing tests come first; too big or `Bug path: full` is Important | `check: .sdlc/scripts/check-plan-first.sh`, `check: .sdlc/scripts/check-pr-title.sh` |
+| `review.tooling-path` | A tooling PR (`Kind: tooling`) is checked against its plan's Verification rows; a product-behaviour change on it is Important | `check: .sdlc/scripts/check-plan-first.sh`, `check: .sdlc/scripts/check-pr-title.sh` |
 | `review.maintenance-exemption` | Unscoped fix/ci/chore PRs skip the chain unless they change product behaviour | nothing |
 | `review.artifact-stage` | Artifact PRs are checked only against their stage | nothing |
 | `review.adr-trigger` | A plan that meets an ADR trigger or makes an uncovered architecture choice needs an `Architecture decision needed:` line | `eval: plan-flags-adr-trigger` |

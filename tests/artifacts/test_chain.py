@@ -2,7 +2,15 @@ from pathlib import Path
 
 import pytest
 
-from sdlc.artifacts import BUG_CHAIN, CHAIN, TEMPLATES, check_change, next_slug, stage
+from sdlc.artifacts import (
+    BUG_CHAIN,
+    CHAIN,
+    TEMPLATES,
+    TOOLING_CHAIN,
+    check_change,
+    next_slug,
+    stage,
+)
 from sdlc.cli import main
 
 from .helpers import REPO, write
@@ -39,10 +47,15 @@ def test_next_slug_increments(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    ("kind", "name"), [(k, n) for k, c in [("feature", CHAIN), ("bug", BUG_CHAIN)] for n in c]
+    ("kind", "name"),
+    [
+        (k, n)
+        for k, c in [("feature", CHAIN), ("bug", BUG_CHAIN), ("tooling", TOOLING_CHAIN)]
+        for n in c
+    ],
 )
 def test_templates_satisfy_their_own_rules(kind: str, name: str) -> None:
-    rules = CHAIN if kind == "feature" else BUG_CHAIN
+    rules = {"feature": CHAIN, "bug": BUG_CHAIN, "tooling": TOOLING_CHAIN}[kind]
     text = (REPO / ".sdlc" / "templates" / TEMPLATES[kind][name]).read_text()
     for section in rules[name]:
         assert f"## {section}" in text

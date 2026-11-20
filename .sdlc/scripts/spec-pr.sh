@@ -5,7 +5,8 @@
 #          Print each change folder that needs a spec: it has intent.md or bug.md, has no
 #          spec.md here, and has no open PR from its branch spec/<slug>. A change whose spec PR
 #          is already open is skipped, so a second run never regenerates (and makes stale) a
-#          spec someone is reviewing.
+#          spec someone is reviewing. A tooling change (#221, `Kind: tooling` in its intent.md)
+#          is skipped too: it has no spec, and its plan carries the acceptance checks.
 #        .sdlc/scripts/spec-pr.sh open <change-dir>...
 #          For each folder with a generated spec.md: commit it alone on spec/<slug> (from the
 #          current commit), push, open a PR named after the slug, and close any older
@@ -18,6 +19,7 @@ set -euo pipefail
 
 repo="${GITHUB_REPOSITORY:?set GITHUB_REPOSITORY=owner/name}"
 owner="${repo%%/*}"
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 open_pr_from() {  # the open PR's number for branch $1, or nothing
   gh api "repos/$repo/pulls?state=open&head=$owner:$1" --jq '.[0].number // empty'
@@ -30,6 +32,10 @@ pending() {
     [[ -f "$d/intent.md" || -f "$d/bug.md" ]] || continue
     [[ -f "$d/spec.md" ]] && continue
     slug="${d#changes/}"
+    if [[ "$(PYTHONPATH="$here/.sdlc/src" python3 -m sdlc.cli kind "$d")" == tooling ]]; then
+      echo "skip $d: a tooling change, which has no spec" >&2
+      continue
+    fi
     n="$(open_pr_from "spec/$slug")"
     if [[ -n "$n" ]]; then
       echo "skip $d: spec PR #$n is already open" >&2

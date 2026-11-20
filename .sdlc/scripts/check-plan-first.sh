@@ -15,19 +15,23 @@
 # A repo whose CLAUDE.md has the line `Bug path: full` turns the fast path off (#160): then a bug
 # needs its plan.md too. CI passes main's CLAUDE.md in SDLC_CLAUDE_MD, so a PR can't turn the
 # setting off for itself; without it, ./CLAUDE.md is read.
+# A tooling change (#221, intent.md says `Kind: tooling`) has no spec, so its code may touch only
+# the paths main's CLAUDE.md lists on a `Tooling paths:` line (space-separated; an entry ending in
+# / is a folder). With no such line, the tooling path is off and a tooling change's code fails.
 set -uo pipefail
 
 branch="${1:-}"
-code=""
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+code_paths=()
 while IFS= read -r path; do
   case "$path" in
     "" | changes/* | docs/*) continue ;;
     */*) ;;
     *.md) continue ;;
   esac
-  code="$path"
-  break
+  code_paths+=("$path")
 done
+code="${code_paths[0]:-}"
 
 slug="$(grep -oE '[0-9]{4}-[a-z0-9]+(-[a-z0-9]+)*' <<<"$branch" | head -1 || true)"
 if [[ -z "$slug" || ! -d "changes/$slug" ]]; then
@@ -49,7 +53,43 @@ if [[ -z "$code" ]]; then
   echo "ok: $slug, no code changed"
   exit 0
 fi
+if ! kind="$(PYTHONPATH="$here/.sdlc/src" python3 -m sdlc.cli kind "changes/$slug")"; then
+  echo "::error::Couldn't read the kind of change $slug (python3 -m sdlc.cli kind), so the" \
+    "plan check can't run."
+  exit 1
+fi
+if [[ "$kind" == tooling ]]; then
+  allowed="$(sed -nE 's/^(- )?Tooling paths: *(.*[^[:space:]])[[:space:]]*$/\2/p' \
+    "${SDLC_CLAUDE_MD:-CLAUDE.md}" 2>/dev/null | tail -1)"
+  if [[ -z "$allowed" ]]; then
+    echo "::error::$slug is a tooling change (Kind: tooling), but this repo's CLAUDE.md has no" \
+      "'Tooling paths:' line, so the tooling path is off. Take the full path (a spec, then" \
+      "the plan), or add the line on main first."
+    exit 1
+  fi
+  read -ra prefixes <<<"$allowed"
+  outside=()
+  for path in "${code_paths[@]}"; do
+    ok=""
+    for prefix in "${prefixes[@]}"; do
+      if [[ "$prefix" == */ ]]; then
+        [[ "$path" == "$prefix"* ]] && ok=1
+      else
+        [[ "$path" == "$prefix" || "$path" == "$prefix/"* ]] && ok=1
+      fi
+      [[ -n "$ok" ]] && break
+    done
+    [[ -n "$ok" ]] || outside+=("$path")
+  done
+  if ((${#outside[@]})); then
+    echo "::error::$slug is a tooling change (Kind: tooling), but it changes code outside" \
+      "'Tooling paths: $allowed': ${outside[*]:0:3}$( ((${#outside[@]} > 3)) && echo ' …')." \
+      "Move that code out of this change, or take the full path with a spec."
+    exit 1
+  fi
+fi
 if [[ -f "changes/$slug/plan.md" ]]; then
+  [[ "$kind" == tooling ]] && echo "ok: $slug is a tooling change inside 'Tooling paths: $allowed'"
   echo "ok: $slug has its plan.md"
   exit 0
 fi

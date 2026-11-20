@@ -367,3 +367,58 @@ def test_a_spec_without_a_bug_is_never_a_fast_path(tmp_path: Path) -> None:
     change(repo, "0001-x", "spec.md")
     commit(repo, "feat(0001-x): intent and spec together (#5)")
     assert steps(repo, ref="HEAD")[0].skill == "sdlc-plan"
+
+
+# --- a tooling change (#221): intent, plan and code in one PR, no spec -------------------------
+
+
+def tooling_change(root: Path, slug: str = "0001-t") -> Path:
+    folder = root / "changes" / slug
+    folder.mkdir(parents=True)
+    (folder / "intent.md").write_text(
+        files(CHAIN["intent.md"]).replace("# T\n", "# T\n\nKind: tooling\n")
+    )
+    return folder
+
+
+def test_a_tooling_intent_routes_to_the_plan_not_the_spec(tmp_path: Path) -> None:
+    tooling_change(tmp_path)
+    [step] = steps(tmp_path)
+    assert (step.stage, step.skill) == ("intent", "sdlc-plan")
+    assert step.detail == "a tooling change (no spec): plan it, then build it in the same PR"
+
+
+def test_a_tooling_plan_routes_to_the_build(tmp_path: Path) -> None:
+    folder = tooling_change(tmp_path)
+    (folder / "plan.md").write_text(files(CHAIN["plan.md"]))
+    [step] = steps(tmp_path)
+    assert (step.stage, step.skill) == ("plan", "sdlc-build")
+
+
+@pytest.mark.parametrize("squashed", ["chore(0001-t): smoke test (#40)", "ci(0001-t): smoke (#40)"])
+def test_a_squash_merged_tooling_change_is_done(tmp_path: Path, squashed: str) -> None:
+    repo = init_repo(tmp_path / "r")
+    tooling_change(repo)
+    plan = {"changes/0001-t/plan.md": files(CHAIN["plan.md"]), "scripts/smoke.sh": "true\n"}
+    commit(repo, squashed, plan)
+    [step] = steps(repo, ref="HEAD")
+    assert (step.skill, step.detail) == ("done", "built and merged (#40)")
+
+
+def test_a_tooling_plan_goes_out_of_date_when_its_intent_changes(tmp_path: Path) -> None:
+    """Its base is the intent, as a spec's is for a feature."""
+    repo = init_repo(tmp_path / "r")
+    folder = tooling_change(repo)
+    commit(repo, "intent(0001-t): the intent")
+    from conftest import git
+
+    git(repo, "checkout", "-q", "-b", "build/0001-t")
+    (folder / "plan.md").write_text(files(CHAIN["plan.md"]))
+    commit(repo, "chore(0001-t): the plan")
+    assert steps(repo)[0].skill == "sdlc-build"
+    intent = folder / "intent.md"
+    intent.write_text(intent.read_text() + "Later.\n")
+    commit(repo, "intent(0001-t): later edit")
+    [step] = steps(repo)
+    assert step.skill == "sdlc-plan"
+    assert step.detail.startswith("out of date: intent.md changed in ")
