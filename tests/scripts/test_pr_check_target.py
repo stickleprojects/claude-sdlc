@@ -29,7 +29,7 @@ def repo(tmp_path):
 
 def target(repo, value=None):
     env = {} if value is None else {"SDLC_PR_CHECK_TARGET": value}
-    return run([".sdlc/scripts/pr-check-target.sh"], cwd=repo, env=env)
+    return run([".sdlc/scripts/pr-check-target.sh"], cwd=repo, env={**CLEAN_MAKE, **env})
 
 
 @pytest.mark.parametrize(
@@ -76,8 +76,13 @@ def step(path, job, name):
     return next(s for s in load(path)["jobs"][job]["steps"] if s.get("name") == name)
 
 
+# An outer `make check FULL=1` (the release, CI on main) hands FULL=1 to every make below it
+# through MAKEFLAGS, where it beats the environment (#165), so the step's make starts with none.
+CLEAN_MAKE = {"MAKEFLAGS": "", "MAKELEVEL": "", "FULL": ""}
+
+
 def run_step(repo, step_, env):
-    return run(["bash", "-e", "-c", step_["run"]], cwd=repo, env=env)
+    return run(["bash", "-e", "-c", step_["run"]], cwd=repo, env={**CLEAN_MAKE, **env})
 
 
 CI_STEP = "make check (a PR runs SDLC_PR_CHECK_TARGET, if set)"
