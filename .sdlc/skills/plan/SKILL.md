@@ -5,7 +5,7 @@ file with an override in .sdlc-local/ (see .sdlc/docs/overrides.md), never by ed
 
 ## 1. Which change
 
-Follow `.sdlc/skills/routing.md`. The candidates are the changes whose next step is `plan`: the spec is merged, and there's no plan on main or in an open PR.
+Follow `.sdlc/skills/routing.md`. The candidates are the changes whose next step is `plan`: the spec is merged, and there's no plan on main or in an open PR. A tooling change (#221) is one once its intent is committed on `build/<slug>`.
 
 - **The change named is already planned** (plan.md merged, or a plan PR open): don't start again silently. Ask: build it (`/sdlc-build`, recommended, which you then run for them), work through the plan PR's review (`/sdlc-pr`) if one is open, amend the plan (a new plan PR that changes part of it; a build in progress then goes back to a draft build.md), replace it, or stop. <!-- rule: plan.already-planned -->
 - **The plan is out of date** (`make next` says the spec changed after it): read what changed in the spec (`git log -p <plan's last commit>..origin/main -- changes/<slug>/spec.md`), then either amend the plan for it, or, if nothing in the plan is affected, confirm it by updating its `Spec:` line to say which spec commit it was checked against. Either way it goes through a plan PR.
@@ -17,6 +17,8 @@ Follow `.sdlc/skills/routing.md`. The candidates are the changes whose next step
 Planning happens in plan mode, with the change's `intent.md` (or `bug.md`) and `spec.md`. If this session isn't in plan mode, enter it (or ask the person to press Shift+Tab until it says plan mode). Read CLAUDE.md, the intent or bug, the spec, the code involved and every architecture decision record in `docs/adr/` (if there are any), then propose the plan. The engineer iterates with you until it can be implemented, then approves it.
 
 Plan mode can't write `plan.md`, and its approval dialog offers to start implementing at once. Tell the engineer before asking for approval: choose **keep planning**, switch the mode selector to *ask before edits*, then run `/sdlc-plan` again to save it. Never start writing code from the dialog: the `plan-gate` hook blocks code edits until `plan.md` is committed. <!-- rule: plan.no-code-from-dialog -->
+
+**A tooling change** has no spec: each **Proposed outcome** statement in its intent is an acceptance check, with a design statement and a Verification row, in place of the clause work below. Its code stays inside CLAUDE.md's `Tooling paths:`. If a step needs code outside them, or changes product behaviour, it isn't tooling: stop and offer the full path (drop `Kind: tooling`; the intent gets its own PR). <!-- rule: plan.tooling-path -->
 
 ### Scope check
 
@@ -54,5 +56,6 @@ Once the plan is approved:
 5. For a bug fix (a change that starts from `bug.md`, or any fix), the first step is a failing test committed on its own, one per acceptance criterion in the short spec, with the message `test(<slug>): failing test for <symptom>`. Once that commit is on the branch, the files it touched lock automatically for a change with `bug.md` (`.sdlc/scripts/tests-locked.sh`), so the failing test can't be edited; new tests in other files still can. Nobody needs to set `SDLC_LOCK_TESTS=1`. <!-- rule: plan.bug-failing-test-first -->
 6. Size the steps to the change. A small change (a message, a one-line fix) needs one to three steps, not a breakdown: `/sdlc-build` builds a plan that small in one session.
 7. Run `make validate`, then commit `plan.md` alone on `plan/<slug>`, push, and open its PR titled `plan(<slug>): <summary>`. No code is written before it merges. Follow the `sdlc-agent-identity` skill for the commit trailer and PR signature. <!-- rule: plan.no-code-before-merge -->
+8. **A tooling change:** base line `Spec: none (tooling path)`. Commit `plan.md` on its `build/<slug>` branch, push, open no plan PR, and hand over to the `sdlc-build` skill there: merging the one PR approves intent, plan and code. <!-- rule: plan.tooling-same-branch -->
 
 Then tell the engineer: once the plan PR merges, run `/sdlc-build` (`/sdlc-pr` handles its review first). `/sdlc-build` builds it in its own worktree (`claude --worktree <slug>`): in one session for a small plan, or milestone by milestone from an approved `build.md` for a larger one. It finishes with `make check` and the `sdlc-verifier` subagent before opening a PR.

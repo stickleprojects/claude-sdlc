@@ -10,12 +10,12 @@
 .sdlc/prompts/delivery-check.md	400
 .sdlc/prompts/spec-from-intent.md	100
 .sdlc/skills/agent-identity/SKILL.md	650
-.sdlc/skills/build/SKILL.md	5000
-.sdlc/skills/intent/SKILL.md	1200
+.sdlc/skills/build/SKILL.md	5050
+.sdlc/skills/intent/SKILL.md	1400
 .sdlc/skills/next/SKILL.md	450
-.sdlc/skills/plan/SKILL.md	1450
+.sdlc/skills/plan/SKILL.md	1550
 .sdlc/skills/po-review/SKILL.md	750
-.sdlc/skills/pr/SKILL.md	450
+.sdlc/skills/pr/SKILL.md	500
 .sdlc/skills/review-findings/SKILL.md	1050
 .sdlc/skills/routing.md	1400
 .sdlc/skills/scope.md	1150

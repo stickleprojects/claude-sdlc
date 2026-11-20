@@ -7,6 +7,8 @@ file with an override in .sdlc-local/ (see .sdlc/docs/overrides.md), never by ed
 
 **Is it a bug?** If the person describes something that worked differently from what was specified or expected (found in testing or use), it's a bug: use the lighter path in [For a bug](#for-a-bug). That includes pushback on a change that has already merged or shipped: it becomes a new bug change with `Came from:` naming that change, never a reopened one. If it's new behaviour, or you're not sure, ask. <!-- rule: intent.bug-or-feature -->
 
+**Is it tooling?** When `CLAUDE.md` has a `Tooling paths:` line and the change is only scripts, CI support or dev tools, all inside those paths, with no change to how the product behaves, offer the tooling path (#221) in one line: one PR carries the intent, plan and code, with no spec. The person can refuse it. Otherwise, or if unsure, take the full path. Then see [For a tooling change](#for-a-tooling-change). <!-- rule: intent.tooling-path -->
+
 1. Act as a business analyst. Ask short questions until you understand: the problem and who has it, the outcome that would count as success, the users and systems affected, constraints, and what is still unknown. Ask one round at a time; don't invent answers. <!-- rule: intent.ask-dont-invent -->
 2. Pick a short kebab-case name and run `make new-change NAME=<name>`. It prints the new `intent.md` path and the slug. The folder it made, `NNNN-<name>` (for example `0007-breadcrumbs`), is the change's **slug**: wherever a skill says `<slug>`, in a branch, a commit or a PR title, it means that folder name, number included, never the bare name (#185). <!-- rule: intent.slug-has-number -->
 3. Fill in every section of that file from the conversation. Put anything unresolved under **Open questions** rather than guessing.
@@ -19,7 +21,7 @@ file with an override in .sdlc-local/ (see .sdlc/docs/overrides.md), never by ed
 5. Run `make validate`. With a roadmap, it fails until the row, the `Milestone:` line and any record agree.
 6. Show the originator the file and ask for corrections. Remind them that the product owner accepts it by approving the PR. Merging that PR triggers spec generation.
 
-Do not write a spec, a plan or any code at this stage. (A bug on the fast path, below, is the one exception.) <!-- rule: intent.one-stage -->
+Do not write a spec, a plan or any code at this stage. (A bug on the fast path and a tooling change, below, are the exceptions: their next stages follow on the same branch.) <!-- rule: intent.one-stage -->
 
 ## For a bug
 
@@ -43,6 +45,12 @@ Do not write a spec, a plan or any code at this stage. (A bug on the fast path, 
    2. Write `spec.md` as the internal `sdlc-spec` skill's **For a bug** section says (read it with `.sdlc/scripts/resolve.sh skills/spec/SKILL.md`). If that raises an open question for the product owner, the fast path stops: delete `spec.md`, move `bug.md` to a branch of its own (`bug/<slug>`), say why, and take the full path. The spec workflow writes the spec once the bug merges, and the question goes to the product owner there. <!-- rule: intent.fast-path-open-question -->
    3. Commit `bug.md` and `spec.md` (`bug(<slug>): <title>`) and push.
    4. Build the fix with the `sdlc-build` skill (its **Bug fast path** section): failing tests first, then the fix, the verifier, and a PR titled `fix(<slug>): <summary>`. If the session is running short at this point, stop and say so. `/sdlc-build <slug>` picks up the branch in a new session.
+
+## For a tooling change
+
+1. Draft the intent as in steps 1 to 5, and show the person the file for corrections. `Product owner:` names who owns the tooling, usually an engineer. Under it, add `Kind: tooling` on its own line, outside any comment.
+2. Commit `intent.md` (`chore(<slug>): intent`) on `build/<slug>`, from `origin/main`, number included, and push. Open no intent PR: the one PR comes with the code. <!-- rule: intent.tooling-branch -->
+3. Hand over to the `sdlc-plan` skill (Skill tool, passing the slug), which plans on the same branch.
 
 ## Committing
 

@@ -89,3 +89,16 @@ def test_the_kind_command_prints_each_kind(tmp_path: Path, capsys) -> None:
         assert capsys.readouterr().out == f"{expected}\n"
     assert main(["kind", str(tmp_path / "changes" / "0009-gone")]) == 1
     assert "no change folder" in capsys.readouterr().err
+
+
+def test_the_intent_templates_example_line_doesnt_make_a_tooling_change(change: Path) -> None:
+    """The template shows the line inside a comment; a change made from it is a feature."""
+    from .helpers import REPO
+
+    template = (REPO / ".sdlc/templates/intent.md").read_text()
+    assert "\nKind: tooling\n" in template, "the example is on a line of its own"
+    change.mkdir(parents=True)
+    (change / "intent.md").write_text(template)
+    assert kind(change) == "feature"
+    (change / "intent.md").write_text(template.replace("-->\n", "-->\nKind: tooling\n", 1))
+    assert kind(change) == "tooling"
