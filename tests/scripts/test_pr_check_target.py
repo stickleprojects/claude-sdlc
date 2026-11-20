@@ -8,6 +8,8 @@ import pytest
 from conftest import REPO, run
 from test_check_after_review import AFTER, CI, load
 
+from .helpers import CHECK_STEPS, run_check_job
+
 SCRIPT = REPO / ".sdlc/scripts/pr-check-target.sh"
 MAKEFILE = """\
 .PHONY: check check-pr
@@ -85,9 +87,6 @@ def run_step(repo, step_, env):
     return run(["bash", "-e", "-c", step_["run"]], cwd=repo, env={**CLEAN_MAKE, **env})
 
 
-CI_STEP = "make check (a PR runs SDLC_PR_CHECK_TARGET, if set)"
-
-
 @pytest.mark.parametrize(
     ("event", "value", "ran"),
     [
@@ -97,17 +96,17 @@ CI_STEP = "make check (a PR runs SDLC_PR_CHECK_TARGET, if set)"
         ("pull_request", "check-pr", "ran check-pr FULL="),
     ],
 )
-def test_ci_runs_full_check_on_main_and_the_target_on_a_pr(repo, event, value, ran):
-    s = step(CI, "check", CI_STEP)
+def test_ci_runs_full_check_on_main_and_the_target_on_a_pr(repo, tmp_path, event, value, ran):
     env = {"EVENT": event, **({"SDLC_PR_CHECK_TARGET": value} if value else {})}
-    result = run_step(repo, s, env)
+    mode, _, result = run_check_job(repo, env, tmp_path)
+    assert mode == ("full" if event == "push" else "pr")
     assert result.returncode == 0, result.stderr
     assert result.stdout == f"{ran}\n"
 
 
-def test_ci_fails_a_bad_target_without_running_make(repo):
-    s = step(CI, "check", CI_STEP)
-    result = run_step(repo, s, {"EVENT": "pull_request", "SDLC_PR_CHECK_TARGET": "nope"})
+def test_ci_fails_a_bad_target_without_running_make(repo, tmp_path):
+    env = {"EVENT": "pull_request", "SDLC_PR_CHECK_TARGET": "nope"}
+    _, _, result = run_check_job(repo, env, tmp_path)
     assert result.returncode != 0 and "ran" not in result.stdout
 
 
@@ -121,7 +120,10 @@ def test_check_after_review_runs_the_target(repo):
 
 @pytest.mark.parametrize(
     ("path", "job", "name"),
-    [(CI, "check", CI_STEP), (AFTER, "make-check", "make check (or SDLC_PR_CHECK_TARGET)")],
+    [
+        (CI, "check", CHECK_STEPS["pr"]),
+        (AFTER, "make-check", "make check (or SDLC_PR_CHECK_TARGET)"),
+    ],
 )
 def test_the_variable_reaches_the_script_through_env_only(path, job, name):
     s = step(path, job, name)

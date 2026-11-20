@@ -329,3 +329,37 @@ def note(who, body, at, kind="User"):
 
 def descope_thread(*replies, first=DESCOPE, by="claude"):
     return {"comments": {"nodes": [note(by, first, "2026-11-13T10:00:00Z", "Bot"), *replies]}}
+
+
+# --- sdlc-ci.yml's check job: which step a run makes (#240, #244) -------------------------------
+
+CHECK_STEPS = {
+    "full": "make check FULL=1 (push to main)",
+    "docs": "make validate (docs-only push to main)",
+    "pr": "make check (PR, or SDLC_PR_CHECK_TARGET)",
+}
+# The steps' make mustn't inherit an outer `make check FULL=1` (CLAUDE.md, Known mistakes).
+CLEAN_MAKE = {"MAKEFLAGS": "", "MAKELEVEL": "", "FULL": ""}
+
+
+def run_check_job(repo, env, tmp_path):
+    """Run sdlc-ci.yml's `check` job as Actions would: the "Which check" step, then the one
+    step whose `if:` its mode selects. Returns (mode, the which step's run, that step's run)."""
+    from test_check_after_review import CI, load
+
+    steps = {s.get("name"): s for s in load(CI)["jobs"]["check"]["steps"]}
+    out = tmp_path / "github-output"
+    out.write_text("")
+    which = run(
+        ["bash", "-e", "-c", steps["Which check this run makes"]["run"]],
+        cwd=repo,
+        env={**CLEAN_MAKE, "GITHUB_OUTPUT": str(out), **env},
+    )
+    assert which.returncode == 0, which.stderr
+    mode = dict(line.split("=", 1) for line in out.read_text().split()).get("mode")
+    want = f"steps.which.outputs.mode == '{mode}' && env.DEFERRED != 'true'"
+    chosen = [n for n, s in steps.items() if s.get("if") == want]
+    assert chosen == [CHECK_STEPS[mode]], (mode, chosen)
+    step = steps[chosen[0]]
+    result = run(["bash", "-e", "-c", step["run"]], cwd=repo, env={**CLEAN_MAKE, **env})
+    return mode, which, result

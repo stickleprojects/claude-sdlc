@@ -171,7 +171,7 @@ def test_check_runs_the_tests_through_check_test_and_main_runs_them_all():
         r"^check: lint check-test validate exec-bits prompt-budget$", makefile, re.MULTILINE
     )
     ci = (REPO / ".github/workflows/sdlc-ci.yml").read_text()
-    assert "              make check FULL=1\n" in ci, "main runs everything unless docs-only (#240)"
+    assert "        run: make check FULL=1\n" in ci, "main runs everything unless docs-only (#240)"
     assert "fetch-depth: 0" in ci
     release = (REPO / ".github/workflows/release.yml").read_text()
     assert "- run: make check FULL=1" in release
