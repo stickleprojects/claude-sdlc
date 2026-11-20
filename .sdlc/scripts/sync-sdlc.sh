@@ -91,6 +91,10 @@ main() {
   local check_order_settings=(
     "variable SDLC_CHECK_AFTER_REVIEW"
   )
+  # Optional (#244): the make target a PR's `check` runs, `check` by default. Not reported when unset.
+  local pr_check_settings=(
+    "variable SDLC_PR_CHECK_TARGET"
+  )
   # Optional (#174): a build PR may amend its plan, approved in one thread. Not reported when unset.
   local plan_amend_settings=(
     "variable SDLC_BUILD_AMENDS_PLAN"
