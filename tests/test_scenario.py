@@ -1782,6 +1782,17 @@ def test_a_tooling_change_runs_end_to_end_in_the_consumer(consumer):
     assert "0002-smoke\tplan\tdone\tbuilt and merged (#5)" in make(consumer, "next").stdout
 
 
+def test_the_pr_check_target_reaches_the_consumer(consumer):
+    """#244: the script syncs executable and reads the consumer's own Makefile."""
+    script = ".sdlc/scripts/pr-check-target.sh"
+    assert git(consumer, "ls-files", "-s", script).startswith("100755")
+    assert run([script], cwd=consumer).stdout == "check\n"
+    lint = run([script], cwd=consumer, env={"SDLC_PR_CHECK_TARGET": "lint"})
+    assert lint.returncode == 0 and lint.stdout == "lint\n"
+    missing = run([script], cwd=consumer, env={"SDLC_PR_CHECK_TARGET": "check-pr"})
+    assert missing.returncode == 1 and "has no 'check-pr' target" in missing.stderr
+
+
 def test_the_descope_check_reaches_the_consumer(consumer):
     """#132: the workflow and both scripts sync, and the scripts run there."""
     assert (consumer / ".github/workflows/sdlc-descopes.yml").is_file()

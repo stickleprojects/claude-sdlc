@@ -166,7 +166,13 @@ jobs:
             exit 1
           }
       - uses: ./.github/actions/setup-stack
-      - run: make check
+      # The PR's tier when the repo sets SDLC_PR_CHECK_TARGET (#244), otherwise `make check`.
+      - name: make check (or SDLC_PR_CHECK_TARGET)
+        env:
+          SDLC_PR_CHECK_TARGET: ${{ vars.SDLC_PR_CHECK_TARGET }}
+        run: |
+          target="$(.sdlc/scripts/pr-check-target.sh)"
+          make "$target"
       # No reports/ upload here, unlike sdlc-ci.yml (#188): this job runs PR code with main's
       # privileges (workflow_run), and an action that runs after PR code can be tampered with
       # by it and would get the runtime token, which writes main's Actions cache.

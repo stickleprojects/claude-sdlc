@@ -152,7 +152,7 @@ def test_the_check_job_keeps_a_projects_reports():
 def test_check_after_review_runs_no_action_after_pr_code():
     # #188: that job has main's privileges, so no upload (or any action) after `make check`.
     after = (REPO / ".github/workflows/sdlc-check-after-review.yml").read_text()
-    assert "upload-artifact" not in after[after.index("      - run: make check") :]
+    assert "upload-artifact" not in after[after.index('          make "$target"') :]
 
 
 def main_moves_on(git_, path, text):

@@ -545,7 +545,10 @@ def test_check_tests_the_merge_of_the_gated_head_and_posts_the_status():
         == "refs/pull/${{ needs.gate.outputs.pr }}/merge"
     )
     assert '[[ "$parent" == "$HEAD_SHA" ]]' in check["Check the merge is of this head"]["run"]
-    assert check["make check"]["run"] == "make check"
+    run = check["make check (or SDLC_PR_CHECK_TARGET)"]
+    assert run["run"] == 'target="$(.sdlc/scripts/pr-check-target.sh)"\nmake "$target"\n'
+    # The value reaches the script through env (#244).
+    assert run["env"]["SDLC_PR_CHECK_TARGET"] == "${{ vars.SDLC_PR_CHECK_TARGET }}"
     post = check["Post the result"]
     assert post["if"] == "always()"
     for line in ("state=success", "state=failure", "make check was cancelled: add the check label"):

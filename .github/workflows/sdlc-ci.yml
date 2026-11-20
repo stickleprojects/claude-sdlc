@@ -46,11 +46,21 @@ jobs:
           fetch-depth: 0  # make validate and the docs-only check compare the branch with main
       - uses: ./.github/actions/setup-stack
         if: env.DEFERRED != 'true'
-      # Pushes to main pass FULL=1, so every commit there is fully tested. This repo's own
-      # `check` skips the tests on a docs-only PR (#140); a consumer's `check` decides for itself,
-      # and on a PR gets no FULL at all, so its own default stands.
-      - run: make check ${{ github.event_name == 'push' && 'FULL=1' || '' }}
+      # Pushes to main run `make check FULL=1`, so every commit there is fully tested. A PR runs
+      # the target SDLC_PR_CHECK_TARGET names (#244), `check` by default, with no FULL, so the
+      # project's own default stands: this repo's `check` skips the tests on a docs-only PR (#140).
+      - name: make check (a PR runs SDLC_PR_CHECK_TARGET, if set)
         if: env.DEFERRED != 'true'
+        env:
+          EVENT: ${{ github.event_name }}
+          SDLC_PR_CHECK_TARGET: ${{ vars.SDLC_PR_CHECK_TARGET }}
+        run: |
+          if [[ "$EVENT" == push ]]; then
+            make check FULL=1
+          else
+            target="$(.sdlc/scripts/pr-check-target.sh)"
+            make "$target"
+          fi
       # A project's test reports, if it writes any to reports/ (#188): kept with the run, pass or
       # fail, so a consumer never has to add an upload step to this synced workflow.
       - uses: actions/upload-artifact@v4
