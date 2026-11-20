@@ -95,6 +95,11 @@ main() {
   local pr_check_settings=(
     "variable SDLC_PR_CHECK_TARGET"
   )
+  # Optional (#240): a docs-only push to main runs make validate, not make check FULL=1. Not
+  # reported when unset.
+  local main_docs_settings=(
+    "variable SDLC_MAIN_DOCS_SKIP"
+  )
   # Optional (#174): a build PR may amend its plan, approved in one thread. Not reported when unset.
   local plan_amend_settings=(
     "variable SDLC_BUILD_AMENDS_PLAN"

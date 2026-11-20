@@ -49,17 +49,28 @@ jobs:
         env:
           SDLC_STACK_NEEDS: full
         if: env.DEFERRED != 'true'
-      # Pushes to main run `make check FULL=1`, so every commit there is fully tested. A PR runs
-      # the target SDLC_PR_CHECK_TARGET names (#244), `check` by default, with no FULL, so the
-      # project's own default stands: this repo's `check` skips the tests on a docs-only PR (#140).
+      # Pushes to main run `make check FULL=1`, so every commit there is fully tested. With
+      # SDLC_MAIN_DOCS_SKIP=on (#240), a push that changed only docs (main-docs-only.sh) runs
+      # `make validate` instead. A PR runs the target SDLC_PR_CHECK_TARGET names (#244), `check`
+      # by default, with no FULL, so the project's own default stands: this repo's `check` skips
+      # the tests on a docs-only PR (#140).
       - name: make check (a PR runs SDLC_PR_CHECK_TARGET, if set)
         if: env.DEFERRED != 'true'
         env:
           EVENT: ${{ github.event_name }}
           SDLC_PR_CHECK_TARGET: ${{ vars.SDLC_PR_CHECK_TARGET }}
+          SDLC_MAIN_DOCS_SKIP: ${{ vars.SDLC_MAIN_DOCS_SKIP }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
         run: |
           if [[ "$EVENT" == push ]]; then
-            make check FULL=1
+            if [[ "$SDLC_MAIN_DOCS_SKIP" == on ]] && why="$(.sdlc/scripts/main-docs-only.sh "$BEFORE" "$AFTER")"; then
+              echo "$why"
+              make validate
+            else
+              [[ "$SDLC_MAIN_DOCS_SKIP" == on ]] && echo "$why"
+              make check FULL=1
+            fi
           else
             target="$(.sdlc/scripts/pr-check-target.sh)"
             make "$target"
