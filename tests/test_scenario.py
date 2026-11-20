@@ -1793,6 +1793,19 @@ def test_the_pr_check_target_reaches_the_consumer(consumer):
     assert missing.returncode == 1 and "has no 'check-pr' target" in missing.stderr
 
 
+def test_the_main_docs_only_check_reaches_the_consumer(consumer):
+    """#240: the script syncs executable and judges a push in the consumer's own history."""
+    script = ".sdlc/scripts/main-docs-only.sh"
+    assert git(consumer, "ls-files", "-s", script).startswith("100755")
+    before = git(consumer, "rev-parse", "HEAD")
+    commit(consumer, "docs: a guide", {"docs/guide.md": "g\n"})
+    docs = run([script, before, git(consumer, "rev-parse", "HEAD")], cwd=consumer)
+    assert docs.returncode == 0 and "docs only: 1 file(s)" in docs.stdout
+    commit(consumer, "feat: code", {"src/app.ts": "export {};\n"})
+    code = run([script, before, git(consumer, "rev-parse", "HEAD")], cwd=consumer)
+    assert code.returncode == 1 and "src/app.ts is code" in code.stdout
+
+
 def test_the_descope_check_reaches_the_consumer(consumer):
     """#132: the workflow and both scripts sync, and the scripts run there."""
     assert (consumer / ".github/workflows/sdlc-descopes.yml").is_file()
