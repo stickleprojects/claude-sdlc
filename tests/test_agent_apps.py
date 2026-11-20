@@ -400,3 +400,24 @@ def test_a_refused_api_url_reads_as_github_not_answering(apps, monkeypatch):
     monkeypatch.setattr(apps, "API", "file:///tmp")
     with pytest.raises(apps.ConversionError, match="GitHub didn't answer"):
         apps.convert("code")
+
+
+def test_store_key_puts_the_key_in_the_keyring_with_its_label(apps, monkeypatch):
+    """#248 review: a noqa comment once swallowed `--label` and its value from this argv."""
+    monkeypatch.setattr(apps, "KEYS_DIR", None)
+    calls = []
+    monkeypatch.setattr(apps.subprocess, "run", lambda argv, **kw: calls.append((argv, kw)))
+    ref = apps.store_key("my-app", "-----BEGIN KEY-----")
+    assert ref == "keyring:github-app-private-key:my-app"
+    [(argv, kw)] = calls
+    assert argv == [
+        "secret-tool",
+        "store",
+        "--label",
+        "claude-sdlc GitHub App private key (my-app)",
+        "service",
+        "claude-sdlc",
+        "account",
+        "github-app-private-key:my-app",
+    ]
+    assert kw["input"] == "-----BEGIN KEY-----" and kw["check"] is True

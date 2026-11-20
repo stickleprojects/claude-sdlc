@@ -264,12 +264,23 @@ def store_key(slug: str, pem: str) -> str:
         path.write_text(pem)
         return f"file:{path.resolve()}"
     account = f"github-app-private-key:{slug}"
-    # List args, no shell; secret-tool from PATH, as the platform installs it (#135).
+    # List args, no shell; secret-tool from PATH, as the platform installs it (#135). One
+    # argument per line, so a comment can't swallow one (it once dropped --label, #248).
     subprocess.run(  # noqa: S603
-        ["secret-tool", "store",  # noqa: S607 "--label", f"claude-sdlc GitHub App private key ({slug})",
-         "service", "claude-sdlc", "account", account],
-        input=pem, text=True, check=True,
-    )  # fmt: skip
+        [  # noqa: S607
+            "secret-tool",
+            "store",
+            "--label",
+            f"claude-sdlc GitHub App private key ({slug})",
+            "service",
+            "claude-sdlc",
+            "account",
+            account,
+        ],
+        input=pem,
+        text=True,
+        check=True,
+    )
     return f"keyring:{account}"
 
 
