@@ -150,6 +150,20 @@ jobs:
               '{unreadable: ("the review threads could not be read: " + $e)}' > .review-threads.json
           fi
           echo "Review threads: $(jq 'if type == "array" then length else "unreadable" end' .review-threads.json)"
+      # The summary this review replaces, and the PR's commits (#242): a re-review marks each
+      # earlier note addressed or still open. Read the same way as the threads, for the same reason.
+      - name: Read the earlier summary
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          script="$RUNNER_TEMP/review-earlier-summary.sh"
+          git show "$BASE:.sdlc/scripts/review-earlier-summary.sh" > "$script" 2>/dev/null \
+            || cp .sdlc/scripts/review-earlier-summary.sh "$script"
+          if ! bash "$script" "$PR" > .review-earlier-summary.md 2> "$RUNNER_TEMP/earlier-summary.err"; then
+            printf '# The earlier summary could not be read\n\n%s\n' \
+              "$(tail -n 3 "$RUNNER_TEMP/earlier-summary.err" 2>/dev/null)" > .review-earlier-summary.md
+          fi
+          head -n 1 .review-earlier-summary.md
       - name: Review
         id: review
         uses: anthropics/claude-code-action@v1
@@ -194,7 +208,10 @@ jobs:
             comment on the most relevant file with exactly:
               gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments -f subject_type=file -f path=<file> -f commit_id=${{ github.event.pull_request.head.sha }} -f body=<finding>
 
-            Keep exactly one summary comment on the PR. If you posted one before, replace it:
+            Keep exactly one summary comment on the PR. If you posted one before, replace it,
+            but first read .review-earlier-summary.md: the summary you're replacing and the
+            PR's commits. Mark each of its notes as the rules' "Summary comment" says. If it
+            says it could not be read, say so in the summary. Replace it with:
               gh pr comment ${{ github.event.pull_request.number }} --edit-last --body "..."
             Only if that fails because there is none, create it with `gh pr comment`.
             End it with the hidden count line, <!-- review-findings: important=<N> nit=<M> -->:
@@ -283,7 +300,10 @@ jobs:
             comment on the most relevant file with exactly:
               gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments -f subject_type=file -f path=<file> -f commit_id=${{ github.event.pull_request.head.sha }} -f body=<finding>
 
-            Keep exactly one summary comment on the PR. If you posted one before, replace it:
+            Keep exactly one summary comment on the PR. If you posted one before, replace it,
+            but first read .review-earlier-summary.md: the summary you're replacing and the
+            PR's commits. Mark each of its notes as the rules' "Summary comment" says. If it
+            says it could not be read, say so in the summary. Replace it with:
               gh pr comment ${{ github.event.pull_request.number }} --edit-last --body "..."
             Only if that fails because there is none, create it with `gh pr comment`.
             End it with the hidden count line, <!-- review-findings: important=<N> nit=<M> -->:

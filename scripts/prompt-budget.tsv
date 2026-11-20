@@ -4,7 +4,7 @@
 # Lower a budget when a file shrinks; raise one only with a reason in the PR.
 #
 # Columns, tab-separated: file, budget in words (rule markers, `<!-- rule: … -->`, don't count).
-.sdlc/REVIEW.md	2950
+.sdlc/REVIEW.md	3050
 .sdlc/agents/verifier.md	900
 .sdlc/prompts/clause-check.md	400
 .sdlc/prompts/delivery-check.md	400
