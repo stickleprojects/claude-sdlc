@@ -22,6 +22,11 @@
 # its code when its body lists them under a `## Plan changes` heading. A person still approves
 # them, in the review's "Plan changes: needs approval" thread (descopes-decided.sh).
 #
+# A tooling change (#221) is the third: one PR carries a change's intent.md (whose `Kind: tooling`
+# line the tree holds) and plan.md with its code, and no spec. Merging it ships tooling, not a
+# feature or a fix, so it's titled `chore(<slug>): …` or `ci(<slug>): …`. Which paths its code
+# may touch is check-plan-first.sh's job. Run from the PR's checkout, so the tree has intent.md.
+#
 # Env: SDLC_BUILD_AMENDS_PLAN (`on` or anything else), SDLC_PR_BODY_FILE (the PR's body).
 set -uo pipefail
 
@@ -51,6 +56,21 @@ fast_path_slug() {
   echo "$slug"
 }
 
+# A tooling PR: only one change's intent.md and plan.md, plus code, and the change's intent says
+# `Kind: tooling` (read by the sdlc tool, so a commented-out example doesn't count). Prints the slug.
+tooling_slug() {
+  local slug here
+  slug="$(sed -nE 's#^changes/([^/]+)/(intent|plan)\.md$#\1#p' <<<"$gate_files" | sort -u)"
+  [[ -n "$slug" && "$slug" != *$'\n'* ]] || return 1
+  grep -qvE "^changes/$slug/(intent|plan)\.md$" <<<"$gate_files" && return 1
+  grep -vE '^(changes/|docs/)' <<<"$files" | grep -qvE '^[^/]+\.md$' || return 1
+  [[ -d "changes/$slug" ]] || return 1
+  here="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+  [[ "$(PYTHONPATH="$here/.sdlc/src" python3 -m sdlc.cli kind "changes/$slug" 2>/dev/null)" == tooling ]] \
+    || return 1
+  echo "$slug"
+}
+
 # A build PR amending its plan: one change's spec.md and plan.md, plus code. Prints the slug.
 amended_slug() {
   local slug
@@ -66,6 +86,16 @@ plan_changes_listed() {
     && grep -qiE '^##+ *Plan changes' "$SDLC_PR_BODY_FILE"
 }
 
+if [[ -n "$gates" ]] && slug="$(tooling_slug)"; then
+  if [[ ( "$type" == chore || "$type" == ci ) && "$scope" == "$slug" ]]; then
+    echo "ok: $title (the tooling path for $slug)"
+    exit 0
+  fi
+  echo "::error::This PR carries $slug's intent, plan and code (the tooling path, Kind: tooling)," \
+    "so title it 'chore($slug): <summary>' or 'ci($slug): <summary>'."
+  echo "Got: $title"
+  exit 1
+fi
 if [[ -n "$gates" && ( "$type" == feat || "$type" == fix ) ]] && slug="$(amended_slug)"; then
   if plan_changes_listed; then
     echo "ok: $title (a build PR amending $slug's plan, SDLC_BUILD_AMENDS_PLAN)"

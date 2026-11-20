@@ -41,6 +41,7 @@ Then check what isn't on main yet:
 |---|---|---|---|
 | no change folder | | describe it | `/sdlc-intent` |
 | | intent or bug PR | the product owner works through its review | `/sdlc-pr` |
+| `intent.md` with `Kind: tooling`, no plan | | a tooling change (#221): no spec, so plan it, then build it in the same PR | `/sdlc-plan` |
 | `intent.md` or `bug.md`, no spec | | the spec workflow opens a spec PR when it merges; if none appeared, write it (the internal `sdlc-spec` skill) | `sdlc-spec` |
 | | spec PR | the product owner works through its review | `/sdlc-pr` |
 | `bug.md` and `spec.md` on `build/<slug>`, nothing on main | | a bug on the fast path: finish the fix, then the PR | `/sdlc-build` |

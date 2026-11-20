@@ -21,7 +21,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from sdlc.artifacts import BUILD, Build, change_dirs, stage
+from sdlc.artifacts import BUILD, Build, change_dirs, kind, stage
 
 
 @dataclass(frozen=True)
@@ -57,15 +57,22 @@ def _git(root: Path, *args: str) -> str | None:
     return result.stdout.strip() if result.returncode == 0 else None
 
 
-def out_of_date(root: Path, rev: str, slug: str, present: set[str]) -> tuple[str, str] | None:
+def out_of_date(
+    root: Path, rev: str, slug: str, present: set[str], tooling: bool = False
+) -> tuple[str, str] | None:
     """(artifact, why) for the earliest artifact whose base changed after it was last
-    committed at `rev`, or None. Outside git, or before anything is committed, nothing is."""
+    committed at `rev`, or None. Outside git, or before anything is committed, nothing is.
+    A tooling change's plan (#221) has no spec, so its base is the intent."""
     folder = f"changes/{slug}"
+    bases_of = dict(BASES)
+    if tooling:
+        bases_of["plan.md"] = ("intent.md",)
 
     def last(name: str) -> str | None:
         return _git(root, "log", "-1", "--format=%H", rev, "--", f"{folder}/{name}") or None
 
-    for artifact, bases in BASES:
+    for artifact, _ in BASES:
+        bases = bases_of[artifact]
         if artifact not in present:
             continue
         mine = last(artifact)
@@ -88,7 +95,8 @@ def merged_build(root: Path, rev: str, slug: str, bringing: str | None = None) -
     leaves no file, so its merge is read from history (#122): the merge commit GitHub writes,
     `Merge pull request #N from <owner>/build/<slug>` (the branch's own merges of main don't
     match), or, in a repo that squash-merges, the build PR's title `feat(<slug>): ... (#N)`
-    (`fix(<slug>)` for a bug). A repo that rebase-merges leaves neither.
+    (`fix(<slug>)` for a bug, `chore(<slug>)` or `ci(<slug>)` for a tooling change, #221).
+    A repo that rebase-merges leaves neither.
 
     With `bringing` (a file in the change folder), the merge counts only if it brought that
     file to main: a fast-path bug's PR carries its spec.md with the fix (#148), and a bug
@@ -96,10 +104,10 @@ def merged_build(root: Path, rev: str, slug: str, bringing: str | None = None) -
     """
     patterns = (
         ("--merges", rf"^Merge pull request #[0-9]+ from [^ ]+/build/{slug}$"),
-        ("--no-merges", rf"^(feat|fix)\({slug}\)!?: .* \(#[0-9]+\)$"),
+        ("--no-merges", rf"^(feat|fix|chore|ci)\({slug}\)!?: .* \(#[0-9]+\)$"),
     )
-    for kind, pattern in patterns:
-        found = _git(root, "log", rev, kind, "-E", f"--grep={pattern}", "--format=%H %s")
+    for merges, pattern in patterns:
+        found = _git(root, "log", rev, merges, "-E", f"--grep={pattern}", "--format=%H %s")
         for line in found.splitlines() if found else []:
             sha, subject = line.split(" ", 1)
             if bringing and not _git(
@@ -133,11 +141,18 @@ def next_step(change_dir: Path, merged: bool, root: Path | None = None, rev: str
         finished = small_build is not None
     if root is not None and not finished:
         present = {p.name for p in change_dir.iterdir()}
-        if stale := out_of_date(root, rev, slug, present):
+        if stale := out_of_date(root, rev, slug, present, tooling=kind(change_dir) == "tooling"):
             artifact, why = stale
             return Next(slug, where, OWNER[artifact], why)
     if where == "empty":
         return Next(slug, where, "sdlc-intent", "no intent.md or bug.md yet: describe the change")
+    if where == "intent" and kind(change_dir) == "tooling":
+        return Next(
+            slug,
+            where,
+            "sdlc-plan",
+            "a tooling change (no spec): plan it, then build it in the same PR",
+        )
     if where in ("intent", "bug"):
         return Next(
             slug,

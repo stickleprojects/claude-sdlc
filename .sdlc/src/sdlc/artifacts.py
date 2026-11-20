@@ -91,10 +91,21 @@ BUG_CHAIN: dict[str, list[str]] = {
     "plan.md": CHAIN["plan.md"],
 }
 
+# A tooling change (#221): scripts, CI support, dev tools, nothing that changes how the product
+# behaves. Its intent.md says `Kind: tooling`, and one PR carries the intent, the plan and the
+# code, with no spec: the plan's Verification rows stand in for acceptance criteria. CI holds it
+# to the paths main's CLAUDE.md lists in `Tooling paths:` (.sdlc/scripts/check-plan-first.sh).
+TOOLING_CHAIN: dict[str, list[str]] = {
+    "intent.md": CHAIN["intent.md"],
+    "plan.md": CHAIN["plan.md"],
+}
+TOOLING_RE = re.compile(r"^(?:- )?Kind:[ \t]*tooling[ \t]*$", re.MULTILINE | re.IGNORECASE)
+
 # Where each chain's artifacts come from, by artifact name.
 TEMPLATES: dict[str, dict[str, str]] = {
     "feature": {name: name for name in CHAIN},
     "bug": {"bug.md": "bug.md", "spec.md": "bug-spec.md", "plan.md": "plan.md"},
+    "tooling": {name: name for name in TOOLING_CHAIN},
 }
 
 # Optional: the build plan, written by /sdlc-build once plan.md is merged.
@@ -447,12 +458,21 @@ def headings(text: str) -> set[str]:
 
 
 def kind(change_dir: Path) -> str:
-    """'bug' when the change starts from bug.md, otherwise 'feature'."""
-    return "bug" if (change_dir / "bug.md").exists() else "feature"
+    """'bug' when the change starts from bug.md, 'tooling' when its intent.md has the line
+    `Kind: tooling` (#221), otherwise 'feature'. HTML comments don't count, so the template's
+    commented example never makes a feature a tooling change."""
+    if (change_dir / "bug.md").exists():
+        return "bug"
+    intent = change_dir / "intent.md"
+    if intent.exists() and TOOLING_RE.search(
+        COMMENT_RE.sub("", intent.read_text(encoding="utf-8"))
+    ):
+        return "tooling"
+    return "feature"
 
 
 def chain(change_dir: Path) -> dict[str, list[str]]:
-    return BUG_CHAIN if kind(change_dir) == "bug" else CHAIN
+    return {"bug": BUG_CHAIN, "tooling": TOOLING_CHAIN}.get(kind(change_dir), CHAIN)
 
 
 def stage(change_dir: Path) -> str:
@@ -607,6 +627,14 @@ def check_change(
         if name == "plan.md" and is_edited:
             problems.extend(check_descopes(path, words))
             problems.extend(check_dod(path, dod or definition_of_done(change_dir.parents[1])))
+    if kind(change_dir) == "tooling" and (change_dir / "spec.md").exists():
+        problems.append(
+            Problem(
+                change_dir / "spec.md",
+                "a tooling change (Kind: tooling) has no spec: remove spec.md, "
+                "or drop the Kind line and take the full path",
+            )
+        )
     spec = change_dir / "spec.md"
     # Only a spec the branch adds or edits, like the other new rules: a merged spec in a form
     # this rejects would otherwise fail every unrelated branch, sync PRs included (#101).
