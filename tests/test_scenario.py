@@ -1717,6 +1717,71 @@ def test_a_fast_path_fix_title_passes_in_the_consumer(consumer):
     assert refused.returncode == 1 and "title it 'fix(0002-b): <summary>'" in refused.stdout
 
 
+def test_a_tooling_change_runs_end_to_end_in_the_consumer(consumer):
+    """#221: with `Tooling paths:` on main, one branch carries a tooling intent, its plan and
+    its code. The synced hook, validate, CI's checks and `make next` all take it that way."""
+    claude = consumer / "CLAUDE.md"
+    claude.write_text(
+        (claude.read_text() if claude.exists() else "") + "\nTooling paths: scripts/\n"
+    )
+    commit(consumer, "chore: tooling may touch scripts/")
+    git(consumer, "checkout", "-q", "-b", "build/0002-smoke")
+    folder = consumer / "changes" / "0002-smoke"
+    folder.mkdir(parents=True)
+    (folder / "intent.md").write_text("# T\n\nKind: tooling\n\n" + artifact(CHAIN["intent.md"]))
+    commit(consumer, "chore(0002-smoke): intent")
+    assert make(consumer, "validate").returncode == 0
+    assert "0002-smoke\tintent\tsdlc-plan\ta tooling change" in make(consumer, "next").stdout
+
+    gate = [".sdlc/hooks/plan-gate.sh"]
+    edit = json.dumps({"tool_input": {"file_path": str(consumer / "scripts/smoke.sh")}})
+    env = {"CLAUDE_PROJECT_DIR": str(consumer)}
+    assert run(gate, cwd=consumer, env=env, input=edit).returncode == 2, "no code before the plan"
+    plan = (
+        artifact(CHAIN["plan.md"])
+        .replace(
+            "## Verification\n\nx",
+            (
+                "## Verification\n\n- **Definition of done:** Any code\n"
+                "- `bash scripts/smoke.sh` exits 0"
+            ),
+        )
+        .replace("## Descopes\n\nx", "## Descopes\n\nNone.")
+    )
+    (folder / "plan.md").write_text("# T\n\nSpec: none (tooling path)\n\n" + plan)
+    commit(consumer, "chore(0002-smoke): plan")
+    assert run(gate, cwd=consumer, env=env, input=edit).returncode == 0
+    commit(consumer, "chore(0002-smoke): the script", {"scripts/smoke.sh": "true\n"})
+    validate = make(consumer, "validate")
+    assert validate.returncode == 0, validate.stdout + validate.stderr
+
+    files = git(consumer, "diff", "--name-only", "main...HEAD") + "\n"
+    main_claude = consumer / "main-claude.md"
+    main_claude.write_text(git(consumer, "show", "main:CLAUDE.md") + "\n")
+    plan_first = [".sdlc/scripts/check-plan-first.sh", "build/0002-smoke"]
+    ci_env = {"SDLC_CLAUDE_MD": str(main_claude)}
+    assert run(plan_first, cwd=consumer, env=ci_env, input=files).returncode == 0
+    outside = run(plan_first, cwd=consumer, env=ci_env, input=files + "src/app.ts\n")
+    assert outside.returncode == 1 and "outside 'Tooling paths: scripts/'" in outside.stdout
+    title = [".sdlc/scripts/check-pr-title.sh"]
+    assert run([*title, "chore(0002-smoke): smoke test"], cwd=consumer, input=files).returncode == 0
+    refused = run([*title, "feat(0002-smoke): smoke test"], cwd=consumer, input=files)
+    assert refused.returncode == 1 and "title it 'chore(0002-smoke): <summary>'" in refused.stdout
+    main_claude.unlink()
+
+    git(consumer, "checkout", "-q", "main")
+    git(
+        consumer,
+        "merge",
+        "-q",
+        "--no-ff",
+        "-m",
+        "Merge pull request #5 from o/build/0002-smoke",
+        "build/0002-smoke",
+    )
+    assert "0002-smoke\tplan\tdone\tbuilt and merged (#5)" in make(consumer, "next").stdout
+
+
 def test_the_descope_check_reaches_the_consumer(consumer):
     """#132: the workflow and both scripts sync, and the scripts run there."""
     assert (consumer / ".github/workflows/sdlc-descopes.yml").is_file()

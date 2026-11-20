@@ -1,0 +1,8 @@
+{
+  "name": "a dev script whose code stays in `Tooling paths:` takes the tooling path: Kind: tooling, on build/<slug>, no intent PR (#221)",
+  "setup": "bash \"$EVAL_ROOT/evals/consumer.sh\" bug-path && printf \"\\nTooling paths: scripts/\\n\" >> CLAUDE.md && git commit -qam \"chore: tooling may touch scripts/\" && git tag -f eval-base >/dev/null",
+  "prompt": "You're working in a project that uses the claude-sdlc pipeline. Alex, an engineer, asks for a dev tool: \"I want a script, scripts/price-table.sh, that prints format_price for every amount from 0 to 500 cents in steps of 50, one per line, so I can eyeball the formatting. It's only for us: nothing in app/ changes, and users never see it.\" Alex is the originator and owns it. Name the change price-table. The request is complete: don't ask questions. Use the sdlc-intent skill (read it with `.sdlc/scripts/resolve.sh skills/intent/SKILL.md`, and any other skill it names the same way) and follow it, choosing the path it says to, until it opens a PR or hands over to another skill; then stop, without planning or building. This repo has no GitHub remote: commit as the skills say, but don't push, and wherever a skill would open a PR, write that PR's title on one line to pr-title.txt in the repo root instead (don't commit it), then stop.",
+  "check": "bash \"$EVAL_ROOT/evals/checks/tooling-path.sh\" tooling",
+  "tools": "Read,Grep,Glob,Edit,Write,Agent,Task,Bash(git:*),Bash(make:*),Bash(python3:*),Bash(ls:*),Bash(.sdlc/scripts/resolve.sh:*),Bash(.sdlc/scripts/check-pr-title.sh:*),Bash(.sdlc/scripts/check-plan-first.sh:*)",
+  "max_turns": 60
+}

@@ -84,6 +84,17 @@ A holder can hold part of a rule only, such as the plan gate holding "no code be
 | `routing.withdraw` | Only the product owner withdraws a change, with a `Withdrawn:` line | nothing |
 | `routing.after-merge-is-a-bug` | Anything found after merge is a new bug change; never reopen a merged change | nothing |
 
+## `.sdlc/skills/tooling.md`
+
+| Id | Rule | Held by |
+|---|---|---|
+| `tooling.offer` | Offer the tooling path only with `Tooling paths:` set and no product code; otherwise the full path | `eval: intent-proposes-the-tooling-path`, `eval: intent-keeps-product-code-on-the-full-path` |
+| `tooling.intent-branch` | A tooling intent says `Kind: tooling`, is committed on build/<slug>, and opens no intent PR | `eval: intent-proposes-the-tooling-path`, `test: tests/test_scenario.py::test_a_tooling_change_runs_end_to_end_in_the_consumer` |
+| `tooling.plan` | A tooling plan maps each Proposed outcome statement to a Verification row and keeps its code inside `Tooling paths:` | `check: .sdlc/scripts/check-plan-first.sh` |
+| `tooling.same-branch` | A tooling plan is committed on build/<slug> with no plan PR; the one PR carries intent, plan and code | `test: tests/test_scenario.py::test_a_tooling_change_runs_end_to_end_in_the_consumer` |
+| `tooling.pr` | A tooling PR is titled chore(<slug>) or ci(<slug>) and its body says merging accepts intent, plan and code | `check: .sdlc/scripts/check-pr-title.sh` |
+| `tooling.verify` | A tooling change is verified from its intent's Proposed outcome, through the plan's Verification rows | nothing |
+
 ## `.sdlc/skills/build/SKILL.md`
 
 | Id | Rule | Held by |

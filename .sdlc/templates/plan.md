@@ -4,6 +4,8 @@
 engineer before any code is written. -->
 
 Spec: ./spec.md
+<!-- A tooling change (Kind: tooling in intent.md) has no spec: write `Spec: none (tooling path)`,
+and map each statement of the intent's Proposed outcome to a Verification row. -->
 
 ## Approach
 

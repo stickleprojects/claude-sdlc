@@ -7,6 +7,8 @@ file with an override in .sdlc-local/ (see .sdlc/docs/overrides.md), never by ed
 
 **Is it a bug?** If the person describes something that worked differently from what was specified or expected (found in testing or use), it's a bug: use the lighter path in [For a bug](#for-a-bug). That includes pushback on a change that has already merged or shipped: it becomes a new bug change with `Came from:` naming that change, never a reopened one. If it's new behaviour, or you're not sure, ask. <!-- rule: intent.bug-or-feature -->
 
+**Tooling?** If `CLAUDE.md` has a `Tooling paths:` line, follow `.sdlc/scripts/resolve.sh skills/tooling.md`.
+
 1. Act as a business analyst. Ask short questions until you understand: the problem and who has it, the outcome that would count as success, the users and systems affected, constraints, and what is still unknown. Ask one round at a time; don't invent answers. <!-- rule: intent.ask-dont-invent -->
 2. Pick a short kebab-case name and run `make new-change NAME=<name>`. It prints the new `intent.md` path and the slug. The folder it made, `NNNN-<name>` (for example `0007-breadcrumbs`), is the change's **slug**: wherever a skill says `<slug>`, in a branch, a commit or a PR title, it means that folder name, number included, never the bare name (#185). <!-- rule: intent.slug-has-number -->
 3. Fill in every section of that file from the conversation. Put anything unresolved under **Open questions** rather than guessing.

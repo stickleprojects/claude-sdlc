@@ -67,6 +67,8 @@ Ask whenever something is ambiguous, but **one decision at a time**. Use AskUser
    - no merged PR has come from `build/<slug>`. Check with `gh api 'repos/{owner}/{repo}/pulls?state=closed&head={owner}:build/<slug>'` and look at `merged_at`.
 
    A bug on the fast path is a candidate too: `origin/build/<slug>` has the change's `bug.md` and `spec.md` committed, there's no `plan.md`, and no PR from it has merged. Build it as in [Bug fast path](#3c-bug-fast-path-no-planmd).
+
+   So is a tooling change (`Kind: tooling`): run `.sdlc/scripts/resolve.sh skills/tooling.md` and follow it.
    - **One candidate:** use it, and say which.
    - **Several:** ask which. Put any already in progress (an `origin/build/<slug>` branch exists) first.
    - **None:** don't just stop. Follow routing step 4 in `.sdlc/skills/routing.md`: if a change is ready to plan (its spec merged), say so and offer to run `/sdlc-plan` for it; otherwise say what each change is waiting on.
@@ -168,7 +170,7 @@ For a small build after its steps, and for a large build as part of its last mil
 3. **Run the `sdlc-verifier` subagent** on `changes/<slug>`. `VERDICT: PENDING` (only human checks left) is a clean result: the PR lists them. Fix any FAIL that's within the plan. If a fix would change the plan or the spec, stop and ask. <!-- rule: build.verifier -->
    - **Descope: needs approval** (a large gap between a requirement and what was built, with no approval): build what the requirement says if the plan covers it. If it doesn't, don't stop for a sign-off. Open the PR with each such gap first in its body under **Descope: needs approval**, quoting the requirement and what was delivered instead; the review raises it for the product owner. A worker in `/sdlc-build all` returns it in its report rather than opening the PR itself.
 4. **Open the PR** with `gh api` (see the rules above), then run `.sdlc/scripts/auto-merge.sh <N>` on it (the `sdlc-agent-identity` skill).
-   - Title: `feat(<slug>): <summary>` (a change with `bug.md`: `fix(<slug>): <summary>`).
+   - Title: `feat(<slug>): <summary>` (a change with `bug.md`: `fix(<slug>): <summary>`; a tooling change: as `skills/tooling.md` says).
    - Body, in this order, so the reviewer sees what needs a decision first: **Descope: needs approval** with each of the verifier's unapproved large gaps, or "None"; the descopes, each quoted with who approved it; `## Descopes decided in session`, if any; the deviations; a **To check by hand** list with each of the plan's human checks (`Human check:` entries), for the owner to try before merging, or "None"; then what was built; the verifier's per-criterion results; the coverage per suite against its threshold. End it with the attribution line the session asks for. <!-- rule: build.pr-body-order -->
    - Don't add the `review` label. The review already runs when the PR opens.
 5. **Large build:** record the PR in build.md (`Status: PR open (#N)`), commit and push.

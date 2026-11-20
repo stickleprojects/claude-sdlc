@@ -10,6 +10,10 @@ Product owner: <name>
 Milestone: M<n>
 If it doesn't fit that milestone's agreed scope, or the scope isn't agreed yet, also add a record
 in docs/roadmap/adjustments/ (.sdlc/templates/roadmap-adjustment.md) and a line: Adjustment: NNNN-<slug> -->
+<!-- A tooling change (scripts, CI support, dev tools: nothing that changes how the product
+behaves) whose code stays inside the repo's `Tooling paths:` line (CLAUDE.md) adds a line:
+Kind: tooling
+It then needs no spec: one PR carries this intent, its plan and the code (.sdlc/docs/tooling-path.md). -->
 <!-- To bin this change, add a line: Withdrawn: <who>, <date>: <why> -->
 <!-- /block: header -->
 
