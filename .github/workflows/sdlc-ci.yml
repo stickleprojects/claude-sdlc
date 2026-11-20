@@ -54,27 +54,41 @@ jobs:
       # `make validate` instead. A PR runs the target SDLC_PR_CHECK_TARGET names (#244), `check`
       # by default, with no FULL, so the project's own default stands: this repo's `check` skips
       # the tests on a docs-only PR (#140).
-      - name: make check (a PR runs SDLC_PR_CHECK_TARGET, if set)
+      # Each of the three runs in its own step, so a release gate or a scheduled job can tell
+      # from the jobs API which one a run made: a step that didn't run is `skipped`. The step
+      # names are a contract (.sdlc/docs/settings.md): don't rename them.
+      - name: Which check this run makes
+        id: which
         if: env.DEFERRED != 'true'
         env:
           EVENT: ${{ github.event_name }}
-          SDLC_PR_CHECK_TARGET: ${{ vars.SDLC_PR_CHECK_TARGET }}
           SDLC_MAIN_DOCS_SKIP: ${{ vars.SDLC_MAIN_DOCS_SKIP }}
           BEFORE: ${{ github.event.before }}
           AFTER: ${{ github.sha }}
         run: |
-          if [[ "$EVENT" == push ]]; then
-            if [[ "$SDLC_MAIN_DOCS_SKIP" == on ]] && why="$(.sdlc/scripts/main-docs-only.sh "$BEFORE" "$AFTER")"; then
-              echo "$why"
-              make validate
-            else
-              [[ "$SDLC_MAIN_DOCS_SKIP" == on ]] && echo "$why"
-              make check FULL=1
-            fi
+          if [[ "$EVENT" != push ]]; then
+            mode=pr
+          elif [[ "$SDLC_MAIN_DOCS_SKIP" == on ]] && why="$(.sdlc/scripts/main-docs-only.sh "$BEFORE" "$AFTER")"; then
+            mode=docs
           else
-            target="$(.sdlc/scripts/pr-check-target.sh)"
-            make "$target"
+            mode=full
           fi
+          [[ "$SDLC_MAIN_DOCS_SKIP" == on && "$EVENT" == push ]] && echo "$why"
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+          echo "This run makes: $mode"
+      - name: make check FULL=1 (push to main)
+        if: steps.which.outputs.mode == 'full' && env.DEFERRED != 'true'
+        run: make check FULL=1
+      - name: make validate (docs-only push to main)
+        if: steps.which.outputs.mode == 'docs' && env.DEFERRED != 'true'
+        run: make validate
+      - name: make check (PR, or SDLC_PR_CHECK_TARGET)
+        if: steps.which.outputs.mode == 'pr' && env.DEFERRED != 'true'
+        env:
+          SDLC_PR_CHECK_TARGET: ${{ vars.SDLC_PR_CHECK_TARGET }}
+        run: |
+          target="$(.sdlc/scripts/pr-check-target.sh)"
+          make "$target"
       # A project's test reports, if it writes any to reports/ (#188): kept with the run, pass or
       # fail, so a consumer never has to add an upload step to this synced workflow.
       - uses: actions/upload-artifact@v4

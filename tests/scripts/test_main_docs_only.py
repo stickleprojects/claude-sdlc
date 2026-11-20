@@ -8,6 +8,8 @@ import pytest
 from conftest import REPO, commit, git, init_repo, run
 from test_check_after_review import CI, load
 
+from .helpers import CHECK_STEPS, run_check_job
+
 SCRIPT = REPO / ".sdlc/scripts/main-docs-only.sh"
 MAKEFILE = """\
 .PHONY: check validate
@@ -16,8 +18,6 @@ check:
 validate:
 \t@echo "ran validate"
 """
-# The step's make mustn't inherit an outer `make check FULL=1` (CLAUDE.md, Known mistakes).
-CLEAN_MAKE = {"MAKEFLAGS": "", "MAKELEVEL": "", "FULL": ""}
 
 
 @pytest.fixture
@@ -114,48 +114,64 @@ def test_the_script_arrives_executable():
     assert git(REPO, "ls-files", "-s", str(SCRIPT.relative_to(REPO))).startswith("100755")
 
 
-# --- the CI step on a push to main -----------------------------------------------------------
+# --- the CI job on a push to main --------------------------------------------------------------
 
 
-def ci_step():
-    name = "make check (a PR runs SDLC_PR_CHECK_TARGET, if set)"
-    return next(s for s in load(CI)["jobs"]["check"]["steps"] if s.get("name") == name)
-
-
-def run_step(repo, before, after, skip):
-    env = {**CLEAN_MAKE, "EVENT": "push", "BEFORE": before, "AFTER": after}
+def job(repo, tmp_path, before, after, skip):
+    env = {"EVENT": "push", "BEFORE": before, "AFTER": after}
     if skip is not None:
         env["SDLC_MAIN_DOCS_SKIP"] = skip
-    return run(["bash", "-e", "-c", ci_step()["run"]], cwd=repo, env=env)
+    return run_check_job(repo, env, tmp_path)
 
 
 @pytest.mark.parametrize(
-    ("files", "skip", "ran"),
+    ("files", "skip", "mode", "ran"),
     [
-        ({"docs/guide.md": "g\n"}, "on", "ran validate"),
-        ({"changes/0001-x/plan.md": "# p\n"}, "on", "ran validate"),
-        ({"src/app.py": "x = 2\n"}, "on", "ran check FULL=1"),
-        ({"docs/guide.md": "g\n"}, None, "ran check FULL=1"),  # off unless the repo opts in
-        ({"docs/guide.md": "g\n"}, "off", "ran check FULL=1"),
-        ({"docs/guide.md": "g\n"}, "yes", "ran check FULL=1"),  # only `on` turns it on
+        ({"docs/guide.md": "g\n"}, "on", "docs", "ran validate"),
+        ({"changes/0001-x/plan.md": "# p\n"}, "on", "docs", "ran validate"),
+        ({"src/app.py": "x = 2\n"}, "on", "full", "ran check FULL=1"),
+        ({"docs/guide.md": "g\n"}, None, "full", "ran check FULL=1"),  # off unless opted in
+        ({"docs/guide.md": "g\n"}, "off", "full", "ran check FULL=1"),
+        ({"docs/guide.md": "g\n"}, "yes", "full", "ran check FULL=1"),  # only `on` turns it on
     ],
     ids=["docs on", "change on", "code on", "docs unset", "docs off", "docs yes"],
 )
-def test_main_runs_validate_only_for_a_docs_only_push_when_opted_in(repo, files, skip, ran):
-    result = run_step(repo, *push(repo, files), skip)
+def test_main_runs_validate_only_for_a_docs_only_push_when_opted_in(
+    repo, tmp_path, files, skip, mode, ran
+):
+    got, _, result = job(repo, tmp_path, *push(repo, files), skip)
+    assert got == mode
     assert result.returncode == 0, result.stderr
     assert result.stdout.splitlines()[-1] == ran
 
 
-def test_the_step_says_why_it_chose(repo):
-    docs = run_step(repo, *push(repo, {"docs/guide.md": "g\n"}), "on")
-    assert docs.stdout.startswith("docs only: 1 file(s)")
-    code = run_step(repo, *push(repo, {"src/app.py": "x = 3\n"}), "on")
+def test_the_which_step_says_why_it_chose(repo, tmp_path):
+    _, docs, _ = job(repo, tmp_path, *push(repo, {"docs/guide.md": "g\n"}), "on")
+    assert docs.stdout.startswith("docs only: 1 file(s)") and "This run makes: docs" in docs.stdout
+    _, code, _ = job(repo, tmp_path, *push(repo, {"src/app.py": "x = 3\n"}), "on")
     assert code.stdout.startswith("src/app.py is code: run everything")
 
 
-def test_the_step_reads_the_variable_and_commits_through_env_only():
-    step = ci_step()
+def test_each_mode_has_its_own_named_step_for_the_jobs_api():
+    """A release gate tells a full run from a docs-only one by which step succeeded and which
+    was skipped (spellbound3d's release-gate, #240). The names are a contract: don't rename."""
+    steps = {s.get("name"): s for s in load(CI)["jobs"]["check"]["steps"]}
+    for mode, name in CHECK_STEPS.items():
+        want = f"steps.which.outputs.mode == '{mode}' && env.DEFERRED != 'true'"
+        assert steps[name]["if"] == want, name
+    assert steps[CHECK_STEPS["full"]]["run"] == "make check FULL=1"
+    assert steps[CHECK_STEPS["docs"]]["run"] == "make validate"
+    settings = (REPO / ".sdlc/docs/settings.md").read_text()
+    for name in (CHECK_STEPS["full"], CHECK_STEPS["docs"]):
+        assert f"`{name}`" in settings, "the contract is documented"
+
+
+def test_the_which_step_reads_the_variable_and_commits_through_env_only():
+    step = next(
+        s
+        for s in load(CI)["jobs"]["check"]["steps"]
+        if s.get("name") == "Which check this run makes"
+    )
     assert step["env"]["SDLC_MAIN_DOCS_SKIP"] == "${{ vars.SDLC_MAIN_DOCS_SKIP }}"
     assert step["env"]["BEFORE"] == "${{ github.event.before }}"
     assert step["env"]["AFTER"] == "${{ github.sha }}"
