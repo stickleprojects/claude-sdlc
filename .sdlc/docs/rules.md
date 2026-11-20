@@ -84,6 +84,17 @@ A holder can hold part of a rule only, such as the plan gate holding "no code be
 | `routing.withdraw` | Only the product owner withdraws a change, with a `Withdrawn:` line | nothing |
 | `routing.after-merge-is-a-bug` | Anything found after merge is a new bug change; never reopen a merged change | nothing |
 
+## `.sdlc/skills/tooling.md`
+
+| Id | Rule | Held by |
+|---|---|---|
+| `tooling.offer` | Offer the tooling path only with `Tooling paths:` set and no product code; otherwise the full path | `eval: intent-proposes-the-tooling-path`, `eval: intent-keeps-product-code-on-the-full-path` |
+| `tooling.intent-branch` | A tooling intent says `Kind: tooling`, is committed on build/<slug>, and opens no intent PR | `eval: intent-proposes-the-tooling-path`, `test: tests/test_scenario.py::test_a_tooling_change_runs_end_to_end_in_the_consumer` |
+| `tooling.plan` | A tooling plan maps each Proposed outcome statement to a Verification row and keeps its code inside `Tooling paths:` | `check: .sdlc/scripts/check-plan-first.sh` |
+| `tooling.same-branch` | A tooling plan is committed on build/<slug> with no plan PR; the one PR carries intent, plan and code | `test: tests/test_scenario.py::test_a_tooling_change_runs_end_to_end_in_the_consumer` |
+| `tooling.pr` | A tooling PR is titled chore(<slug>) or ci(<slug>) and its body says merging accepts intent, plan and code | `check: .sdlc/scripts/check-pr-title.sh` |
+| `tooling.verify` | A tooling change is verified from its intent's Proposed outcome, through the plan's Verification rows | nothing |
+
 ## `.sdlc/skills/build/SKILL.md`
 
 | Id | Rule | Held by |
@@ -112,7 +123,6 @@ A holder can hold part of a rule only, such as the plan gate holding "no code be
 | `build.roadmap-row` | Mark the roadmap row done in the build PR; ask before marking a milestone done | `check: .sdlc/src/sdlc/roadmap.py::check_roadmap` |
 | `build.verifier` | Run the verifier before the PR; open it with unapproved large gaps listed first | nothing |
 | `build.pr-body-order` | The build PR body leads with what needs a decision | nothing |
-| `build.tooling-pr` | A tooling PR is titled chore(<slug>) or ci(<slug>) and its body says merging accepts intent, plan and code | `check: .sdlc/scripts/check-pr-title.sh` |
 | `build.all-stop-conditions` | `/sdlc-build all` stops on PR open, FAILED, no progress, or milestones plus three workers | nothing |
 | `build.worker-never-asks` | A worker never asks the person; it returns BLOCKED | nothing |
 | `build.worker-descope-blocked` | A worker with an unapproved descope returns BLOCKED | nothing |
@@ -135,8 +145,6 @@ A holder can hold part of a rule only, such as the plan gate holding "no code be
 | `plan.verification` | Name every definition-of-done kind that fits; map every criterion and clause to a command | `check: .sdlc/src/sdlc/artifacts.py::check_dod` |
 | `plan.bug-failing-test-first` | A bug fix's first step is a failing test committed on its own | `check: .sdlc/scripts/tests-locked.sh` |
 | `plan.no-code-before-merge` | No code before the plan PR merges | `hook: .sdlc/hooks/plan-gate.sh`, `check: .sdlc/scripts/check-plan-first.sh` |
-| `plan.tooling-path` | A tooling plan maps each Proposed outcome statement to a Verification row and keeps its code inside `Tooling paths:` | `check: .sdlc/scripts/check-plan-first.sh` |
-| `plan.tooling-same-branch` | A tooling plan is committed on build/<slug> with no plan PR; the one PR carries intent, plan and code | `test: tests/test_scenario.py::test_a_tooling_change_runs_end_to_end_in_the_consumer` |
 
 ## `.sdlc/skills/intent/SKILL.md`
 
@@ -151,8 +159,6 @@ A holder can hold part of a rule only, such as the plan gate holding "no code be
 | `intent.one-stage` | No spec, plan or code at the intent stage (except the fast path) | `hook: .sdlc/hooks/plan-gate.sh`, `check: .sdlc/scripts/check-plan-first.sh` |
 | `intent.no-real-data` | Never real personal data in a bug report | nothing |
 | `intent.bug-path` | `Bug path: full` forces the full path; otherwise take the fast path when its conditions hold | `eval: bug-fast-path`, `eval: bug-needs-decision-full-path`, `eval: bug-path-full-setting` |
-| `intent.tooling-path` | Offer the tooling path only with `Tooling paths:` set and no product code; otherwise the full path | `eval: intent-proposes-the-tooling-path`, `eval: intent-keeps-product-code-on-the-full-path` |
-| `intent.tooling-branch` | A tooling intent says `Kind: tooling`, is committed on build/<slug>, and opens no intent PR | `eval: intent-proposes-the-tooling-path`, `test: tests/test_scenario.py::test_a_tooling_change_runs_end_to_end_in_the_consumer` |
 | `intent.fast-path-open-question` | An open product question ends the fast path | `eval: bug-needs-decision-full-path` |
 | `intent.bug-pr-branch` | A full-path bug PR never comes from `build/<slug>` | nothing |
 | `intent.fast-path-branch` | A fast-path bug is built on `build/<slug>` with the number | `hook: .sdlc/hooks/plan-gate.sh`, `check: .sdlc/scripts/check-plan-first.sh` |
@@ -260,5 +266,4 @@ A holder can hold part of a rule only, such as the plan gate holding "no code be
 | `verifier.human-checks` | Human checks are PENDING, never PASS | nothing |
 | `verifier.report-order` | The report leads with descopes and ends with the VERDICT line | nothing |
 | `verifier.fast-path` | A fast-path bug is verified from bug.md, with its failing tests committed before the fix | nothing |
-| `verifier.tooling` | A tooling change is verified from its intent's Proposed outcome, through the plan's Verification rows | nothing |
 

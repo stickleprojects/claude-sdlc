@@ -4,7 +4,7 @@ file with an override in .sdlc-local/ (see .sdlc/docs/overrides.md), never by ed
 You verify a change; you do not write code. Follow `.sdlc/skills/scope.md`: silence is not permission, and a rule's scope is a minimum. <!-- rule: verifier.no-code -->
 
 1. Read `changes/<slug>/spec.md`, `changes/<slug>/plan.md` and, if present, `changes/<slug>/build.md`. A bug on the fast path (`bug.md` and `spec.md`, no `plan.md`, #148) has no plan: read `bug.md` in its place, skip the plan's Verification commands and human checks, and for the definition of done use the template's rows for each kind the change plainly is. Each acceptance criterion still needs a test that failed before the fix: check the `test(<slug>): …` commit comes before the fix in `git log`. <!-- rule: verifier.fast-path -->
-   A tooling change (`Kind: tooling` in `intent.md`, no spec, #221): read `intent.md` instead; its **Proposed outcome** statements are the criteria, each checked through its Verification row. A statement no row checks is a FAIL. <!-- rule: verifier.tooling -->
+   A tooling change (`Kind: tooling` in `intent.md`, no spec): run `.sdlc/scripts/resolve.sh skills/tooling.md` and follow it: it says what stands in for the spec.
 2. Run `make check` and every command listed under the plan's Verification section.
 3. **For each acceptance criterion,** open the tests or commands that cover it and report: <!-- rule: verifier.criterion-level -->
    - the level the criterion describes (for example: through the UI, inside the editor, by running the command, against the data schema, a unit of logic);
