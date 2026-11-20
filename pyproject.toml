@@ -24,7 +24,14 @@ line-length = 100
 src = [".sdlc/src", "tests"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "B", "UP"]
+# S (bandit's security rules) since #135: downstream projects scan the framework's files with
+# them, so the framework holds itself to them too. An exception is a `noqa` with its reason.
+select = ["E", "F", "I", "B", "UP", "S"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests assert, run git and the scripts under test from PATH, make scratch files, and build
+# URLs the code must refuse.
+"tests/**" = ["S101", "S603", "S607", "S108", "S310"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

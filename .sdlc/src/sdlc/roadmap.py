@@ -375,7 +375,7 @@ def current_branch(root: Path) -> str | None:
             return os.environ[name]
     try:
         out = subprocess.run(
-            ["git", "branch", "--show-current"],
+            ["git", "branch", "--show-current"],  # noqa: S607 - git from PATH, as every script here runs it
             cwd=root,
             capture_output=True,
             text=True,
