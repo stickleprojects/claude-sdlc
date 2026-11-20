@@ -66,9 +66,10 @@ Keep exactly **one** summary comment per PR, and replace it on each new review r
 
 1. Each **Descope: needs approval** finding, then the descopes, each quoted with who approved it or "not approved", the human checks still to try, and the plan's Risks that need a decision. These come first.
 2. The number of findings per severity, and whether each earlier finding is now resolved.
-3. One line per open finding: a short quote of the text it's about, the owner who decides, and a link to its thread.
-4. One line on whether the change matches its spec, saying what was compared, and claiming only what was checked. For example: "Every clause of R1–R45 traced to an acceptance criterion and to a plan step and test (112 clauses)", or "IDs only: every acceptance criterion has a Verification row". <!-- rule: review.claim-only-checked -->
-5. How to handle the findings, as a one-line reminder:
+3. On a re-review, **every earlier note** (#242): `.review-earlier-summary.md` holds the summary you're replacing and the PR's commits. Carry over each note there that asked for something outside a thread (a stale PR body, a missing approval), one line each: `✅ <note> — addressed in <short sha>` (or `PR body updated`, `approved by <name>`), or `⬜ <note> — still open`. Check before ticking, and never drop one. A note now held by a thread links to it. <!-- rule: review.earlier-notes -->
+4. One line per open finding: a short quote of the text it's about, the owner who decides, and a link to its thread.
+5. One line on whether the change matches its spec, saying what was compared, and claiming only what was checked. For example: "Every clause of R1–R45 traced to an acceptance criterion and to a plan step and test (112 clauses)", or "IDs only: every acceptance criterion has a Verification row". <!-- rule: review.claim-only-checked -->
+6. How to handle the findings, as a one-line reminder:
    - Whoever decides runs `/sdlc-pr <N>` in Claude Code: the product owner for `intent:`, `bug:` and `spec:` PRs, the engineer for the rest.
    - Tagging `@claude` on a thread is optional. It hands that finding to the GitHub bot instead, so don't do both for one finding.
-6. Last, the hidden count line from [Posting findings](#posting-findings).
+7. Last, the hidden count line from [Posting findings](#posting-findings).

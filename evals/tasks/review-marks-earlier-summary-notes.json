@@ -1,0 +1,8 @@
+{
+  "name": "a re-review marks each earlier summary note addressed (with its commit) or still open (#242)",
+  "setup": "bash evals/fixtures/earlier-notes/setup.sh",
+  "prompt": "Re-review PR 31, following .sdlc/REVIEW.md exactly, including its rules for a re-review and its Summary comment section. The PR's repo is the git repo in ./notes (run git there with `git -C notes …`), on branch feat/csv-export, whose base is main. The files the review workflow writes are in notes/ as it writes them: notes/.review-threads.json (the PR's threads) and notes/.review-earlier-summary.md (the summary this review replaces, and the PR's commits). The PR's body as it is now is notes/pr-body.md: read it wherever REVIEW.md or the summary would use `gh pr view`. Nobody has approved the PR or replied to the earlier summary. Don't use GitHub or the network, and post no threads. Write the summary comment you would post, exactly as you'd post it, to summary.md in the current directory (beside notes/, not inside it). Don't edit any other file.",
+  "check": "bash \"$EVAL_ROOT/evals/checks/earlier-notes.sh\"",
+  "tools": "Read,Grep,Glob,Write,Bash(git -C notes:*)",
+  "max_turns": 40
+}
