@@ -148,7 +148,7 @@ Add the two files that are yours, the stack half of the contract:
 - **A `Makefile`** with `include .sdlc/sdlc.mk` and the stack contract: `setup`, `fmt`, `lint`, `test`, `validate` (which runs `$(SDLC) check`) and `check`. `.sdlc/sdlc.mk` brings the pipeline's own targets (`new-change`, `status`, `next`, `clauses`, `exec-bits`, `evals`, `sync-sdlc`), so a new one never means editing your Makefile. The pipeline CLI has no dependencies, and by default it runs with `python3`.
   - The optional targets (`coverage`, `deploy-dev`, `deploy-prod`) switch on what they name. The sync tells you which ones your Makefile lacks.
   - [tests/fixtures/consumer/Makefile](tests/fixtures/consumer/Makefile) is the smallest Makefile that works. [sdlc-sandbox's](https://github.com/stickleprojects/sdlc-sandbox/blob/main/Makefile) is a real TypeScript stack.
-- **`.github/actions/setup-stack/action.yml`**, which installs your toolchain in CI and runs `make setup`.
+- **`.github/actions/setup-stack/action.yml`**, which installs your toolchain in CI and runs `make setup`. Each workflow's call says what its job needs (`SDLC_STACK_NEEDS`), so a slow stack can skip what a light job doesn't use ([stack-needs.md](.sdlc/docs/stack-needs.md)).
 
 ### 2. Pull the framework
 

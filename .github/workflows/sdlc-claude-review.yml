@@ -98,6 +98,9 @@ jobs:
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
       - uses: ./.github/actions/setup-stack
+        # Needs (#239, .sdlc/docs/stack-needs.md): make clauses, through $(SDLC).
+        env:
+          SDLC_STACK_NEEDS: validate
         if: steps.artifacts.outputs.changed == 'true'
         continue-on-error: true  # a consumer's stack failing here mustn't stop the review
       - name: Clause check

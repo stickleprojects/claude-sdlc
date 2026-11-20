@@ -45,6 +45,9 @@ jobs:
         with:
           fetch-depth: 0  # make validate and the docs-only check compare the branch with main
       - uses: ./.github/actions/setup-stack
+        # Needs (#239, .sdlc/docs/stack-needs.md): make check.
+        env:
+          SDLC_STACK_NEEDS: full
         if: env.DEFERRED != 'true'
       # Pushes to main run `make check FULL=1`, so every commit there is fully tested. With
       # SDLC_MAIN_DOCS_SKIP=on (#240), a push that changed only docs (main-docs-only.sh) runs

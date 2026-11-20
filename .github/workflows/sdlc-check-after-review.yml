@@ -166,6 +166,9 @@ jobs:
             exit 1
           }
       - uses: ./.github/actions/setup-stack
+        # Needs (#239, .sdlc/docs/stack-needs.md): make check.
+        env:
+          SDLC_STACK_NEEDS: full
       # The PR's tier when the repo sets SDLC_PR_CHECK_TARGET (#244), otherwise `make check`.
       - name: make check (or SDLC_PR_CHECK_TARGET)
         env:
