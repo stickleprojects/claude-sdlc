@@ -178,18 +178,30 @@ class ConversionError(Exception):
     """GitHub didn't hand over the new App's credentials; the message says why, for a person."""
 
 
+def open_api(target: str | urllib.request.Request, timeout: float = 30):
+    """urlopen for the GitHub API only: https, or http to this machine for a test server.
+    Anything else (file:, ftp:, a custom scheme) is refused, so SDLC_GITHUB_API can't make
+    this read a local file (ruff S310, #135). A refusal is a URLError, as an unreachable API is."""
+    url = target.full_url if isinstance(target, urllib.request.Request) else target
+    parts = urlparse(url)
+    local = parts.scheme == "http" and parts.hostname in ("127.0.0.1", "localhost")
+    if parts.scheme != "https" and not local:
+        raise urllib.error.URLError(f"refusing {url!r}: the GitHub API is https only")
+    return urllib.request.urlopen(target, timeout=timeout)  # noqa: S310 - scheme checked above
+
+
 def convert(code: str) -> dict:
     """Exchange the one-time code for the App's id, slug and private key.
 
     Not retried: the code works once, so a second POST after a timeout would fail even if the
     first one succeeded. Every failure becomes a ConversionError with a readable reason."""
-    request = urllib.request.Request(
+    request = urllib.request.Request(  # noqa: S310 - opened only through open_api
         f"{API}/app-manifests/{quote(code)}/conversions",
         method="POST",
         headers={"Accept": "application/vnd.github+json"},
     )
     try:
-        with urllib.request.urlopen(request, timeout=30) as response:
+        with open_api(request) as response:
             app = json.load(response)
     except urllib.error.HTTPError as err:
         detail = ""
@@ -234,7 +246,7 @@ def recovery_hint(app_name: str, identity: str) -> str:
 
 def bot_id(slug: str) -> int:
     try:
-        with urllib.request.urlopen(f"{API}/users/{quote(slug)}%5Bbot%5D", timeout=30) as r:
+        with open_api(f"{API}/users/{quote(slug)}%5Bbot%5D") as r:
             return int(json.load(r)["id"])
     except (urllib.error.URLError, KeyError, ValueError):
         return 0
@@ -252,8 +264,9 @@ def store_key(slug: str, pem: str) -> str:
         path.write_text(pem)
         return f"file:{path.resolve()}"
     account = f"github-app-private-key:{slug}"
-    subprocess.run(
-        ["secret-tool", "store", "--label", f"claude-sdlc GitHub App private key ({slug})",
+    # List args, no shell; secret-tool from PATH, as the platform installs it (#135).
+    subprocess.run(  # noqa: S603
+        ["secret-tool", "store",  # noqa: S607 "--label", f"claude-sdlc GitHub App private key ({slug})",
          "service", "claude-sdlc", "account", account],
         input=pem, text=True, check=True,
     )  # fmt: skip
@@ -305,7 +318,8 @@ def link_existing(identity: Identity) -> Path:
     """Point this repo's identity at an existing App's config. Creates nothing on GitHub and
     copies no key, so the App and its key stay shared."""
     default = default_config(identity.name)
-    assert identity.existing is not None
+    if identity.existing is None:  # not an assert: python -O strips those (#135)
+        raise ValueError(f"{identity.name} has no existing App to link")
     if identity.existing.resolve() != default.resolve():
         write_pointer(default, identity.existing)
     return identity.existing
@@ -488,8 +502,11 @@ def repo_from_git() -> str:
     if os.environ.get("SDLC_AGENT_REPO"):
         return os.environ["SDLC_AGENT_REPO"]
     try:
-        url = subprocess.run(
-            ["git", "remote", "get-url", "origin"], capture_output=True, text=True, check=True
+        url = subprocess.run(  # list args, no shell
+            ["git", "remote", "get-url", "origin"],  # noqa: S607 - git from PATH
+            capture_output=True,
+            text=True,
+            check=True,
         ).stdout.strip()
     except (subprocess.CalledProcessError, FileNotFoundError):
         return ""

@@ -183,8 +183,8 @@ def _git_show(root: Path, ref: str, path: Path) -> str | None:
         rel = path.resolve().relative_to(root.resolve())
     except ValueError:
         return None
-    result = subprocess.run(
-        ["git", "show", f"{ref}:{rel.as_posix()}"],
+    result = subprocess.run(  # noqa: S603 - list args, no shell (#135)
+        ["git", "show", f"{ref}:{rel.as_posix()}"],  # noqa: S607 - git from PATH, as every script here runs it
         cwd=root,
         capture_output=True,
         text=True,

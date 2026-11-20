@@ -49,8 +49,12 @@ OWNER = {"spec.md": "sdlc-spec", "plan.md": "sdlc-plan", BUILD: "sdlc-build"}
 
 def _git(root: Path, *args: str) -> str | None:
     try:
-        result = subprocess.run(
-            ["git", *args], cwd=root, capture_output=True, text=True, check=False
+        result = subprocess.run(  # noqa: S603 - list args, no shell (#135)
+            ["git", *args],  # noqa: S607 - git from PATH, as every script here runs it
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=False,
         )
     except FileNotFoundError:
         return None
@@ -187,8 +191,8 @@ def next_step(change_dir: Path, merged: bool, root: Path | None = None, rev: str
 
 def _extract(root: Path, ref: str, into: Path) -> Path | None:
     """Unpack ref's changes/ folder into `into`; None when the ref has no changes/."""
-    result = subprocess.run(
-        ["git", "archive", "--format=tar", ref, "changes"],
+    result = subprocess.run(  # noqa: S603 - list args, no shell (#135)
+        ["git", "archive", "--format=tar", ref, "changes"],  # noqa: S607 - git from PATH, as every script here runs it
         cwd=root,
         capture_output=True,
         check=False,

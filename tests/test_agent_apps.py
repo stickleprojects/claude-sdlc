@@ -358,3 +358,45 @@ def test_start_page_explains_sign_in_and_taken_names(apps):
     finally:
         server.shutdown()
     assert "sign in" in body and "name is taken" in body and "/next" in body
+
+
+# --- only the GitHub API is opened (#135, ruff S310) --------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "file:///etc/passwd",
+        "ftp://example.com/x",
+        "http://api.github.com/users/x",  # plain http off this machine
+        "http://evil.example/x",
+        "gopher://x",
+    ],
+)
+def test_open_api_refuses_anything_but_https_or_a_local_test_server(apps, monkeypatch, url):
+    opened = []
+    monkeypatch.setattr(apps.urllib.request, "urlopen", lambda *a, **k: opened.append(a))
+    with pytest.raises(urllib.error.URLError, match="the GitHub API is https only"):
+        apps.open_api(url)
+    with pytest.raises(urllib.error.URLError):
+        apps.open_api(urllib.request.Request(url))
+    assert opened == [], "refused before anything is opened"
+
+
+@pytest.mark.parametrize(
+    "url", ["https://api.github.com/users/x", "http://127.0.0.1:5000/x", "http://localhost/x"]
+)
+def test_open_api_opens_https_and_a_local_test_server(apps, monkeypatch, url):
+    opened = []
+    monkeypatch.setattr(
+        apps.urllib.request, "urlopen", lambda target, timeout: opened.append((target, timeout))
+    )
+    apps.open_api(url)
+    assert opened == [(url, 30)]
+
+
+def test_a_refused_api_url_reads_as_github_not_answering(apps, monkeypatch):
+    """convert() turns a refusal into its 'didn't answer' error, not 'the reply wasn't JSON'."""
+    monkeypatch.setattr(apps, "API", "file:///tmp")
+    with pytest.raises(apps.ConversionError, match="GitHub didn't answer"):
+        apps.convert("code")

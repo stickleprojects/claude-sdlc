@@ -86,8 +86,12 @@ LARGE_CHANGE_TRAILER = "Large-change"
 
 def _git(root: Path, *args: str) -> str | None:
     try:
-        result = subprocess.run(
-            ["git", *args], cwd=root, capture_output=True, text=True, check=False
+        result = subprocess.run(  # noqa: S603 - list args, no shell (#135)
+            ["git", *args],  # noqa: S607 - git from PATH, as every script here runs it
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=False,
         )
     except FileNotFoundError:
         return None
