@@ -15,18 +15,28 @@ DELIVERY_FIXTURE = "evals/fixtures/delivery-gap/0001-floor-mode"
 
 
 def test_delivery_check_reads_the_code_with_a_larger_model(fake_claude):
-    answer = (
-        'CLAUSES: [{"clause": "generates a 3D scene", "delivered": "draws boxes", '
-        '"gap": "large", "approved": null}, {"clause": "drawn", "gap": "tiny", "approved": ""}, '
-        '{"clause": "snaps", "gap": "small", "approved": "Approved: Sam"}]'
+    clauses = [
+        {
+            "clause": "generates a 3D scene",
+            "delivered": "draws boxes",
+            "gap": "large",
+            "approved": None,
+        },
+        {"clause": "drawn", "gap": "tiny", "approved": ""},
+        {"clause": "snaps", "gap": "small", "approved": "Approved: Sam"},
+    ]
+    answer = "CLAUSES: " + json.dumps(
+        [{"requirement": "R1", "clauses": clauses}, {"requirement": "R2", "clauses": []}]
     )
     result, calls = fake_claude(answer, "--stage", "build", DELIVERY_FIXTURE)
     assert result.returncode == 0, result.stderr
-    assert len(calls) == 2
-    assert all("--model sonnet" in c and "--max-turns 15" in c for c in calls)
+    assert len(calls) == 1, "one run for the whole change (#257)"
+    # 15 turns a requirement, two requirements.
+    assert all("--model sonnet" in c and "--max-turns 30" in c for c in calls)
     assert all("--allowedTools Read,Grep,Glob" in c for c in calls)
     assert "You compare what a change delivers" in calls[0]
     assert "- **Demo:** the dock's floor tab shows a floor with doorway lines" in calls[0]
+    assert '"id":"R2"' in calls[0]
     found = [f for f in json.loads(result.stdout) if f["requirement"] == "R1"]
     assert [(f["stage"], f["clause"], f["gap"], f["approved"]) for f in found] == [
         ("build", "generates a 3D scene", "large", None),
@@ -48,7 +58,9 @@ def test_delivery_check_names_the_branchs_changed_files(tmp_path):
     bin_dir.mkdir()
     log = tmp_path / "calls.log"
     (bin_dir / "claude").write_text(
-        '#!/usr/bin/env bash\nprintf "%s" "$*" >> "$FAKE_LOG"\necho "CLAUSES: []"\n'
+        '#!/usr/bin/env bash\nprintf "%s" "$*" >> "$FAKE_LOG"\n'
+        'echo \'CLAUSES: [{"requirement": "R1", "clauses": []},'
+        ' {"requirement": "R2", "clauses": []}]\'\n'
     )
     (bin_dir / "claude").chmod(0o755)
     result = run(
@@ -92,9 +104,10 @@ def test_clause_check_reports_unreadable_requirement_lines_as_unchecked(fake_cla
     shutil.copytree(REPO / CLAUSE_FIXTURE, change)
     spec = change / "spec.md"
     spec.write_text(spec.read_text().replace("- R2. When", "- Requirement 2: When"))
-    result, calls = fake_claude("CLAUSES: []", "--stage", "spec", str(change))
+    answer = 'CLAUSES: [{"requirement": "R1", "clauses": []}]'
+    result, calls = fake_claude(answer, "--stage", "spec", str(change))
     assert result.returncode == 0, result.stderr
-    assert len(calls) == 1, "R1 is still checked"
+    assert len(calls) == 1 and '"id":"R1"' in calls[0], "R1 is still checked"
     [entry] = json.loads(result.stdout)
     assert entry["requirement"] is None and entry["stage"] == "spec"
     assert entry["text"].startswith("- Requirement 2: When no roles match")
@@ -115,8 +128,9 @@ def test_clause_check_reports_unreadable_requirement_lines_as_unchecked(fake_cla
 )
 def test_delivery_check_keeps_an_approval_only_if_its_quote_is_there(fake_claude, quote, kept):
     # PR #109 review: a made-up approval quote turned a large gap into an approved one.
+    clause = {"clause": "generates a 3D scene", "delivered": "x", "gap": "large", "approved": quote}
     answer = "CLAUSES: " + json.dumps(
-        [{"clause": "generates a 3D scene", "delivered": "x", "gap": "large", "approved": quote}]
+        [{"requirement": "R1", "clauses": [clause]}, {"requirement": "R2", "clauses": []}]
     )
     result, _ = fake_claude(answer, "--stage", "build", DELIVERY_FIXTURE)
     assert result.returncode == 0, result.stderr
@@ -161,7 +175,8 @@ def eval_check(tmp_path):
 
     def check(task, report, entries):
         (work / "report.md").write_text(report)
-        (tmp_path / "answer.txt").write_text("CLAUSES: " + json.dumps(entries) + "\n")
+        answer = [{"requirement": "R1", "clauses": entries}, {"requirement": "R2", "clauses": []}]
+        (tmp_path / "answer.txt").write_text("CLAUSES: " + json.dumps(answer) + "\n")
         (bin_dir / "claude").write_text(f"#!/usr/bin/env bash\ncat '{tmp_path / 'answer.txt'}'\n")
         (bin_dir / "claude").chmod(0o755)
         command = json.loads((REPO / "evals/tasks" / task).read_text())["check"]

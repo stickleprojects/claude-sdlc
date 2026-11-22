@@ -13,8 +13,10 @@
 #             --ref REF. Entries carry a "change" field. A change whose spec can't be split is
 #             one unchecked entry, and the others are still checked.
 #
-# Splits the spec with `make clauses` (no model), then sends one requirement at a time to a
-# small model through .sdlc/scripts/agent.sh, so no call reads the whole spec. Prints a JSON array:
+# Splits the spec with `make clauses` (no model), then sends every block of the change to one
+# small-model call through .sdlc/scripts/agent.sh (#257: one cold start, not one a requirement).
+# The answer names each requirement it checked; one that isn't there reads as unchecked, never as
+# covered. Prints a JSON array:
 #   {"requirement": "R2", "text": "...", "stage": "spec", "clause": "...", "missing": [...]}
 # Stage build reads the code (Read, Grep and Glob), so it uses a larger model and more turns, and
 # its entries hold "delivered", "gap" ("large" when the delivery lacks the clause's main verb or
@@ -29,8 +31,9 @@
 # An unchecked requirement is reported, never read as covered.
 #
 # Env:
-#   CLAUSE_MODEL  model for the per-requirement calls at stages spec and plan (default: haiku)
-#   DELIVERY_MODEL, DELIVERY_MAX_TURNS  the same for stage build (default: sonnet, 15)
+#   CLAUSE_MODEL  model for the call at stages spec and plan (default: haiku)
+#   DELIVERY_MODEL, DELIVERY_MAX_TURNS  the same for stage build (default: sonnet; 15 turns a
+#                 requirement, at most 60)
 #   AGENT         passed through to agent.sh (echo for a dry run)
 set -euo pipefail
 
@@ -76,15 +79,19 @@ change_dir() {
   fi
 }
 
-# check <stage> <change> <ref>: the JSON array for one change.
+# check <stage> <change> <ref>: the JSON array for one change. One model call per change and
+# stage reads every block (#257); each requirement it sent must come back in the answer.
 check() {
-  local stage="$1" change="$2" ref="$3" blocks count results block rid text base prompt
-  local answer line found entries prompt_file model turns tools files="[]" shape docs=""
+  local stage="$1" change="$2" ref="$3" blocks count results base prompt
+  local answer line found prompt_file model turns tools files="[]" shape docs="" why=""
   # STAGE: with a ref, only what this stage reads counts as changed (#257).
   blocks="$(make -s -C "$root" clauses CHANGE="$change" ${ref:+REF="$ref"} STAGE="$stage")" || return 1
+  count="$(jq '.requirements | length' <<<"$blocks")"
   if [[ "$stage" == build ]]; then
-    prompt_file=delivery-check.md model="${DELIVERY_MODEL:-sonnet}"
-    turns="${DELIVERY_MAX_TURNS:-15}" tools="Read,Grep,Glob" files="$(changed_files)"
+    prompt_file=delivery-check.md model="${DELIVERY_MODEL:-sonnet}" tools="Read,Grep,Glob"
+    # Turns for the whole run: 15 a requirement, at most 60, unless DELIVERY_MAX_TURNS says.
+    turns="${DELIVERY_MAX_TURNS:-$((count * 15 < 60 ? count * 15 : 60))}"
+    files="$(changed_files)"
     local dir
     dir="$(change_dir "$change" "$(jq -r .change <<<"$blocks")")"
     docs="$(cat "$dir"/spec.md "$dir"/plan.md "$dir"/build.md 2>/dev/null || true)"
@@ -95,40 +102,42 @@ check() {
     prompt_file=clause-check.md model="${CLAUSE_MODEL:-haiku}" turns=1 tools=Read
     shape='{clause, missing: (.missing // [] | if type == "array" then . else [.] end)}'
   fi
-  count="$(jq '.requirements | length' <<<"$blocks")"
-  results="[]"
-  for ((i = 0; i < count; i++)); do
-    block="$(jq -c --argjson f "$files" ".requirements[$i]"' + if $f == [] then {} else {changed_files: $f} end' <<<"$blocks")"
-    rid="$(jq -r .id <<<"$block")"
-    text="$(jq -r .text <<<"$block")"
-    base="$(jq -nc --arg r "$rid" --arg t "$text" --arg s "$stage" \
-      '{requirement: $r, text: $t, stage: $s}')"
-    prompt="$("$root/.sdlc/scripts/resolve.sh" "prompts/$prompt_file"; printf '\nStage: %s\n\nBlock:\n%s\n' "$stage" "$block")"
+  # One base entry per requirement sent: {requirement, text, stage}.
+  base="$(jq -c --arg s "$stage" '[.requirements[] | {requirement: .id, text, stage: $s}]' <<<"$blocks")"
+  found="null"
+  if ((count > 0)); then
+    prompt="$("$root/.sdlc/scripts/resolve.sh" "prompts/$prompt_file"
+      printf '\nStage: %s\n\nBlocks:\n' "$stage"
+      jq -c --argjson f "$files" '.requirements | if $f == [] then . else {changed_files: $f, requirements: .} end' <<<"$blocks")"
     if answer="$(AGENT_MAX_TURNS="$turns" AGENT_ALLOWED_TOOLS="$tools" \
         "$root/.sdlc/scripts/agent.sh" - --model "$model" <<<"$prompt" 2>/dev/null)"; then
       line="$(grep '^CLAUSES: ' <<<"$answer" | tail -n 1 || true)"
-      if [[ -n "$line" ]] && found="$(jq -ce 'if type == "array" and all(.[]; type == "object" and (.clause | type) == "string")
-          then . else error("not a list of clauses") end' <<<"${line#CLAUSES: }" 2>/dev/null)"; then
-        entries="$(jq -c --argjson b "$base" \
-          "map(\$b + $shape)" \
-          <<<"$found")"
-        if [[ "$stage" == build ]]; then
-          # Keep an approval only if its quote is really there (PR #109 review).
-          entries="$(jq -c --arg docs "$docs" '
-            def norm: gsub("[*`]"; "") | gsub("\\s+"; " ") | ltrimstr(" ") | rtrimstr(" ");
-            ($docs | norm) as $d
-            | map((.approved // "" | norm) as $a
-                  | if .approved == null or ($a != "" and ($d | contains($a))) then .
-                  else . + {approved: null, approval_not_found: .approved} end)' <<<"$entries")"
-        fi
-      else
-        entries="$(jq -c '[. + {unchecked: "the clause check gave no CLAUSES line that could be read"}]' <<<"$base")"
+      if [[ -z "$line" ]] || ! found="$(jq -ce 'if type == "array" and all(.[]; type == "object"
+            and (.requirement | type) == "string" and (.clauses | type) == "array"
+            and all(.clauses[]; type == "object" and (.clause | type) == "string"))
+          then . else error("not a list of requirements with their clauses") end' <<<"${line#CLAUSES: }" 2>/dev/null)"; then
+        found="null" why="the clause check gave no CLAUSES line that could be read"
       fi
     else
-      entries="$(jq -c '[. + {unchecked: "the clause check call failed"}]' <<<"$base")"
+      why="the clause check call failed"
     fi
-    results="$(jq -c --argjson e "$entries" '. + $e' <<<"$results")"
-  done
+  fi
+  # Each requirement sent: its clauses from the answer, or unchecked when the answer has no entry
+  # for it. Entries for a requirement that wasn't sent are dropped.
+  results="$(jq -c --argjson found "$found" --arg why "$why" "
+    map(. as \$b | (\$found // [] | map(select(.requirement == \$b.requirement))) as \$mine
+      | if \$found == null then [\$b + {unchecked: \$why}]
+        elif \$mine == [] then [\$b + {unchecked: \"the clause check gave no answer for this requirement\"}]
+        else [\$mine[].clauses[] | \$b + $shape] end) | add // []" <<<"$base")"
+  if [[ "$stage" == build ]]; then
+    # Keep an approval only if its quote is really there (PR #109 review).
+    results="$(jq -c --arg docs "$docs" '
+      def norm: gsub("[*`]"; "") | gsub("\\s+"; " ") | ltrimstr(" ") | rtrimstr(" ");
+      ($docs | norm) as $d
+      | map(if has("unchecked") then . else (.approved // "" | norm) as $a
+            | if .approved == null or ($a != "" and ($d | contains($a))) then .
+              else . + {approved: null, approval_not_found: .approved} end end)' <<<"$results")"
+  fi
   # Lines under ## Requirements that couldn't be read as a requirement: nothing checked them.
   jq -c --argjson b "$blocks" --arg s "$stage" '. + ($b.unreadable // [] | map(
     {requirement: null, text: ., stage: $s,

@@ -21,7 +21,7 @@ Status as of 2026-11-11 (v0.9.1). This is a living log: update it whenever the p
 ## What works
 
 - **CI** (`make check`): lint, about 600 tests, artifact validation (required sections, approved descopes, a definition of done, readable requirements and criteria in new work), and a check that scripts are committed as executable.
-- **AI PR review**: follows [.sdlc/REVIEW.md](../.sdlc/REVIEW.md). It quotes the text each finding refers to, says who decides, and keeps one summary comment. It also checks every clause of a requirement against the criteria and the plan, with a cheap per-requirement clause check in CI.
+- **AI PR review**: follows [.sdlc/REVIEW.md](../.sdlc/REVIEW.md). It quotes the text each finding refers to, says who decides, and keeps one summary comment. It also checks every clause of a requirement against the criteria and the plan, with a cheap clause check in CI (one small-model call per change).
 - **Skills**: six entry skills (`/sdlc-intent`, `/sdlc-plan`, `/sdlc-build`, `/sdlc-pr`, `/sdlc-next`, `/sdlc`) route each change to the right next step.
 - **Guardrail hooks**: protected paths, format on edit, and a production gate (no deploys to production, no pushes to `main`, no merges or approvals by the agent). A bug's failing test locks once it's committed.
 - **GitHub setup**: branch protection, CODEOWNERS, the token secret, Actions permissions, labels, `.gitignore` and the agent's own App identity, all scripted in `.sdlc/scripts/bootstrap-github.sh`.

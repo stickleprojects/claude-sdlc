@@ -1053,11 +1053,12 @@ def test_delivery_check_reads_approvals_from_a_change_named_by_number(consumer, 
     real = "Descope: R1's 3D scene opened in the editor"
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
+    clauses = [
+        {"clause": "a 3D scene", "delivered": "x", "gap": "large", "approved": real},
+        {"clause": "opened", "delivered": "x", "gap": "large", "approved": "Approved: Lee"},
+    ]
     answer = json.dumps(
-        [
-            {"clause": "a 3D scene", "delivered": "x", "gap": "large", "approved": real},
-            {"clause": "opened", "delivered": "x", "gap": "large", "approved": "Approved: Lee"},
-        ]
+        [{"requirement": "R1", "clauses": clauses}, {"requirement": "R2", "clauses": []}]
     )
     (tmp_path / "answer.txt").write_text(f"CLAUSES: {answer}\n")
     (bin_dir / "claude").write_text(f"#!/usr/bin/env bash\ncat '{tmp_path / 'answer.txt'}'\n")
