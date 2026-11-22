@@ -112,7 +112,7 @@ A holder can hold part of a rule only, such as the plan gate holding "no code be
 | `build.merge-never-rebase` | Merge, never rebase, on the build branch | `hook: .sdlc/hooks/production-gate.sh` |
 | `build.failing-test-locked` | A bug's failing test is committed first and its files lock | `hook: .sdlc/hooks/protect-paths.sh`, `check: .sdlc/scripts/tests-locked.sh` |
 | `build.flaky-tests` | Fix flaky tests at the cause; never skip or retry past them without the engineer | nothing |
-| `build.coverage` | Every build runs `make coverage`; a large build adds it | nothing |
+| `build.coverage` | Coverage runs before every merge: `make local-check` runs it, or the PR's CI where the `Local check:` line leaves it out; a large build adds it | `test: tests/scripts/test_local_check.py::test_a_line_runs_only_what_it_names_and_leaves_coverage_to_ci` |
 | `build.never-lower-threshold` | Never lower a coverage threshold or add an exclusion to get green | nothing |
 | `build.one-unit` | Stay inside the current unit of work | nothing |
 | `build.plan-approved` | Build only from a plan merged on main | `hook: .sdlc/hooks/plan-gate.sh`, `check: .sdlc/scripts/check-plan-first.sh` |

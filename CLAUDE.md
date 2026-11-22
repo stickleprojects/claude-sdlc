@@ -15,6 +15,7 @@ make check       # lint + test + validate; the one command that must exit 0 befo
                  # release do)
 make fmt         # format; FILES="a.py b.py" limits it to those files
 make test        # uv run pytest -q
+make local-check # the local check before a PR: check, then coverage if defined, or CLAUDE.md's `Local check:` line (#253)
 uv run pytest tests/artifacts/test_chain.py::test_next_slug_increments   # a single test
 make new-change NAME=<kebab-name>   # start a change
 make status      # stage each change has reached

@@ -13,7 +13,7 @@ SDLC ?= PYTHONPATH=.sdlc/src python3 -m sdlc.cli
 # Including this file mustn't change the project's default target.
 _sdlc_default_goal := $(.DEFAULT_GOAL)
 
-.PHONY: new-change status next clauses exec-bits evals sync-sdlc
+.PHONY: new-change status next clauses exec-bits evals sync-sdlc local-check
 
 # Start a change: make new-change NAME=add-login (TYPE=bug for a bug: bug.md).
 new-change:
@@ -35,6 +35,12 @@ next:
 clauses:
 	@test -n "$(CHANGE)" || { echo "usage: make clauses CHANGE=0002 [REF=origin/main] [STAGE=plan]"; exit 2; }
 	@$(SDLC) clauses $(CHANGE) $(if $(REF),--ref $(REF)) $(if $(STAGE),--stage $(STAGE))
+
+# The local check before a push or a PR (#253): the targets the repo's `Local check:` line in
+# CLAUDE.md names, or `check` then `coverage` (if defined). The build skill, the build template and
+# the verifier run it. Its last line says whether coverage ran or is left to the PR's CI.
+local-check:
+	@bash .sdlc/scripts/local-check.sh
 
 # Committed scripts must be executable; a non-executable hook is skipped silently.
 exec-bits:

@@ -35,7 +35,7 @@ Collect every decision first. Then make the changes. <!-- rule: findings.decide-
 
 ## 3. Apply, push and reply
 
-1. Make the changes. For a clause or design finding, fix the whole requirement it names and the plan text that depends on it, not only the clause or line quoted (#172). Run `make check`; it must exit 0. <!-- rule: findings.fix-whole-requirement -->
+1. Make the changes. For a clause or design finding, fix the whole requirement it names and the plan text that depends on it, not only the clause or line quoted (#172). Run `make local-check`; it must exit 0. <!-- rule: findings.fix-whole-requirement -->
 2. Follow [Before you push](#before-you-push), then commit the files you changed by explicit path and push.
 3. Reply on every thread you handled, then resolve it ([Reply and resolve](#reply-and-resolve)).
 4. Tell the person what changed, which threads are resolved, any you couldn't resolve, and that a fresh review is on its way.

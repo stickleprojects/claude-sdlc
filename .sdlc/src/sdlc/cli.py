@@ -164,6 +164,38 @@ def check_commits(root: Path) -> list[str]:
     return problems
 
 
+LOCAL_CHECK_LINE = re.compile(r"^(- )?Local check:", re.MULTILINE)
+# The script parses the line and asks make (#253): the repo's synced copy, or the one beside this
+# package when it runs from the framework's source tree.
+LOCAL_CHECK_SCRIPT = Path(".sdlc/scripts/local-check.sh")
+
+
+def check_local_check(root: Path) -> list[Problem]:
+    """The CLAUDE.md `Local check:` line names make targets the Makefile has (#253). The script
+    is the one parser; it only runs when the line is there, so other repos never call make."""
+    claude_md = root / "CLAUDE.md"
+    if not claude_md.is_file() or not LOCAL_CHECK_LINE.search(
+        claude_md.read_text(encoding="utf-8")
+    ):
+        return []
+    script = root / LOCAL_CHECK_SCRIPT
+    if not script.is_file():
+        script = Path(__file__).resolve().parents[2] / "scripts" / "local-check.sh"
+    result = subprocess.run(  # noqa: S603 - list args, no shell (#135)
+        ["bash", str(script), "--validate"],  # noqa: S607 - bash from PATH
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
+        env={**os.environ, "SDLC_CLAUDE_MD": str(claude_md)},
+    )
+    if result.returncode == 0:
+        return []
+    message = result.stderr.strip().removeprefix("CLAUDE.md: ")
+    message = message or "the Local check line can't be read"
+    return [Problem(claude_md, message)]
+
+
 UPGRADE_PENDING = Path(".sdlc/upgrade-pending.md")
 
 
@@ -196,6 +228,7 @@ def cmd_check(root: Path) -> int:
     problems += check_commits(root)
     problems += check_roadmap(root)
     problems += check_upgrade(root)
+    problems += check_local_check(root)
     problems += [Problem(path, message) for path, message in check_overrides(root)]
     for problem in problems:
         print(problem, file=sys.stderr)

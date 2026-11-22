@@ -8,7 +8,7 @@ before starting its own milestone. -->
 - **Change:** `changes/<slug>/` ([spec](spec.md), [plan](plan.md))
 - **Branch:** `build/<slug>`
 - **Built against:** `origin/main` at `<sha>` (<date>)
-- **Coverage:** `make coverage`; <suite>: <thresholds, e.g. 90% lines, 80% branches>, one per suite
+- **Coverage:** `make coverage`, run by `make local-check` <!-- or "in CI" when the Local check line leaves it out -->; <suite>: <thresholds, e.g. 90% lines, 80% branches>, one per suite
 - **First demo:** after M<n>: <what a person can first see or click> <!-- or "none: backend only", with the reason -->
 - **Locked tests:** none <!-- bug fixes: `<sha>`: <test files>, from the failing-test commit -->
 - **Status:** draft, awaiting approval <!-- draft, awaiting approval | in progress | PR open (#N). Whether it merged comes from the PR, not from here. -->
@@ -35,8 +35,7 @@ None.
 - **Acceptance criteria:** <e.g. A5, A20 (partial: lint only)>
 - **Demo:** <what a person can see or click after this milestone, or "nothing, backend only">
 - **Done when:**
-  - `make check`
-  - `make coverage` <!-- from the milestone that adds it onwards -->
+  - `make local-check` <!-- the repo's local check: check and coverage, or its Local check line -->
   - `<command from the plan's Verification row>`
 - **Notes:** <what's done, what's next; kept current during the session>
 
@@ -50,7 +49,7 @@ None.
 - **Done when:**
 - **Notes:**
 
-<!-- The last milestone always ends with: make check, make coverage, the sdlc-verifier subagent, and the PR. -->
+<!-- The last milestone always ends with: make local-check, the sdlc-verifier subagent, and the PR. -->
 
 ## Deviations from the plan
 

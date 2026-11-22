@@ -51,7 +51,7 @@ Ask whenever something is ambiguous, but **one decision at a time**. Use AskUser
   4. **Show it's fixed.** The same repeated run passes every time.
 
   **Try at least three different approaches before giving up.** If it's still flaky after that, record it under **Flaky tests** in build.md (or in the PR body for a small build): the test, how it fails, how often, each approach and its result, and `Engineer decides: yes`. Never skip a test, quarantine it or wrap it in retries without the engineer's agreement.
-- **Coverage is part of every build, in every language.** Every build runs `make coverage`, which runs each test suite with coverage and fails when a suite is below its threshold. The thresholds live in the stack's own config (for example `pyproject.toml`, `package.json`). <!-- rule: build.coverage -->
+- **Coverage runs before every merge, in every language.** `make coverage` runs each test suite with coverage and fails when a suite is below its threshold. The thresholds live in the stack's own config (for example `pyproject.toml`, `package.json`). `make local-check` runs it unless the repo's `Local check:` line leaves it to the PR's CI; then report what local-check's last line says (`coverage: in CI`). <!-- rule: build.coverage -->
   - **No `make coverage` yet:** a large build's first milestone adds it for every language in the stack (the tool as a pinned dev dependency, the thresholds, coverage output in `.gitignore`). Default thresholds: 90% lines and 80% branches per suite. A small build doesn't add it; it says in the PR that the repo has no coverage target.
   - **Below a threshold: write the missing tests.** Never lower a threshold or add an exclusion to get green. Generated code, test helpers and the tests themselves may be excluded; record each exclusion as a deviation with `Engineer decides: yes`. <!-- rule: build.never-lower-threshold -->
 - **Stay inside the current unit.** Don't start the next milestone, even with time left. <!-- rule: build.one-unit -->
@@ -102,7 +102,7 @@ Size it by how much work there is and how well it's understood, not by how many 
 ### 3a. Small: one session, one PR
 
 1. Build the plan's steps in order, committing and pushing after each (`feat(<slug>): <what>`; the bug-fix test first, as above).
-2. Run `make check`, `make coverage` (if the repo has it) and every command in the plan's Verification section. All must pass. For a bug fix, also the `git diff --exit-code` on the test.
+2. Run `make local-check` and every command in the plan's Verification section. All must pass. For a bug fix, also the `git diff --exit-code` on the test.
 3. Finish as in section 6: the verifier, then the PR. The PR body says it was built in one session without a build plan.
 4. Report: what was built, the test counts and coverage, any deviation, and the PR link.
 
@@ -117,9 +117,9 @@ If it turns out bigger than it looked, stop at the end of a finished, passing st
    - a one-line **Goal**;
    - the plan steps it covers;
    - the acceptance criteria whose Verification rows it makes pass, marking partial ones;
-   - **Done when:** `make check`, then `make coverage`, plus the exact commands from those Verification rows (and the locked-test diff for a bug fix). `make check` runs every test so far, so a milestone that breaks earlier work fails its own check.
-4. **Set up coverage.** If there's no `make coverage` target, the first milestone adds it, and `make coverage` joins each Done when from then on. Record the thresholds in the **Coverage** line.
-5. **Check criteria coverage.** Every acceptance criterion in spec.md must be fully passed by some milestone. Then **check each milestone's Goal and Demo against the requirements its criteria cite** (`make clauses CHANGE=<slug>` lists each requirement with its criteria): a Goal or Demo that delivers less than a requirement's wording ("shows a diagram" for "generates a scene") narrows the requirement. Raise each one as a question now (deliver the whole requirement, or record a descope for the engineer to approve), not at the end (#106). The last milestone always includes `make check`, `make coverage`, the `sdlc-verifier` subagent and the PR. <!-- rule: build.milestone-goals-match-requirements -->
+   - **Done when:** `make local-check`, plus the exact commands from those Verification rows (and the locked-test diff for a bug fix). It runs every test so far (unless a `Local check:` line names a lighter check), so a milestone that breaks earlier work fails its own check.
+4. **Set up coverage.** If there's no `make coverage` target, the first milestone adds it, and `make local-check` runs it from then on. Record the thresholds, and where coverage runs, in the **Coverage** line.
+5. **Check criteria coverage.** Every acceptance criterion in spec.md must be fully passed by some milestone. Then **check each milestone's Goal and Demo against the requirements its criteria cite** (`make clauses CHANGE=<slug>` lists each requirement with its criteria): a Goal or Demo that delivers less than a requirement's wording ("shows a diagram" for "generates a scene") narrows the requirement. Raise each one as a question now (deliver the whole requirement, or record a descope for the engineer to approve), not at the end (#106). The last milestone always includes `make local-check`, the `sdlc-verifier` subagent and the PR. <!-- rule: build.milestone-goals-match-requirements -->
 6. **Collect everything the person must decide** in **Questions before approval**, each with its options and your recommendation:
    - a plan gap, or a plan that's contradictory or not buildable as written (options: pause for a plan PR, or record a deviation);
    - any reading you had to take of an ambiguous plan;
@@ -152,13 +152,13 @@ A bug whose `bug.md` and short `spec.md` are committed on `build/<slug>`, with n
 ## 5. build.md is approved: check the previous session, then do the next milestone
 
 1. **Check the finished milestones.** For each milestone marked `done`, its recorded commit must be on `origin/build/<slug>` and an ancestor of `HEAD`.
-2. **Re-run the checks.** Run `make setup` if dependencies are missing. Then run `make check`, `make coverage` and the **Done when** commands of every `done` milestone.
-   - **A build.md written before these rules** (no **Questions before approval**, **First demo**, **Demo** lines or **Coverage** line, or no `make coverage` in Done when): bring it up to date before new work, from `.sdlc/templates/build.md`. Add `Approved:` with the person who approved the original breakdown if build.md or the git log says who; otherwise ask. Commit as `chore(<slug>): update the build plan to the template`.
+2. **Re-run the checks.** Run `make setup` if dependencies are missing. Then run `make local-check` and the **Done when** commands of every `done` milestone.
+   - **A build.md written before these rules** (no **Questions before approval**, **First demo**, **Demo** lines or **Coverage** line, or a Done when without `make local-check`): bring it up to date before new work, from `.sdlc/templates/build.md`. Add `Approved:` with the person who approved the original breakdown if build.md or the git log says who; otherwise ask. Commit as `chore(<slug>): update the build plan to the template`.
 3. **If anything fails, or a recorded commit is missing:** mark that milestone `reopened` with the reason. This session's work is to fix it: fix, re-run the checks, commit `feat(<slug>): M<n> fix <what>`, update build.md and push. Don't start new work until everything already done is green again. <!-- rule: build.repair-first -->
 4. **Flaky tests that earlier sessions noted** and nobody fixed or handed over are repair work for this session, before new work.
 5. **Pick the milestone:** one marked `in progress` (continue from its notes and commits), otherwise the first `todo`. Say which, and what it covers, before starting.
 6. **Build it, step by step, from the plan.** Commit and push after each step. Keep the milestone's notes current. Record each deviation under **Deviations** with its reason and whether the engineer needs to decide.
-7. **Finish the milestone.** Run its **Done when** commands; all must pass. Mark it `done` with the last code commit's short sha, the date, the test count and the coverage per suite. Add a line to the session log. Commit build.md, push.
+7. **Finish the milestone.** Run its **Done when** commands; all must pass. Mark it `done` with the last code commit's short sha, the date, the test count and the coverage per suite (or `coverage: in CI`). Add a line to the session log. Commit build.md, push.
 8. **Report in a few lines:** what was built, what a person can now see (its Demo), the test counts and coverage, any deviations or questions, the next milestone, and "Start a new conversation, then run `/sdlc-build`" (a single session only; a worker returns its report instead).
 
 ## 6. Finishing: verify and open the PR
@@ -166,12 +166,12 @@ A bug whose `bug.md` and short `spec.md` are committed on `build/<slug>`, with n
 For a small build after its steps, and for a large build as part of its last milestone:
 
 1. **If the repo has a roadmap** (`docs/roadmap.md`), mark the change's row `✅ done` in this PR. If that finishes its milestone (every row done or withdrawn) and every exit criterion is met, ask the person whether to mark the milestone ``· ✅ `done` `` too, ticking each criterion with how it was met; don't tick one on your own judgement. `make check` fails while the row disagrees with the build. <!-- rule: build.roadmap-row -->
-2. **Run `make check` and `make coverage`.** Both must exit 0.
+2. **Run `make local-check`.** It must exit 0.
 3. **Run the `sdlc-verifier` subagent** on `changes/<slug>`. `VERDICT: PENDING` (only human checks left) is a clean result: the PR lists them. Fix any FAIL that's within the plan. If a fix would change the plan or the spec, stop and ask. <!-- rule: build.verifier -->
    - **Descope: needs approval** (a large gap between a requirement and what was built, with no approval): build what the requirement says if the plan covers it. If it doesn't, don't stop for a sign-off. Open the PR with each such gap first in its body under **Descope: needs approval**, quoting the requirement and what was delivered instead; the review raises it for the product owner. A worker in `/sdlc-build all` returns it in its report rather than opening the PR itself.
 4. **Open the PR** with `gh api` (see the rules above), then run `.sdlc/scripts/auto-merge.sh <N>` on it (the `sdlc-agent-identity` skill).
    - Title: `feat(<slug>): <summary>` (a change with `bug.md`: `fix(<slug>): <summary>`; a tooling change: as `skills/tooling.md` says).
-   - Body, in this order, so the reviewer sees what needs a decision first: **Descope: needs approval** with each of the verifier's unapproved large gaps, or "None"; the descopes, each quoted with who approved it; `## Descopes decided in session`, if any; the deviations; a **To check by hand** list with each of the plan's human checks (`Human check:` entries), for the owner to try before merging, or "None"; then what was built; the verifier's per-criterion results; the coverage per suite against its threshold. End it with the attribution line the session asks for. <!-- rule: build.pr-body-order -->
+   - Body, in this order, so the reviewer sees what needs a decision first: **Descope: needs approval** with each of the verifier's unapproved large gaps, or "None"; the descopes, each quoted with who approved it; `## Descopes decided in session`, if any; the deviations; a **To check by hand** list with each of the plan's human checks (`Human check:` entries), for the owner to try before merging, or "None"; then what was built; the verifier's per-criterion results; the coverage per suite against its threshold, or `coverage: in CI`. End it with the attribution line the session asks for. <!-- rule: build.pr-body-order -->
    - Don't add the `review` label. The review already runs when the PR opens.
 5. **Large build:** record the PR in build.md (`Status: PR open (#N)`), commit and push.
 

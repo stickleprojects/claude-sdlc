@@ -1794,6 +1794,24 @@ def test_the_pr_check_target_reaches_the_consumer(consumer):
     assert missing.returncode == 1 and "has no 'check-pr' target" in missing.stderr
 
 
+def test_the_local_check_reaches_the_consumer(consumer):
+    """#253: the script syncs executable, `make local-check` comes from the synced sdlc.mk, and
+    `make validate` holds the consumer's `Local check:` line."""
+    clean = {"MAKEFLAGS": "", "MAKELEVEL": "", "FULL": ""}
+    script = ".sdlc/scripts/local-check.sh"
+    assert git(consumer, "ls-files", "-s", script).startswith("100755")
+    assert run([script, "--targets"], cwd=consumer, env=clean).stdout == "check\n"
+    claude_md = consumer / "CLAUDE.md"
+    claude_md.write_text("# Consumer\n\nLocal check: lint validate\n")
+    ran = run(["make", "-s", "local-check"], cwd=consumer, env=clean)
+    assert ran.returncode == 0, ran.stdout + ran.stderr
+    assert "local-check: make lint\nlocal-check: make validate" in ran.stdout
+    assert ran.stdout.strip().endswith("coverage: none (the Makefile has no coverage target)")
+    claude_md.write_text(claude_md.read_text().replace("lint validate", "lint check-pr"))
+    bad = run(["make", "validate"], cwd=consumer, env=clean)
+    assert bad.returncode != 0 and "names 'check-pr', but the Makefile has no" in bad.stderr
+
+
 def test_the_main_docs_only_check_reaches_the_consumer(consumer):
     """#240: the script syncs executable and judges a push in the consumer's own history."""
     script = ".sdlc/scripts/main-docs-only.sh"
