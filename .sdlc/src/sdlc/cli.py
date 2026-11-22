@@ -23,7 +23,7 @@ from sdlc.artifacts import (
     placeholders,
     stage,
 )
-from sdlc.clauses import ClauseError, change_blocks
+from sdlc.clauses import STAGE_FIELDS, ClauseError, change_blocks
 from sdlc.resolve import OverrideError, check_overrides, resolve
 from sdlc.roadmap import check_roadmap
 from sdlc.routing import steps
@@ -231,13 +231,13 @@ def find_change(root: Path, name: str) -> Path | None:
     return found[0] if len(found) == 1 else None
 
 
-def cmd_clauses(root: Path, name: str, ref: str | None) -> int:
+def cmd_clauses(root: Path, name: str, ref: str | None, stage: str | None = None) -> int:
     change_dir = find_change(root, name)
     if change_dir is None:
         print(f"no change matching {name!r}", file=sys.stderr)
         return 1
     try:
-        found, lost = change_blocks(root, change_dir, ref)
+        found, lost = change_blocks(root, change_dir, ref, stage)
     except ClauseError as e:
         print(f"{change_dir}: {e}", file=sys.stderr)
         return 1
@@ -277,6 +277,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     cl.add_argument("change", help="a change: 0002, 0002-name, or a folder path")
     cl.add_argument("--ref", help="only the requirements that are new or differ from this git ref")
+    cl.add_argument(
+        "--stage",
+        choices=sorted(STAGE_FIELDS),
+        help="with --ref, count only what this stage's check reads as a difference "
+        "(default: everything)",
+    )
 
     kd = sub.add_parser(
         "kind",
@@ -309,7 +315,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "check":
         return cmd_check(args.root)
     if args.command == "clauses":
-        return cmd_clauses(args.root, args.change, args.ref)
+        return cmd_clauses(args.root, args.change, args.ref, args.stage)
     if args.command == "next":
         return cmd_next(args.root, args.ref, args.slug)
     return cmd_status(args.root)
