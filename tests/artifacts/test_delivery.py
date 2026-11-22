@@ -57,6 +57,37 @@ def test_clauses_with_a_ref_notices_a_changed_build_plan(tmp_path: Path, capsys)
     assert [b["id"] for b in json.loads(capsys.readouterr().out)["requirements"]] == ["R1", "R2"]
 
 
+def test_clauses_with_a_ref_compares_only_what_the_stage_reads(tmp_path: Path, capsys) -> None:
+    """#257: spellbound3d PR #263 added build.md and edited a plan line that cites nothing. The
+    plan-stage check then re-checked every requirement, when nothing it reads had changed."""
+    import json
+
+    root = clause_repo(tmp_path)
+    (root / "changes/0001-search/build.md").write_text(CLAUSE_BUILD)
+    plan = root / "changes/0001-search/plan.md"
+    plan.write_text(plan.read_text() + "\n`make preflight` runs before the PR.\n")
+
+    def ids(*args: str) -> list[str]:
+        assert main(["--root", str(root), "clauses", "0001", "--ref", "HEAD", *args]) == 0
+        return [b["id"] for b in json.loads(capsys.readouterr().out)["requirements"]]
+
+    assert ids("--stage", "spec") == []
+    assert ids("--stage", "plan") == []
+    # Stage build reads the build plan, so the requirements its milestones cite are checked.
+    assert ids("--stage", "build") == ["R1", "R2", "R4"]
+    assert ids() == ids("--stage", "build"), "no stage compares everything, as before"
+    # A changed plan line that cites R3's criterion is a plan-stage change, not a spec one.
+    plan.write_text(plan.read_text() + "| AC3 | `make test` | ordered |\n")
+    assert ids("--stage", "spec") == []
+    assert ids("--stage", "plan") == ["R1", "R2", "R3"]
+
+
+def test_clause_check_passes_its_stage_to_the_narrowing() -> None:
+    script = (REPO / ".sdlc/scripts/clause-check.sh").read_text()
+    assert 'STAGE="$stage"' in script
+    assert "$(if $(STAGE),--stage $(STAGE))" in (REPO / ".sdlc/sdlc.mk").read_text()
+
+
 def test_delivery_gaps_reach_every_stage_and_escalate_only_when_unapproved() -> None:
     for path in (
         ".sdlc/agents/verifier.md",

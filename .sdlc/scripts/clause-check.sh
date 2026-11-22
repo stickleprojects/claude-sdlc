@@ -6,7 +6,8 @@
 # Usage: .sdlc/scripts/clause-check.sh --stage spec|plan|build <change> [--ref REF]
 #        .sdlc/scripts/clause-check.sh --changed-since REF
 #   <change>  0002, 0002-name or a folder path
-#   --ref     check only the requirements that are new or differ from REF (an amendment PR)
+#   --ref     check only the requirements that are new or differ from REF (an amendment PR),
+#             counting only what the stage reads: a new build.md doesn't widen stage plan (#257)
 #   --changed-since  the Claude review's mode: every change whose spec.md or plan.md differs
 #             where the branch left REF, at stage plan when its plan.md changed and spec otherwise, each with
 #             --ref REF. Entries carry a "change" field. A change whose spec can't be split is
@@ -79,7 +80,8 @@ change_dir() {
 check() {
   local stage="$1" change="$2" ref="$3" blocks count results block rid text base prompt
   local answer line found entries prompt_file model turns tools files="[]" shape docs=""
-  blocks="$(make -s -C "$root" clauses CHANGE="$change" ${ref:+REF="$ref"})" || return 1
+  # STAGE: with a ref, only what this stage reads counts as changed (#257).
+  blocks="$(make -s -C "$root" clauses CHANGE="$change" ${ref:+REF="$ref"} STAGE="$stage")" || return 1
   if [[ "$stage" == build ]]; then
     prompt_file=delivery-check.md model="${DELIVERY_MODEL:-sonnet}"
     turns="${DELIVERY_MAX_TURNS:-15}" tools="Read,Grep,Glob" files="$(changed_files)"

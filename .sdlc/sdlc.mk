@@ -30,10 +30,11 @@ next:
 	@$(SDLC) next $(CHANGE) $(if $(REF),--ref $(REF))
 
 # One block per requirement (its text, the criteria and plan lines citing it), read by
-# .sdlc/scripts/clause-check.sh. CHANGE=0002 is required; REF=origin/main keeps only what changed.
+# .sdlc/scripts/clause-check.sh. CHANGE=0002 is required; REF=origin/main keeps only what changed,
+# and STAGE=spec|plan|build counts only what that stage's check reads (#257).
 clauses:
-	@test -n "$(CHANGE)" || { echo "usage: make clauses CHANGE=0002 [REF=origin/main]"; exit 2; }
-	@$(SDLC) clauses $(CHANGE) $(if $(REF),--ref $(REF))
+	@test -n "$(CHANGE)" || { echo "usage: make clauses CHANGE=0002 [REF=origin/main] [STAGE=plan]"; exit 2; }
+	@$(SDLC) clauses $(CHANGE) $(if $(REF),--ref $(REF)) $(if $(STAGE),--stage $(STAGE))
 
 # Committed scripts must be executable; a non-executable hook is skipped silently.
 exec-bits:

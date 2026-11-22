@@ -193,12 +193,22 @@ def _git_show(root: Path, ref: str, path: Path) -> str | None:
     return result.stdout if result.returncode == 0 else None
 
 
+# What each stage's check reads from a block: only a change to these makes it check the block
+# again (#257). No stage compares the whole block.
+STAGE_FIELDS = {
+    "spec": ("id", "text", "criteria"),
+    "plan": ("id", "text", "criteria", "plan"),
+    "build": ("id", "text", "criteria", "plan", "build"),
+}
+
+
 def change_blocks(
-    root: Path, change_dir: Path, ref: str | None = None
+    root: Path, change_dir: Path, ref: str | None = None, stage: str | None = None
 ) -> tuple[list[dict], list[str]]:
     """The change's blocks as plain dicts, and its unreadable requirement lines. With `ref`, only
-    the blocks that are new or differ from the ones at that ref (the requirement's text, its
-    criteria or its plan lines), so an amendment PR checks only what it touched. Likewise only the
+    the blocks that are new or differ from the ones at that ref, so an amendment PR checks only
+    what it touched. With `stage` too, only what that stage reads counts as a difference (a new
+    build.md doesn't make the plan check read every requirement again, #257). Likewise only the
     unreadable lines that are new since the ref."""
     spec_path, plan_path = change_dir / "spec.md", change_dir / "plan.md"
     build_path = change_dir / BUILD
@@ -225,4 +235,9 @@ def change_blocks(
         old = {b.id: asdict(b) for b in old_blocks}
     except ClauseError:
         return current, lost
-    return [b for b in current if old.get(b["id"]) != b], lost
+    fields = STAGE_FIELDS.get(stage or "build", STAGE_FIELDS["build"])
+
+    def seen(b: dict) -> dict:
+        return {k: b.get(k) for k in fields}
+
+    return [b for b in current if b["id"] not in old or seen(old[b["id"]]) != seen(b)], lost

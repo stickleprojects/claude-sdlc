@@ -136,12 +136,14 @@ def test_review_skips_the_clause_check_quietly_without_a_clauses_target():
 
 
 def test_release_notes_give_the_clauses_recipe_the_makefile_uses():
-    # The upgrade step tells consumers' Claude what to add; keep it in step with ours.
+    # v0.9.0's upgrade step told consumers' Claude to copy the recipe into their Makefile. Since
+    # #133 the target arrives with the sync in .sdlc/sdlc.mk, so the notes stay as released and
+    # only the old recipe's call must still work: STAGE (#257) is optional.
     notes = (REPO / "docs/release-notes/v0.9.0.md").read_text()
-    makefile = (REPO / ".sdlc/sdlc.mk").read_text()  # where the target lives since #133
+    makefile = (REPO / ".sdlc/sdlc.mk").read_text()
     recipe = makefile[makefile.index("\nclauses:\n") + 1 :].split("\n\n", 1)[0]
-    in_notes = {line.lstrip(" ") for line in notes.splitlines()}  # indented inside a list
-    assert all(line in in_notes for line in recipe.splitlines()), recipe
+    assert "$(if $(STAGE),--stage $(STAGE))" in recipe, "STAGE stays optional"
+    assert "$(SDLC) clauses $(CHANGE) $(if $(REF),--ref $(REF))" in notes
     assert "## Upgrade steps" in notes and "## Optional: the `clauses` make target" in notes
     skill = (REPO / ".sdlc/skills/sdlc/SKILL.md").read_text()
     assert "`Upgrade steps`" in skill
