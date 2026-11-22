@@ -436,6 +436,54 @@ def test_plan_gate_reads_the_change_from_the_worktree_or_sdlc_change(plan_repo, 
     assert named.returncode == 2
 
 
+def gate_from(project, path, env=None):
+    """The plan gate as a session whose project dir is `project` sees an edit to `path`."""
+    payload = {"tool_name": "Write", "tool_input": {"file_path": str(path)}}
+    return hook(
+        "plan-gate.sh",
+        payload,
+        env={"SDLC_PLAN_GATE": "", "SDLC_CHANGE": "", **(env or {})},
+        cwd=project,
+    )
+
+
+@pytest.mark.parametrize("where", ["nested", "sibling"])
+def test_plan_gate_reads_the_branch_of_the_worktree_the_file_is_in(plan_repo, tmp_path, where):
+    """#260: the session's project dir is the main checkout, on main, and it edits files in a
+    worktree on build/0003-x, nested in the checkout (.claude/worktrees/…) or beside it."""
+    from conftest import commit, git
+
+    wt = plan_repo / ".claude/worktrees/b" if where == "nested" else tmp_path / "beside"
+    git(plan_repo, "worktree", "add", "-q", "-b", "build/0003-x", str(wt))
+    # changes/ is always editable, whatever the project dir is on (a new folder included).
+    assert gate_from(plan_repo, wt / "changes/0003-x/build.md").returncode == 0
+    assert gate_from(plan_repo, wt / "changes/0003-x/new/notes.md").returncode == 0
+    # Code waits for the worktree's own plan, not main's rule.
+    blocked = gate_from(plan_repo, wt / "src/x.py")
+    assert blocked.returncode == 2 and "0003-x has no committed plan.md" in blocked.stderr
+    assert "Blocked edit to src/x.py" in blocked.stderr, "the path is relative to the worktree"
+    commit(wt, "plan(0003-x): plan", {"changes/0003-x/plan.md": "# plan\n"})
+    assert gate_from(plan_repo, wt / "src/x.py").returncode == 0
+    assert gate_from(plan_repo, wt / "src/new/y.py").returncode == 0, "a new folder too"
+    # The main checkout is still on main.
+    assert gate_from(plan_repo, plan_repo / "src/x.py").returncode == 2
+
+
+def test_plan_gate_resolves_symlinks_and_dots_in_the_path(plan_repo, tmp_path):
+    link = tmp_path / "link"
+    link.symlink_to(plan_repo)
+    assert gate_from(plan_repo, link / "src/x.py").returncode == 2, "still main's code"
+    assert gate_from(plan_repo, plan_repo / "changes/../src/x.py").returncode == 2
+    assert gate_from(plan_repo, link / "changes/0003-x/plan.md").returncode == 0
+
+
+def test_plan_gate_leaves_a_file_in_another_repo_alone(plan_repo, tmp_path):
+    from conftest import init_repo
+
+    other = init_repo(tmp_path / "notes")  # on main, but not this project
+    assert gate_from(plan_repo, other / "src/x.py").returncode == 0
+
+
 def test_plan_gate_before_the_spec_points_to_the_next_step(plan_repo):
     from conftest import commit, git
 
