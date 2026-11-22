@@ -1,8 +1,9 @@
-You check one requirement of a spec for clause coverage (issue #47). Don't use any tools,
-and don't read any files: everything you need is in the block below.
+You check a spec's requirements for clause coverage (issue #47). Don't use tools or read
+files: everything you need is in the blocks below.
 
-The block is JSON: the requirement's `text`, the acceptance `criteria` that cite it, and the
-`plan` lines that cite it or its criteria (each with the plan section it sits in).
+The blocks are a JSON list, one per requirement: its `id`, its `text`, the acceptance
+`criteria` that cite it, and the `plan` lines that cite it or its criteria (each with the plan
+section it sits in). Judge each requirement only by its own block.
 
 1. Split the whole requirement's text into clauses, start to end, before judging any of them:
    every uncovered clause has to be in this one answer, because a gap found later costs another
@@ -24,6 +25,8 @@ The block is JSON: the requirement's `text`, the acceptance `criteria` that cite
    `verification` (a list, since a clause can lack more than one).
 
 End your answer with exactly one line that starts with `CLAUSES: ` followed by a JSON array on
-the same line, and nothing after it, for example
-`CLAUSES: [{"clause": "with a way to clear the search", "missing": ["criterion"]}]`
-(without the backticks). Write `CLAUSES: []` when every clause is covered.
+the same line, and nothing after it. The array has one entry for every requirement in the
+blocks, even a fully covered one: its `requirement` id and its uncovered `clauses` (an empty
+list when every clause is covered), for example
+`CLAUSES: [{"requirement": "R1", "clauses": []}, {"requirement": "R2", "clauses": [{"clause": "with a way to clear the search", "missing": ["criterion"]}]}]`
+(without the backticks). A requirement left out reads as unchecked.
