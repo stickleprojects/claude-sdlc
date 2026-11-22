@@ -24,6 +24,7 @@ there would let a project, or an agent working in it, switch a guardrail off.
 from __future__ import annotations
 
 import re
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -183,10 +184,44 @@ def local_files(root: Path) -> list[str]:
     return sorted(p.relative_to(local).as_posix() for p in local.rglob("*") if p.is_file())
 
 
+def ignored_by(root: Path, rels: list[str]) -> dict[str, str]:
+    """The files under .sdlc-local/ that git ignores, each with the rule that does (#254). A root
+    `build/` rule hid .sdlc-local/skills/build/, so the override was never committed and nothing
+    said so. Tracked files aren't ignored, whatever the rules say. Outside a git repo: none."""
+    if not rels:
+        return {}
+    result = subprocess.run(  # noqa: S603 - list args, no shell (#135)
+        ["git", "check-ignore", "-v", "--stdin"],  # noqa: S607 - git from PATH
+        cwd=root,
+        input="".join(f"{LOCAL / rel}\n" for rel in rels),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    found = {}
+    for line in result.stdout.splitlines():
+        rule, _, path = line.partition("\t")
+        source, _, pattern = rule.rpartition(":")
+        if path and not pattern.startswith("!"):  # a negation that matched keeps the file
+            found[Path(path).relative_to(LOCAL).as_posix()] = f"{source}: {pattern}"
+    return found
+
+
 def check_overrides(root: Path) -> list[tuple[Path, str]]:
-    """Each override that doesn't resolve, as (path, problem), for `sdlc check`."""
+    """Each override that doesn't resolve, or that git ignores, as (path, problem), for
+    `sdlc check`."""
     problems = []
-    for rel in local_files(root):
+    files = local_files(root)
+    for rel, rule in ignored_by(root, files).items():
+        folder = (LOCAL / rel).parent.as_posix()
+        problems.append(
+            (
+                root / LOCAL / rel,
+                f"git ignores it ({rule}), so it is never committed and the override never "
+                f"reaches anyone else: add `!/{folder}/` to .gitignore after that rule",
+            )
+        )
+    for rel in files:
         if rel == "local.mk":
             continue  # make settings, not an override
         if rel.startswith(LOCAL_HOOKS):

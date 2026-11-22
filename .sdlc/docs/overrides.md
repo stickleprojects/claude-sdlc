@@ -74,7 +74,9 @@ read framework files through it.
 ## When the framework changes
 
 - **`make validate`** resolves every override, and fails when one names a block the framework's
-  file no longer has.
+  file no longer has. It also fails when git ignores an override, naming the rule (#254): a root
+  `build/` rule, for one, hides `.sdlc-local/skills/build/`, so the override would never be
+  committed. Add `!/.sdlc-local/skills/build/` to `.gitignore` after that rule.
 - **The sync** lists your overrides of files the update changed, so you can re-read them against
   the new version.
 

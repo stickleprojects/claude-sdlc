@@ -203,3 +203,38 @@ def test_a_replacement_keeps_the_gap_before_the_next_block_and_empty_removes_it(
     assert "### Detail\nTight.\n\n## Outcome" in out
     gone = extend(BASE, "<!-- extends -->\n<!-- replace: Detail -->\n<!-- /replace -->\n")
     assert "Detail" not in gone and "Base problem.\n\n## Outcome" in gone
+
+
+def test_an_override_git_ignores_fails_validate_naming_the_rule(tmp_path, capsys):
+    """#254: a root `build/` rule hid .sdlc-local/skills/build/, so git never tracked the override
+    and nothing said so. `sdlc check` now names the rule; a tracked or negated one is fine."""
+    from conftest import commit, git, init_repo
+
+    root = init_repo(tmp_path / "r")
+    (root / ".sdlc/skills/build").mkdir(parents=True)
+    (root / ".sdlc/skills/build/SKILL.md").write_text("# Build\n")
+    commit(root, "chore: framework", {".gitignore": "node_modules/\nbuild/\n"})
+    override = root / ".sdlc-local/skills/build/SKILL.md"
+    override.parent.mkdir(parents=True)
+    override.write_text("# Build, our way\n")
+    [(path, problem)] = check_overrides(root)
+    assert path == override
+    assert "git ignores it (.gitignore:2: build/)" in problem
+    assert "!/.sdlc-local/skills/build/" in problem, "says how to keep it"
+    assert main(["--root", str(root), "check"]) == 1
+    assert "git ignores it" in capsys.readouterr().err
+    # The negation the issue's consumer used fixes it.
+    (root / ".gitignore").write_text("node_modules/\nbuild/\n!/.sdlc-local/skills/build/\n")
+    assert check_overrides(root) == []
+    # So does a file already tracked: git keeps tracking it whatever the rules say.
+    (root / ".gitignore").write_text("node_modules/\nbuild/\n")
+    git(root, "add", "-f", str(override))
+    assert check_overrides(root) == []
+
+
+def test_ignored_overrides_are_skipped_outside_a_git_repo(tmp_path):
+    (tmp_path / ".sdlc/templates").mkdir(parents=True)
+    (tmp_path / ".sdlc/templates/x.md").write_text("# X\n")
+    (tmp_path / ".sdlc-local/templates").mkdir(parents=True)
+    (tmp_path / ".sdlc-local/templates/x.md").write_text("# Y\n")
+    assert check_overrides(tmp_path) == []
