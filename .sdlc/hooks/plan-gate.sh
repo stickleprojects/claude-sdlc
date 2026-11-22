@@ -13,6 +13,8 @@
 #   - On the default branch (main), code isn't written at all: switch to a branch first.
 #   - Other branches (chore/…, fix/…, docs/…) aren't tied to a change and aren't checked.
 #   - A change's branch without its number (build/x for changes/0007-x) is blocked (#185).
+# The branch, the change and the always-editable paths are those of the worktree the file is in,
+# even when it isn't the session's project dir (#260).
 # Always editable: changes/, docs/, top-level *.md, and anything outside the repo.
 # SDLC_PLAN_GATE=0 turns the check off deliberately.
 set -euo pipefail
@@ -22,12 +24,24 @@ path="$(jq -r '.tool_input.file_path // .tool_input.notebook_path // empty')"
 [[ -z "$path" ]] && exit 0
 root="${CLAUDE_PROJECT_DIR:-$PWD}"
 cd "$root" 2>/dev/null || exit 0
-top="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+common="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || exit 0
+[[ "$path" == /* ]] || path="$root/$path"
+
+# The worktree the file is in, which may not be the project dir's: a session on main can edit a
+# worktree on build/<slug>, nested in the checkout or beside it (#260). Its nearest folder that
+# exists says which, since a new file's folder may not exist yet.
+dir="$(dirname "$path")"
+while [[ ! -d "$dir" ]]; do dir="$(dirname "$dir")"; done
+# The path as git spells the top: symlinks and .. resolved (pwd -P, as macOS has no realpath -m).
+path="$(cd "$dir" && pwd -P)${path#"$dir"}"
+top="$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null)" || exit 0  # in no repo: outside
+# Another repository (the person's notes, a scratch clone) is outside the project too.
+[[ "$(git -C "$dir" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" == "$common" ]] || exit 0
+cd "$top"
 
 case "$path" in
   "$top"/*) rel="${path#"$top"/}" ;;
-  /*) exit 0 ;;  # outside the repo: a scratch file, the person's own notes
-  *) rel="$path" ;;
+  *) exit 0 ;;
 esac
 case "$rel" in
   ../*) exit 0 ;;
