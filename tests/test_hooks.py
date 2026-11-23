@@ -477,6 +477,55 @@ def test_plan_gate_resolves_symlinks_and_dots_in_the_path(plan_repo, tmp_path):
     assert gate_from(plan_repo, link / "changes/0003-x/plan.md").returncode == 0
 
 
+def test_plan_gate_resolves_dots_below_a_folder_that_doesnt_exist(plan_repo, tmp_path):
+    """#270: the rest of the path below the nearest existing folder was kept as written."""
+    from conftest import git, init_repo
+
+    for path in (
+        "changes/new/../../src/x.py",
+        "changes/new/./deep/../../../src/x.py",
+        "docs/new/../../src/new/y.py",
+        "changes/new/..//../src/x.py",
+        "src/new/../x.py",
+    ):
+        blocked = gate_from(plan_repo, f"{plan_repo}/{path}")
+        assert blocked.returncode == 2, path
+        assert "Blocked edit to src/" in blocked.stderr, "named as it will be written"
+    assert gate_from(plan_repo, f"{plan_repo}/src/new/../../changes/0003-x/plan.md").returncode == 0
+    assert gate_from(plan_repo, f"{plan_repo}/new/../notes.md").returncode == 0, "top-level .md"
+    # The dots can lead through a symlink, into another worktree or out of the project.
+    (plan_repo / "changes/link").symlink_to(plan_repo / "src")
+    assert gate_from(plan_repo, f"{plan_repo}/changes/new/../link/x.py").returncode == 2
+    wt = plan_repo / ".claude/worktrees/b"
+    git(plan_repo, "worktree", "add", "-q", "-b", "build/0003-x", str(wt))
+    led = gate_from(plan_repo, f"{plan_repo}/changes/new/../../.claude/worktrees/b/src/x.py")
+    assert led.returncode == 2 and "0003-x has no committed plan.md" in led.stderr
+    init_repo(tmp_path / "notes")
+    out = f"{plan_repo}/src/new/../../../{(tmp_path / 'notes').name}/x.py"
+    assert (plan_repo.parent / "notes").is_dir(), "beside the project"
+    assert gate_from(plan_repo, out).returncode == 0
+
+
+@pytest.mark.parametrize("where", ["nested", "sibling"])
+def test_plan_gate_bug_fast_path_works_in_a_worktree(plan_repo, tmp_path, where):
+    """#148's fast path for a session whose project dir is main: the worktree's branch and
+    commits decide, not the main checkout's."""
+    from conftest import commit, git
+
+    wt = plan_repo / ".claude/worktrees/b" if where == "nested" else tmp_path / "beside"
+    git(plan_repo, "worktree", "add", "-q", "-b", "build/0005-z", str(wt))
+    commit(wt, "bug: 0005-z", {"changes/0005-z/bug.md": "# bug\n"})
+    assert gate_from(plan_repo, wt / "src/x.py").returncode == 2, "no spec yet"
+    assert gate_from(plan_repo, wt / "changes/0005-z/spec.md").returncode == 0
+    (wt / "changes/0005-z/spec.md").write_text("# short spec\n")
+    assert gate_from(plan_repo, wt / "src/x.py").returncode == 2, "the spec isn't committed"
+    commit(wt, "spec(0005-z): short spec")
+    assert gate_from(plan_repo, wt / "src/x.py").returncode == 0
+    assert gate_from(plan_repo, plan_repo / "src/x.py").returncode == 2, "main's own code"
+    git(wt, "switch", "-q", "-c", "plan/0005-z")
+    assert gate_from(plan_repo, wt / "src/x.py").returncode == 2, "only on build/<slug>"
+
+
 def test_plan_gate_leaves_a_file_in_another_repo_alone(plan_repo, tmp_path):
     from conftest import init_repo
 

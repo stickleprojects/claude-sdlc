@@ -30,10 +30,24 @@ common="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" ||
 # The worktree the file is in, which may not be the project dir's: a session on main can edit a
 # worktree on build/<slug>, nested in the checkout or beside it (#260). Its nearest folder that
 # exists says which, since a new file's folder may not exist yet.
-dir="$(dirname "$path")"
-while [[ ! -d "$dir" ]]; do dir="$(dirname "$dir")"; done
-# The path as git spells the top: symlinks and .. resolved (pwd -P, as macOS has no realpath -m).
-path="$(cd "$dir" && pwd -P)${path#"$dir"}"
+# The path is spelled as git spells the top: symlinks and .. resolved (pwd -P, as macOS has no
+# realpath -m). Below that folder nothing exists to resolve, so . and .. are taken out by name;
+# what's left may lead through other folders that exist, so it goes round once more.
+for _ in 1 2; do
+  dir="$(dirname "$path")"
+  while [[ ! -d "$dir" ]]; do dir="$(dirname "$dir")"; done
+  path="$(cd "$dir" && pwd -P)${path#"$dir"}"
+  IFS=/ read -r -d '' -a parts < <(printf '%s\0' "$path") || true
+  clean=""
+  for part in "${parts[@]}"; do
+    case "$part" in
+      "" | .) ;;
+      ..) clean="${clean%/*}" ;;
+      *) clean+="/$part" ;;
+    esac
+  done
+  path="$clean"
+done
 top="$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null)" || exit 0  # in no repo: outside
 # Another repository (the person's notes, a scratch clone) is outside the project too.
 [[ "$(git -C "$dir" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" == "$common" ]] || exit 0
