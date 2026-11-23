@@ -239,6 +239,28 @@ def test_change_lifecycle_in_consumer(consumer):
     assert "Constraints" in broken.stderr
 
 
+def test_change_file_in_consumer(consumer):
+    """make new-change writes change.toml, validate holds its title, the sweep corrects it, and
+    OPEN=1 leaves out a change marked done (#272)."""
+    assert make(consumer, "new-change", "NAME=browse").returncode == 0
+    change = consumer / "changes" / "0001-browse"
+    intent = change / "intent.md"
+    intent.write_text(intent.read_text().replace("<short title>", "Browse the catalogue"))
+    stale = make(consumer, "validate")
+    assert stale.returncode != 0 and "make sync-changes CHANGE=0001-browse FIX=1" in stale.stderr
+    assert make(consumer, "sync-changes").returncode != 0
+    assert make(consumer, "sync-changes", "FIX=1").returncode == 0
+    assert 'title = "Browse the catalogue"' in (change / "change.toml").read_text()
+    assert make(consumer, "validate").returncode == 0
+    args = ("CHANGE=0001", "STATUS=done", "PR=12")
+    assert make(consumer, "sync-changes", *args, "FIX=1").returncode == 0
+    assert 'pr = "#12"' in (change / "change.toml").read_text()
+    git(consumer, "add", "changes")
+    git(consumer, "commit", "-q", "-m", "x")
+    assert "0001-browse" in make(consumer, "next", "REF=HEAD").stdout
+    assert make(consumer, "next", "REF=HEAD", "OPEN=1").stdout == ""
+
+
 def test_bug_change_in_consumer(consumer):
     # The consumer's Makefile passes only NAME; TYPE reaches the CLI through make's environment.
     assert make(consumer, "new-change", "NAME=export-hangs", "TYPE=bug").returncode == 0
@@ -264,6 +286,7 @@ def test_build_plan_in_consumer(consumer):
     )
     draft = (consumer / ".sdlc" / "templates" / "build.md").read_text()
     (change / "build.md").write_text(draft)
+    assert make(consumer, "sync-changes", "FIX=1").returncode == 0
     assert make(consumer, "validate").returncode == 0
     assert make(consumer, "status").stdout.strip() == (
         "0001-role-list\tbuild\tdraft, awaiting approval, 0/2 milestones done"
@@ -289,6 +312,7 @@ def test_plan_descopes_in_consumer(consumer):
     template = (consumer / ".sdlc" / "templates" / "plan.md").read_text()
     plan = change / "plan.md"
     plan.write_text(template)
+    assert make(consumer, "sync-changes", "FIX=1").returncode == 0
     refused = make(consumer, "validate")
     assert "Definition of done names no kind" in refused.stderr
     template = template.replace("<the kinds of work that apply, e.g. Any code, UI>", "Any code, UI")
@@ -323,6 +347,7 @@ def test_definition_of_done_in_consumer(consumer, framework_snapshot):
     text = plan.read_text().replace("## Descopes\n\nx", "## Descopes\n\nNone.")
     line = "## Verification\n\n- **Definition of done:** {}\n\n"
     plan.write_text(text.replace("## Verification\n\n", line.format("Godot scene, Any code")))
+    assert make(consumer, "sync-changes", "FIX=1").returncode == 0
     assert make(consumer, "validate").returncode == 0
     plan.write_text(text.replace("## Verification\n\n", line.format("Godot level")))
     refused = make(consumer, "validate")

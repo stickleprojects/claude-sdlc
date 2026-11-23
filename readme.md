@@ -145,7 +145,7 @@ cd <name>
 
 Add the two files that are yours, the stack half of the contract:
 
-- **A `Makefile`** with `include .sdlc/sdlc.mk` and the stack contract: `setup`, `fmt`, `lint`, `test`, `validate` (which runs `$(SDLC) check`) and `check`. `.sdlc/sdlc.mk` brings the pipeline's own targets (`new-change`, `status`, `next`, `clauses`, `exec-bits`, `evals`, `sync-sdlc`), so a new one never means editing your Makefile. The pipeline CLI has no dependencies, and by default it runs with `python3`.
+- **A `Makefile`** with `include .sdlc/sdlc.mk` and the stack contract: `setup`, `fmt`, `lint`, `test`, `validate` (which runs `$(SDLC) check`) and `check`. `.sdlc/sdlc.mk` brings the pipeline's own targets (`new-change`, `status`, `next`, `sync-changes`, `clauses`, `exec-bits`, `evals`, `sync-sdlc`), so a new one never means editing your Makefile. The pipeline CLI has no dependencies, and by default it runs with `python3`.
   - The optional targets (`coverage`, `deploy-dev`, `deploy-prod`) switch on what they name. The sync tells you which ones your Makefile lacks.
   - [tests/fixtures/consumer/Makefile](tests/fixtures/consumer/Makefile) is the smallest Makefile that works. [sdlc-sandbox's](https://github.com/stickleprojects/sdlc-sandbox/blob/main/Makefile) is a real TypeScript stack.
 - **`.github/actions/setup-stack/action.yml`**, which installs your toolchain in CI and runs `make setup`. Each workflow's call says what its job needs (`SDLC_STACK_NEEDS`), so a slow stack can skip what a light job doesn't use ([stack-needs.md](.sdlc/docs/stack-needs.md)).
@@ -267,6 +267,8 @@ Open any small PR. **check**, **pr-title**, **review** and **claude-review** sho
 ```
 make new-change NAME=add-login               # start a change: changes/0001-add-login/intent.md
 make new-change NAME=export-hangs TYPE=bug   # a bug: bug.md, then a short spec
+make next REF=origin/main OPEN=1             # what isn't done yet
+make sync-changes                            # housekeeping: check every change.toml (FIX=1 corrects)
 make status                                  # stage each change has reached
 make next REF=origin/main                    # each change's next step, and the skill to run
 make check                                   # lint + tests + artifact chain

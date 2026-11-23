@@ -18,7 +18,7 @@ file with an override in .sdlc-local/ (see .sdlc/docs/overrides.md), never by ed
    - if the change doesn't fit the milestone's agreed scope, or its scope isn't agreed yet (it's `draft`), or it moves a milestone's goal, exit criteria or order, add an adjustment record from `.sdlc/templates/roadmap-adjustment.md` at `docs/roadmap/adjustments/NNNN-<slug>.md` (the next free number, `Status: accepted`: merging the PR is the acceptance), an `Adjustment: NNNN-<slug>` line in the intent, and a citation of the record in the milestone's scope text. Never edit an old record away: a new one supersedes it.
 
    If it fits no milestone, ask the originator whether to add it to one (an adjustment) or to a new milestone; the order is the product owner's, so never reorder milestones yourself. The PR body gets a **Roadmap** section: the milestone by name (not just its number), whether the change delivers the whole milestone or part of it, what it knowingly leaves out, and any adjustment. Without a roadmap, skip this step. <!-- rule: intent.no-reorder -->
-5. Run `make validate`. With a roadmap, it fails until the row, the `Milestone:` line and any record agree.
+5. Run `make sync-changes CHANGE=<slug> FIX=1`, which copies the heading into the folder's `change.toml` (#272); run it again whenever the heading changes. Then run `make validate`. With a roadmap, it fails until the row, the `Milestone:` line and any record agree.
 6. Show the originator the file and ask for corrections. Remind them that the product owner accepts it by approving the PR. Merging that PR triggers spec generation.
 
 Do not write a spec, a plan or any code at this stage. (A bug on the fast path, below, is the one exception.) <!-- rule: intent.one-stage -->
@@ -38,14 +38,14 @@ Do not write a spec, a plan or any code at this stage. (A bug on the fast path, 
 
    Tell the person which path and why in one line of plain words, for example "I can fix this in the same PR, so approving it ships the fix", or "this needs a product decision first, so the report goes in on its own". They can ask for the other path.
 3. Run `make new-change NAME=<name> TYPE=bug`. It prints the new `bug.md` path and the slug; there is no `intent.md`. Its folder name, `NNNN-<name>`, is the slug, number included (step 2 above).
-4. Fill in every section, then run `make validate`. Show the person the file and ask for corrections.
+4. Fill in every section, then run `make sync-changes CHANGE=<slug> FIX=1` and `make validate`. Show the person the file and ask for corrections.
 5. **The full path:** open the bug PR, from any branch but `build/<slug>` (that one is the build's). Merging it triggers a short spec: requirements and one acceptance test per symptom. <!-- rule: intent.bug-pr-branch -->
 6. **The fast path:**
    1. Work on `build/<slug>`, created from `origin/main`: the folder name with its number, `build/0007-price-decimals`, not `build/price-decimals`. The plan gate allows code there once `bug.md` and `spec.md` are committed, and blocks a branch that leaves the number out. <!-- rule: intent.fast-path-branch -->
    2. Write `spec.md` as the internal `sdlc-spec` skill's **For a bug** section says (read it with `.sdlc/scripts/resolve.sh skills/spec/SKILL.md`). If that raises an open question for the product owner, the fast path stops: delete `spec.md`, move `bug.md` to a branch of its own (`bug/<slug>`), say why, and take the full path. The spec workflow writes the spec once the bug merges, and the question goes to the product owner there. <!-- rule: intent.fast-path-open-question -->
-   3. Commit `bug.md` and `spec.md` (`bug(<slug>): <title>`) and push.
+   3. Commit `bug.md`, `change.toml` and `spec.md` (`bug(<slug>): <title>`) and push.
    4. Build the fix with the `sdlc-build` skill (its **Bug fast path** section): failing tests first, then the fix, the verifier, and a PR titled `fix(<slug>): <summary>`. If the session is running short at this point, stop and say so. `/sdlc-build <slug>` picks up the branch in a new session.
 
 ## Committing
 
-When you commit, add the change's files by explicit path (`git add changes/<slug>/intent.md` or `…/bug.md`, with `…/spec.md` on the fast path, plus `docs/roadmap.md` and any adjustment record), following the `sdlc-agent-identity` skill (explicit paths, commit trailer, PR signature).
+When you commit, add the change's files by explicit path (`git add changes/<slug>/intent.md` or `…/bug.md`, `…/change.toml`, with `…/spec.md` on the fast path, plus `docs/roadmap.md` and any adjustment record), following the `sdlc-agent-identity` skill (explicit paths, commit trailer, PR signature).

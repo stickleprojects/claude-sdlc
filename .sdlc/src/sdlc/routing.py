@@ -22,6 +22,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from sdlc.artifacts import BUILD, Build, change_dirs, kind, stage
+from sdlc.meta import DONE, META, OPEN, WITHDRAWN, MetaError, parse, read
+from sdlc.meta import WITHDRAWN_RE as WITHDRAWN_RE
 
 
 @dataclass(frozen=True)
@@ -35,8 +37,6 @@ class Next:
         return f"{self.slug}\t{self.stage}\t{self.skill}\t{self.detail}"
 
 
-WITHDRAWN_RE = re.compile(r"^Withdrawn:[ \t]*(\S.*)$", re.MULTILINE)
-
 # Each artifact and what it's based on: when the base changes after it, it's out of date.
 BASES = [
     ("spec.md", ("intent.md", "bug.md")),
@@ -47,7 +47,7 @@ BASES = [
 OWNER = {"spec.md": "sdlc-spec", "plan.md": "sdlc-plan", BUILD: "sdlc-build"}
 
 
-def _git(root: Path, *args: str) -> str | None:
+def git(root: Path, *args: str) -> str | None:
     try:
         result = subprocess.run(  # noqa: S603 - list args, no shell (#135)
             ["git", *args],  # noqa: S607 - git from PATH, as every script here runs it
@@ -73,7 +73,7 @@ def out_of_date(
         bases_of["plan.md"] = ("intent.md",)
 
     def last(name: str) -> str | None:
-        return _git(root, "log", "-1", "--format=%H", rev, "--", f"{folder}/{name}") or None
+        return git(root, "log", "-1", "--format=%H", rev, "--", f"{folder}/{name}") or None
 
     for artifact, _ in BASES:
         bases = bases_of[artifact]
@@ -84,7 +84,7 @@ def out_of_date(
             continue
         for base in bases:
             theirs = last(base) if base in present else None
-            if theirs and _git(root, "merge-base", "--is-ancestor", theirs, mine) is None:
+            if theirs and git(root, "merge-base", "--is-ancestor", theirs, mine) is None:
                 return artifact, (
                     f"out of date: {base} changed in {theirs[:7]} after {artifact}; "
                     f"update {artifact}, or confirm it still holds"
@@ -111,16 +111,63 @@ def merged_build(root: Path, rev: str, slug: str, bringing: str | None = None) -
         ("--no-merges", rf"^(feat|fix|chore|ci)\({slug}\)!?: .* \(#[0-9]+\)$"),
     )
     for merges, pattern in patterns:
-        found = _git(root, "log", rev, merges, "-E", f"--grep={pattern}", "--format=%H %s")
+        found = git(root, "log", rev, merges, "-E", f"--grep={pattern}", "--format=%H %s")
         for line in found.splitlines() if found else []:
             sha, subject = line.split(" ", 1)
-            if bringing and not _git(
+            if bringing and not git(
                 root, "diff", "--name-only", f"{sha}^1", sha, "--", f"changes/{slug}/{bringing}"
             ):
                 continue
             if m := re.search(r"#\d+", subject):
                 return m.group()
     return None
+
+
+def finished(change_dir: Path, root: Path | None, rev: str) -> tuple[bool, str | None]:
+    """Whether the files and git history say this merged change is built, and the PR: "#N" if known.
+    `change_dir` holds the files at `rev`."""
+    slug, where = change_dir.name, stage(change_dir)
+    if (change_dir / BUILD).exists():
+        status = Build.parse((change_dir / BUILD).read_text(encoding="utf-8")).status or ""
+        pr = re.search(r"#\d+", status)
+        return status.startswith("PR open"), pr.group() if pr else None
+    small: str | None = None
+    if where == "plan" and root is not None:
+        small = merged_build(root, rev, slug)
+    elif where == "spec" and root is not None and (change_dir / "bug.md").exists():
+        small = merged_build(root, rev, slug, bringing="spec.md")  # the fast path, #148
+    return small is not None, small
+
+
+def main_ref(root: Path) -> str | None:
+    """What's merged: origin/main, else main, else (no main at all) HEAD. None outside git."""
+    for ref in ("origin/main", "main", "HEAD"):
+        if git(root, "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}"):
+            return ref
+    return None
+
+
+def done_on_main(root: Path, slug: str) -> bool | None:
+    """Whether main's change.toml says done; None when there's no main to read."""
+    ref = main_ref(root)
+    if ref is None or ref == "HEAD":
+        return None
+    text = git(root, "show", f"{ref}:changes/{slug}/{META}")
+    if text is None:
+        return False
+    try:
+        return parse(text).status == DONE
+    except MetaError:
+        return False
+
+
+def was_done(root: Path, rev: str, slug: str) -> bool:
+    """Whether change.toml ever said done at `rev`: if it's open now, someone reopened it
+    (reverting a build's PR takes its status back too)."""
+    path = f"changes/{slug}/{META}"
+    said_done = ("-G", '^status *= *"done"')
+    log = ("log", "-1", "--full-history", "--format=%H", *said_done, rev, "--", path)
+    return bool(git(root, *log))
 
 
 def next_step(change_dir: Path, merged: bool, root: Path | None = None, rev: str = "HEAD") -> Next:
@@ -132,22 +179,41 @@ def next_step(change_dir: Path, merged: bool, root: Path | None = None, rev: str
         path = change_dir / first
         if path.exists() and (m := WITHDRAWN_RE.search(path.read_text(encoding="utf-8"))):
             return Next(slug, where, "withdrawn", m.group(1).strip())
-    finished = False
-    small_build: str | None = None
+    try:
+        meta = read(change_dir)
+    except MetaError as e:
+        return Next(slug, where, "sdlc-next", f"{META} {e}: correct it")
+    if meta and meta.status == WITHDRAWN:
+        return Next(slug, where, "withdrawn", f"{META} says withdrawn")
+    # In a checkout, a build branch says done before its PR merges, so main has the last word.
+    unmerged = False
+    if meta and meta.status == DONE:
+        if merged or root is None or done_on_main(root, slug) is not False:
+            detail = "built and merged" + (f" ({meta.pr})" if meta.pr else "")
+            return Next(slug, where, "done", detail)
+        unmerged = True
+    by_git, pr = finished(change_dir, root, rev)
     if (change_dir / BUILD).exists():
-        status = Build.parse((change_dir / BUILD).read_text(encoding="utf-8")).status or ""
-        finished = merged and status.startswith("PR open")
-    elif where == "plan" and root is not None:
-        small_build = merged_build(root, rev, slug)
-        finished = small_build is not None
-    elif where == "spec" and root is not None and (change_dir / "bug.md").exists():
-        small_build = merged_build(root, rev, slug, bringing="spec.md")  # the fast path, #148
-        finished = small_build is not None
-    if root is not None and not finished:
+        by_git = merged and by_git
+    if by_git and meta and meta.status == OPEN:
+        if root is not None and was_done(root, rev, slug):
+            by_git, pr = False, None  # reopened: the file says so, and the old merge doesn't count
+        else:
+            return Next(
+                slug,
+                where,
+                "sdlc-next",
+                f"{META} says open, but git shows its build merged ({pr or 'no PR number'}): "
+                f"run `make sync-changes CHANGE={slug}`",
+            )
+    small_build = pr if by_git and not (change_dir / BUILD).exists() else None
+    if root is not None and not by_git:
         present = {p.name for p in change_dir.iterdir()}
         if stale := out_of_date(root, rev, slug, present, tooling=kind(change_dir) == "tooling"):
             artifact, why = stale
             return Next(slug, where, OWNER[artifact], why)
+    if unmerged and not by_git and where in ("spec", "plan"):
+        return Next(slug, where, "sdlc-pr", f"{META} says done, but it isn't merged: see its PR")
     if where == "empty":
         return Next(slug, where, "sdlc-intent", "no intent.md or bug.md yet: describe the change")
     if where == "intent" and kind(change_dir) == "tooling":
@@ -177,11 +243,10 @@ def next_step(change_dir: Path, merged: bool, root: Path | None = None, rev: str
     if build.is_draft:
         return Next(slug, where, "sdlc-build", "approve the build plan (build.md)")
     if status.startswith("PR open"):
+        if by_git:
+            return Next(slug, where, "done", "built and merged" + (f" ({pr})" if pr else ""))
         if merged:
-            pr = re.search(r"#\d+", status)
-            return Next(
-                slug, where, "done", "built and merged" + (f" ({pr.group()})" if pr else "")
-            )
+            return Next(slug, where, "sdlc-build", f"reopened after its build merged ({status})")
         return Next(slug, where, "sdlc-pr", f"{status}: work through its review")
     todo = [n for n, s in build.milestones.items() if not (s or "").startswith("done")]
     return Next(
@@ -189,7 +254,7 @@ def next_step(change_dir: Path, merged: bool, root: Path | None = None, rev: str
     )
 
 
-def _extract(root: Path, ref: str, into: Path) -> Path | None:
+def extract(root: Path, ref: str, into: Path) -> Path | None:
     """Unpack ref's changes/ folder into `into`; None when the ref has no changes/."""
     result = subprocess.run(  # noqa: S603 - list args, no shell (#135)
         ["git", "archive", "--format=tar", ref, "changes"],  # noqa: S607 - git from PATH, as every script here runs it
@@ -212,7 +277,7 @@ def steps(root: Path, ref: str | None = None, slug: str | None = None) -> list[N
     with tempfile.TemporaryDirectory() as tmp:
         base = root
         if ref:
-            base = _extract(root, ref, Path(tmp)) or Path(tmp)
+            base = extract(root, ref, Path(tmp)) or Path(tmp)
         found = [
             next_step(d, merged=ref is not None, root=root, rev=ref or "HEAD")
             for d in change_dirs(base)

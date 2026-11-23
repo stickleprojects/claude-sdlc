@@ -18,6 +18,8 @@
 # A tooling change (#221, intent.md says `Kind: tooling`) has no spec, so its code may touch only
 # the paths main's CLAUDE.md lists on a `Tooling paths:` line (space-separated; an entry ending in
 # / is a folder). With no such line, the tooling path is off and a tooling change's code fails.
+# A build PR (from build/<slug>) ships the change, so its change.toml must say done (#272). A
+# folder with no change.toml passes for now.
 set -uo pipefail
 
 branch="${1:-}"
@@ -48,6 +50,19 @@ if [[ -z "$slug" || ! -d "changes/$slug" ]]; then
   echo "ok: $branch isn't a change's branch"
   exit 0
 fi
+
+require_done() {  # a build PR's change.toml says done, so merging it makes that true
+  local status
+  [[ "$branch" == "build/$slug" ]] || return 0
+  if ! status="$(PYTHONPATH="$here/.sdlc/src" python3 -m sdlc.cli change-status "changes/$slug")"; then
+    echo "::error::changes/$slug/change.toml can't be read, so its status can't be checked."
+    exit 1
+  fi
+  [[ "$status" == done || "$status" == none ]] && return 0
+  echo "::error::This PR builds $slug, but its change.toml says $status. Run" \
+    "'make sync-changes CHANGE=$slug STATUS=done FIX=1' and commit it, so merging marks it done."
+  exit 1
+}
 
 if [[ -z "$code" ]]; then
   echo "ok: $slug, no code changed"
@@ -89,6 +104,7 @@ if [[ "$kind" == tooling ]]; then
   fi
 fi
 if [[ -f "changes/$slug/plan.md" ]]; then
+  require_done
   [[ "$kind" == tooling ]] && echo "ok: $slug is a tooling change inside 'Tooling paths: $allowed'"
   echo "ok: $slug has its plan.md"
   exit 0
@@ -99,6 +115,7 @@ if [[ "$branch" == "build/$slug" && -f "changes/$slug/bug.md" && -f "changes/$sl
       "CLAUDE.md says 'Bug path: full'. Plan it with /sdlc-plan and merge the plan PR first."
     exit 1
   fi
+  require_done
   echo "ok: $slug is a bug with its spec, on the fast path (#148)"
   exit 0
 fi

@@ -9,6 +9,7 @@ Reads files only (plus the branch name and the git log), and reports every failu
   `### Changes` table, and every row names such a change;
 - every intent has one `Milestone: M<n>` line, and its row sits under that milestone;
 - each row's status matches the change's state, as `make next` reads it;
+- each row's status matches the change's change.toml, if it has one (#272);
 - each `Adjustment:` line names an `accepted` record in docs/roadmap/adjustments/;
 - a `done` milestone has only `done` and `withdrawn` rows, and every exit criterion ticked;
 - a milestone past `draft` has at least one exit criterion;
@@ -27,6 +28,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from sdlc.artifacts import BUILD, Build, Problem, change_dirs
+from sdlc.meta import OPEN, MetaError, read
 from sdlc.routing import WITHDRAWN_RE, merged_build
 
 ROADMAP = "docs/roadmap.md"
@@ -337,6 +339,12 @@ def check_change(
             if row.status == "withdrawn":
                 reason = "the intent has no Withdrawn: line"
             report.fail(where, f"row is {row.status}, but {reason}")
+        try:
+            meta = read(change_dir)
+        except MetaError:
+            meta = None  # check_meta reports it
+        if meta and row.status != ("planned" if meta.status == OPEN else meta.status):
+            report.fail(where, f"row is {row.status}, but change.toml says {meta.status}")
     for name in lines_named(text, "Adjustment"):
         if not _RECORD_NAME.match(name):
             report.fail(where, f"Adjustment: '{name}' is not NNNN-<slug>")

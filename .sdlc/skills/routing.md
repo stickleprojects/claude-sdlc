@@ -21,7 +21,7 @@ make next REF=origin/main            # every change, from what's merged
 make next REF=origin/main CHANGE=0002  # one change
 ```
 
-Each line is `slug  stage  next-skill  detail`, for example `0002-breadcrumbs  plan  sdlc-build  build it`. `done` means the build has merged; `withdrawn` means it was binned (the detail says who, when and why). A detail starting `out of date:` means an earlier artifact changed after a later one, so the change has gone back a step (see [Going back](#going-back-and-pushback)). In a repo whose Makefile has no `next` target yet, run `make status` and use the table in step 3.
+Each line is `slug  stage  next-skill  detail`, for example `0002-breadcrumbs  plan  sdlc-build  build it`. `done` means the build has merged; `withdrawn` means it was binned (the detail says who, when and why). Each change's `change.toml` says which (`open`, `done`, `withdrawn`); without one, git history does. `OPEN=1` leaves out done and withdrawn. `sdlc-next` as a change's own next step means its `change.toml` is wrong: `make sync-changes CHANGE=<slug>` shows how, and `FIX=1` corrects it, in a PR. A detail starting `out of date:` means an earlier artifact changed after a later one, so the change has gone back a step (see [Going back](#going-back-and-pushback)). In a repo whose Makefile has no `next` target yet, run `make status` and use the table in step 3.
 
 Then check what isn't on main yet:
 
@@ -77,7 +77,7 @@ A change's column is worked out from git, so going back a column means **amendin
 
 - **Out of date:** an artifact whose base (spec after intent or bug, plan after spec, an unfinished build after plan or spec) changed after it was last committed. Its owner either updates it, or confirms it still holds by re-committing it with its base line noting the check, e.g. `Spec: ./spec.md (checked against abc1234, no change)`. A typo fix upstream doesn't force rework. A merged build stays done whatever changes later: what's shipped stays shipped.
 - **Amend:** offered by an entry skill run on a change past its stage. Amending an intent or spec is the product owner's decision (offer it, and route it to them through `/sdlc-pr` on the amendment PR); amending a plan is the engineer's.
-- **Withdraw (bin it):** add `Withdrawn: <who>, <date>: <why>` to the intent.md or bug.md, in a PR like any other change to it. Close the change's open PRs with that reason. Keep the build branch, so the work can be recovered. Only someone who can accept the intent (the product owner) decides it. <!-- rule: routing.withdraw -->
+- **Withdraw (bin it):** add `Withdrawn: <who>, <date>: <why>` to the intent.md or bug.md, and run `make sync-changes CHANGE=<slug> FIX=1`, in a PR like any other change to it. Close the change's open PRs with that reason. Keep the build branch, so the work can be recovered. Only someone who can accept the intent (the product owner) decides it. <!-- rule: routing.withdraw -->
 
 **Where pushback goes.** The aim is to build and deploy fast enough that work rarely sits in dev long enough to be pushed back, so most pushback should arrive as bugs:
 
