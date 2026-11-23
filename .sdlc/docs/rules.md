@@ -46,7 +46,7 @@ A holder can hold part of a rule only, such as the plan gate holding "no code be
 | `review.finding-readable` | Quote what you refer to, say why it matters, suggest a fix, say who decides | nothing |
 | `review.important-thread` | Every Important finding is its own thread, starting `**Important` | `check: .sdlc/scripts/review-findings.sh` |
 | `review.descope-thread` | A descope thread says `Descope: needs approval`; only a person's reply decides it | `check: .sdlc/scripts/descopes-decided.sh`, `check: .sdlc/scripts/descopes-status.sh` |
-| `review.nit-thread` | Nit threads start `**Nit:**` and aren't counted | `check: .sdlc/scripts/review-findings.sh` |
+| `review.nit-thread` | A Nit is a thread or a summary line starting `**Nit:**`; every counted Nit is in one | `check: .sdlc/scripts/review-findings.sh` |
 | `review.rereview-open-threads` | An open earlier thread still counts; a resolved but unaddressed one gets a new thread | `check: .sdlc/scripts/review-findings.sh` |
 | `review.hidden-count` | The summary ends with the hidden findings count | `check: .sdlc/scripts/review-findings.sh` |
 | `review.one-summary` | One summary comment per PR, replaced on each review, in a fixed order | nothing |
