@@ -7,7 +7,7 @@
 #                                          its SHA) and commit that on a trial branch.
 #                                          Prints the folder; the other steps take it.
 #   scripts/consumer-trial.sh check <dir>  make setup && make check there; the log is <dir>/check.log
-#   scripts/consumer-trial.sh pr <dir>     push the branch and open a draft PR marked do-not-merge
+#   scripts/consumer-trial.sh pr <dir>     push the branch and open a PR marked do-not-merge
 #   scripts/consumer-trial.sh close <dir>  close that PR, delete its branch and the folder
 #
 # The consumer is always a fresh clone, never the person's working checkout. The trial PR
@@ -89,12 +89,13 @@ cmd_pr() {
   load "${1:-}"
   [[ -z "$pr" ]] || { echo "$pr"; return 0; }
   git -C "$dir/repo" push --quiet -u origin "$branch"
-  url="$(gh pr create -R "$consumer" --draft --head "$branch" \
+  # Not a draft: the Claude review skips drafts, and the trial is there to run it.
+  url="$(gh pr create -R "$consumer" --head "$branch" \
     --title "chore: trial sync of claude-sdlc ${sha:0:7} (do not merge)" \
     --body "A trial of claude-sdlc ${sha:0:7} before it's released (claude-sdlc#200). It runs this repo's CI and review on the new framework, and is closed once the result is in the release notes. Upgrade through \`/sdlc\` after the release, not by merging this.")"
   sed -i "s|^pr=.*|pr=$(printf '%q' "$url")|" "$dir/trial"
   # The release's trial line starts with this: the release checks the SHA (scripts/check-trial-sha.sh).
-  echo "trial line starts: ${url#https://github.com/} (claude-sdlc ${sha:0:7}):" >&2
+  echo "trial line starts: $consumer#${url##*/} (claude-sdlc ${sha:0:7}):" >&2
   echo "$url"
 }
 
