@@ -3,6 +3,7 @@ written for the review before it runs."""
 
 import json
 import os
+import textwrap
 
 import pytest
 
@@ -123,3 +124,42 @@ def test_the_review_reads_the_earlier_summary_from_the_base_copy():
     assert text.index("- name: Read the earlier summary") < text.index("- name: Review\n")
     # Both review prompts are told to read it before replacing the summary.
     assert text.count("but first read .review-earlier-summary.md") == 2
+
+
+@pytest.mark.parametrize(
+    ("summary", "edit"),
+    [
+        ([], ""),
+        ([comment(f"Earlier.\n{HIDDEN}")], "--edit-last "),
+        (None, "--edit-last "),  # unreadable: never a second comment
+    ],
+)
+def test_the_review_is_told_whether_to_create_or_edit_its_summary(tmp_path, summary, edit):
+    """#266: a first review told to try --edit-last put a stub in the fallback. Runs the step."""
+    text = WORKFLOW.read_text()
+    step = text[text.index("- name: Read the earlier summary") :]
+    body = step[step.index("run: |\n") + 7 : step.index("\n      - name: Review\n")]
+    fake = tmp_path / "bin"
+    fake.mkdir()
+    (fake / "gh").write_text(FAKE_GH)
+    (fake / "gh").chmod(0o755)
+    (tmp_path / "comments.json").write_text(json.dumps(summary or []))
+    (tmp_path / "commits.json").write_text("[]")
+    if summary is None:
+        (tmp_path / "fail").write_text("")
+    (tmp_path / ".sdlc").symlink_to(REPO / ".sdlc")
+    env = {
+        "PATH": f"{fake}:{os.environ['PATH']}",
+        "D": str(tmp_path),
+        "GITHUB_REPOSITORY": "o/r",
+        "PR": "31",
+        "BASE": "none",
+        "RUNNER_TEMP": str(tmp_path),
+        "GITHUB_OUTPUT": str(tmp_path / "out"),
+    }
+    result = run(["bash", "-e", "-c", textwrap.dedent(body)], cwd=tmp_path, env=env)
+    assert result.returncode == 0, result.stderr
+    assert (tmp_path / "out").read_text() == f"edit={edit}\n"
+    # Both prompts post with it, and neither offers --edit-last as a first try.
+    command = "${{ steps.earlier.outputs.edit }}--body"
+    assert text.count(command) == 2 and "--edit-last --body" not in text

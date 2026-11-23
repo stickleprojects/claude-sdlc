@@ -155,7 +155,11 @@ jobs:
           echo "Review threads: $(jq 'if type == "array" then length else "unreadable" end' .review-threads.json)"
       # The summary this review replaces, and the PR's commits (#242): a re-review marks each
       # earlier note addressed or still open. Read the same way as the threads, for the same reason.
+      # It also says how to post this review's summary: a first review creates the comment and a
+      # re-review edits it. Told to try --edit-last first, a first review put a stub in the
+      # fallback, and its findings were lost (#266). If unsure, --edit-last keeps it to one comment.
       - name: Read the earlier summary
+        id: earlier
         env:
           BASE: ${{ github.event.pull_request.base.sha }}
         run: |
@@ -167,6 +171,9 @@ jobs:
               "$(tail -n 3 "$RUNNER_TEMP/earlier-summary.err" 2>/dev/null)" > .review-earlier-summary.md
           fi
           head -n 1 .review-earlier-summary.md
+          edit="--edit-last "
+          [[ "$(head -n 1 .review-earlier-summary.md)" != "# No earlier summary" ]] || edit=""
+          echo "edit=$edit" >> "$GITHUB_OUTPUT"
       - name: Review
         id: review
         uses: anthropics/claude-code-action@v1
@@ -214,15 +221,20 @@ jobs:
             Keep exactly one summary comment on the PR. If you posted one before, replace it,
             but first read .review-earlier-summary.md: the summary you're replacing and the
             PR's commits. Mark each of its notes as the rules' "Summary comment" says. If it
-            says it could not be read, say so in the summary. Replace it with:
-              gh pr comment ${{ github.event.pull_request.number }} --edit-last --body "..."
-            Only if that fails because there is none, create it with `gh pr comment`.
+            says it could not be read, say so in the summary. Post it with:
+              gh pr comment ${{ github.event.pull_request.number }} ${{ steps.earlier.outputs.edit }}--body "..."
+            The body is the whole summary. Never put a shorter one after `||`: if the command
+            fails, run it again as its own command with the same whole body, without
+            --edit-last if it failed because there is no comment to edit.
+            A Nit with no thread is its own line in the summary, starting `- **Nit:**`. Never
+            refer to a finding as "above": the PR shows only what you post.
             End it with the hidden count line, <!-- review-findings: important=<N> nit=<M> -->:
             N is the unresolved threads in .review-threads.json whose first comment is the
             review's own (author `claude`, bot true) and starts with **Important, plus the
             Important threads you post now. A resolved
-            thread never counts. The job checks N against the open Important threads, and
-            fails if they differ.
+            thread never counts. M is the Nits still open, in threads or in the summary. The
+            job checks N against the open Important threads and that M Nits are written down,
+            and fails if not.
           # Automation mode allows only the tools listed here: read the PR, comment on it.
           claude_args: >-
             --max-turns 30
@@ -306,15 +318,20 @@ jobs:
             Keep exactly one summary comment on the PR. If you posted one before, replace it,
             but first read .review-earlier-summary.md: the summary you're replacing and the
             PR's commits. Mark each of its notes as the rules' "Summary comment" says. If it
-            says it could not be read, say so in the summary. Replace it with:
-              gh pr comment ${{ github.event.pull_request.number }} --edit-last --body "..."
-            Only if that fails because there is none, create it with `gh pr comment`.
+            says it could not be read, say so in the summary. Post it with:
+              gh pr comment ${{ github.event.pull_request.number }} ${{ steps.earlier.outputs.edit }}--body "..."
+            The body is the whole summary. Never put a shorter one after `||`: if the command
+            fails, run it again as its own command with the same whole body, without
+            --edit-last if it failed because there is no comment to edit.
+            A Nit with no thread is its own line in the summary, starting `- **Nit:**`. Never
+            refer to a finding as "above": the PR shows only what you post.
             End it with the hidden count line, <!-- review-findings: important=<N> nit=<M> -->:
             N is the unresolved threads in .review-threads.json whose first comment is the
             review's own (author `claude`, bot true) and starts with **Important, plus the
             Important threads you post now. A resolved
-            thread never counts. The job checks N against the open Important threads, and
-            fails if they differ.
+            thread never counts. M is the Nits still open, in threads or in the summary. The
+            job checks N against the open Important threads and that M Nits are written down,
+            and fails if not.
           # Automation mode allows only the tools listed here: read the PR, comment on it.
           claude_args: >-
             --max-turns 30
