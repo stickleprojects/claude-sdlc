@@ -36,3 +36,14 @@ def test_full_checks_then_evals_then_tag_and_only_a_dry_run_skips_them():
         assert "always()" not in cond and "failure()" not in cond, label(step)
         assert "continue-on-error" not in step, label(step)
     assert "make evals" in steps()[evals]["run"]
+
+
+def test_a_real_release_checks_the_trial_is_of_the_commit_it_tags():
+    version = next(s for s in steps() if s.get("name") == "Work out the next version")
+    run = version["run"]
+    call = 'scripts/check-trial-sha.sh "$SDLC_TRIAL" "$GITHUB_SHA"'
+    assert f'[[ "$DRY_RUN" == true ]] || {call}' in run
+    assert run.index("no consumer trial") < run.index("check-trial-sha.sh")
+    skill = (REPO / ".claude/skills/release/SKILL.md").read_text()
+    assert "(claude-sdlc 5df79ee)" in skill, "the skill's example line names the SHA"
+    assert "trial line starts:" in (REPO / "scripts/consumer-trial.sh").read_text()
