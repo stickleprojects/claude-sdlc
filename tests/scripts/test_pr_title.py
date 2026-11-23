@@ -258,7 +258,7 @@ def test_review_findings_passes_when_each_finding_has_an_open_thread(review_find
         thread("**Important:** no change folder."),
         thread("**Important (product owner decides):** no criteria.", login="claude[bot]"),
         thread("**Important:** fixed earlier.", resolved=True),  # resolved: not counted
-        thread("**Nit:** naming."),  # nits never count
+        thread("**Nit:** naming."),  # not an Important finding
         thread("**Important:** a person's own note.", login="kieron"),  # not the reviewer's
     ]
     result = review_findings([summary(2)], found)
@@ -266,6 +266,43 @@ def test_review_findings_passes_when_each_finding_has_an_open_thread(review_find
     assert "2 open Important finding(s)" in result.stdout
     calls = (tmp_path / "calls").read_text()
     assert "graphql --paginate" in calls and "owner=o" in calls and "name=r" in calls
+
+
+def test_review_findings_fails_263_whose_nits_were_lost(review_findings):
+    """#266: the summary counted two nits and wrote down neither."""
+    result = review_findings([summary(0, 2, "Review: 0 Important, 2 Nit (see above)\n")])
+    assert result.returncode == 1
+    assert "counts 2 Nit(s) but writes down 0" in result.stdout
+    assert len(result.stdout.strip()) <= 140, "fits a commit status description"
+
+
+@pytest.mark.parametrize(
+    "text, found, passes",
+    [
+        ("- **Nit:** a.\n- **Nit:** b.\n", [], True),
+        ("- Nit (engineer decides): in `x`, a.\n2. **Nit (engineer decides):** b.\n", [], True),
+        ("- **Nit:** a.\n", [thread("**Nit:** b.")], True),
+        ("", [thread("**Nit:** a."), thread("**Nit:** b.")], True),
+        ("- **Nit:** a.\n", [], False),  # one of two lost
+        ("**Nit: 2.**\n- Nit: 2\n", [], False),  # counts aren't findings
+        ("- Nitpicking: none\n- Nits: see above\n", [], False),
+        ("- **Nit:** a.\n", [thread("**Nit:** old.", resolved=True)], False),
+        ("- **Nit:** a.\n", [thread("**Nit:** theirs.", login="kieron")], False),
+    ],
+)
+def test_review_findings_needs_every_counted_nit_written_down(review_findings, text, found, passes):
+    result = review_findings([summary(0, 2, text)], found)
+    assert (result.returncode == 0) is passes, result.stdout + result.stderr
+
+
+def test_review_findings_reads_nits_from_the_newest_summary_only(review_findings):
+    old = summary(0, 1, "- **Nit:** a.\n")
+    assert review_findings([old, summary(0, 1, "see above\n")]).returncode == 1
+    assert review_findings([summary(0, 1, "see above\n"), old]).returncode == 0
+
+
+def test_review_findings_takes_a_count_line_without_nits(review_findings):
+    assert review_findings(["x\n<!-- review-findings: important=0 -->"]).returncode == 0
 
 
 def test_review_findings_passes_a_clean_review(review_findings):
