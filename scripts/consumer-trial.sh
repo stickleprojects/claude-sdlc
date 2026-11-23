@@ -93,6 +93,8 @@ cmd_pr() {
     --title "chore: trial sync of claude-sdlc ${sha:0:7} (do not merge)" \
     --body "A trial of claude-sdlc ${sha:0:7} before it's released (claude-sdlc#200). It runs this repo's CI and review on the new framework, and is closed once the result is in the release notes. Upgrade through \`/sdlc\` after the release, not by merging this.")"
   sed -i "s|^pr=.*|pr=$(printf '%q' "$url")|" "$dir/trial"
+  # The release's trial line starts with this: the release checks the SHA (scripts/check-trial-sha.sh).
+  echo "trial line starts: ${url#https://github.com/} (claude-sdlc ${sha:0:7}):" >&2
   echo "$url"
 }
 

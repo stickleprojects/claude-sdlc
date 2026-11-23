@@ -233,7 +233,11 @@ def _version_step() -> str:
 
 @pytest.mark.parametrize(
     ("dry_run", "trial_line", "gated"),
-    [("false", "", True), ("false", "o/c#1: passed", False), ("true", "", False)],
+    [
+        ("false", "", True),
+        ("false", "o/c#1 (claude-sdlc {short}): passed", False),
+        ("true", "", False),
+    ],
 )
 def test_a_real_release_needs_a_trial_result(tmp_path, dry_run, trial_line, gated):
     script = tmp_path / "step.sh"
@@ -252,12 +256,36 @@ def test_a_real_release_needs_a_trial_result(tmp_path, dry_run, trial_line, gate
     git(repo, "tag", "v0.4.2")
     commit(repo, "fix: thing (#3)")
     (repo / "scripts").symlink_to(REPO / "scripts")
+    head = git(repo, "rev-parse", "HEAD")
+    trial_line = trial_line.format(short=head[:7])
+    env |= {"SDLC_TRIAL": trial_line, "GITHUB_SHA": head}
     result = run(["bash", "-e", str(script)], cwd=repo, env=env)
     assert ("no consumer trial" in result.stdout) is gated
     if gated:
         assert result.returncode == 1
     elif trial_line:
         assert f"## Consumer trial\n\n{trial_line}" in (tmp_path / "summary").read_text()
+
+
+def test_a_real_release_fails_when_the_trial_is_of_another_commit(tmp_path):
+    script = tmp_path / "step.sh"
+    script.write_text(_version_step())
+    repo = init_repo(tmp_path / "r")
+    commit(repo, "chore: initial")
+    git(repo, "tag", "v0.4.2")
+    commit(repo, "fix: thing (#3)")
+    (repo / "scripts").symlink_to(REPO / "scripts")
+    env = {
+        "DRY_RUN": "false",
+        "SDLC_TRIAL": "o/c#1 (claude-sdlc 1234567): passed",
+        "GITHUB_SHA": git(repo, "rev-parse", "HEAD"),
+        "GITHUB_OUTPUT": str(tmp_path / "out"),
+        "GITHUB_STEP_SUMMARY": str(tmp_path / "summary"),
+        "GITHUB_REPOSITORY": "o/r",
+    }
+    result = run(["bash", "-e", str(script)], cwd=repo, env=env)
+    assert result.returncode == 1
+    assert "names 1234567, but this release tags" in result.stderr
 
 
 def test_the_trial_result_goes_in_the_notes(tmp_path):

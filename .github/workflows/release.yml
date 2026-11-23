@@ -42,6 +42,8 @@ jobs:
           if [[ "$DRY_RUN" != true && -z "$SDLC_TRIAL" ]]; then
             echo "::error::no consumer trial: run the /release checklist and pass its result as -f trial=..."; exit 1
           fi
+          # The trial must be of the commit this release tags, not an older main.
+          [[ "$DRY_RUN" == true ]] || scripts/check-trial-sha.sh "$SDLC_TRIAL" "$GITHUB_SHA"
           version=$(scripts/next-version.sh --explain 2> explain.txt) || { cat explain.txt; echo "::error::nothing to release"; exit 1; }
           cat explain.txt
           echo "version=$version" >> "$GITHUB_OUTPUT"
