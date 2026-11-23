@@ -1812,6 +1812,24 @@ def test_the_local_check_reaches_the_consumer(consumer):
     assert bad.returncode != 0 and "names 'check-pr', but the Makefile has no" in bad.stderr
 
 
+def test_validate_names_the_rule_that_hides_a_build_skill_override(consumer):
+    """#254: a consumer whose .gitignore has `build/` (the baseline template's rule) overrides the
+    build skill; `make validate` says git ignores it and how to keep it."""
+    clean = {"MAKEFLAGS": "", "MAKELEVEL": "", "FULL": ""}
+    gitignore = consumer / ".gitignore"
+    gitignore.write_text((gitignore.read_text() if gitignore.exists() else "") + "build/\n")
+    override = consumer / ".sdlc-local/skills/build/SKILL.md"
+    override.parent.mkdir(parents=True)
+    override.write_text("# Build, our way\n")
+    bad = run(["make", "validate"], cwd=consumer, env=clean)
+    assert bad.returncode != 0
+    assert "git ignores it (.gitignore:" in bad.stderr and "build/)" in bad.stderr
+    gitignore.write_text(gitignore.read_text() + "!/.sdlc-local/skills/build/\n")
+    ok = run(["make", "validate"], cwd=consumer, env=clean)
+    assert ok.returncode == 0, ok.stdout + ok.stderr
+    assert run(["git", "check-ignore", "-q", str(override)], cwd=consumer).returncode == 1
+
+
 def test_the_main_docs_only_check_reaches_the_consumer(consumer):
     """#240: the script syncs executable and judges a push in the consumer's own history."""
     script = ".sdlc/scripts/main-docs-only.sh"
