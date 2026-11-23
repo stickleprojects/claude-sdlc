@@ -162,7 +162,7 @@ def test_check_fails_when_the_consumers_check_fails(trial):
     assert "make check FAILED in o/consumer" in result.stderr
 
 
-def test_pr_pushes_the_branch_and_opens_one_draft_do_not_merge_pr(trial):
+def test_pr_pushes_the_branch_and_opens_one_do_not_merge_pr_the_review_runs_on(trial):
     _, folder = _sync(trial)
     result = _trial(trial, "pr", folder)
     assert result.returncode == 0, result.stderr
@@ -171,7 +171,9 @@ def test_pr_pushes_the_branch_and_opens_one_draft_do_not_merge_pr(trial):
     assert git(trial["origin"], "rev-parse", f"chore/sdlc-trial-{short}")
     create = [c for c in _calls(trial).splitlines() if c.startswith("pr create")]
     assert len(create) == 1
-    assert "-R o/consumer --draft" in create[0]
+    assert "-R o/consumer --head" in create[0]
+    assert "--draft" not in create[0], "the Claude review skips drafts"
+    assert f"trial line starts: o/consumer#12 (claude-sdlc {short}):" in result.stderr.splitlines()
     assert f"chore: trial sync of claude-sdlc {short} (do not merge)" in create[0]
 
     again = _trial(trial, "pr", folder)
