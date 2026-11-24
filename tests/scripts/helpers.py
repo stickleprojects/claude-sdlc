@@ -327,8 +327,9 @@ def note(who, body, at, kind="User"):
     return {"author": {"login": who, "__typename": kind}, "body": body, "createdAt": at}
 
 
-def descope_thread(*replies, first=DESCOPE, by="claude"):
-    return {"comments": {"nodes": [note(by, first, "2026-11-13T10:00:00Z", "Bot"), *replies]}}
+def descope_thread(*replies, first=DESCOPE, by="claude", resolved=False):
+    nodes = [note(by, first, "2026-11-13T10:00:00Z", "Bot"), *replies]
+    return {"isResolved": resolved, "comments": {"nodes": nodes}}
 
 
 # --- sdlc-ci.yml's check job: which step a run makes (#240, #244) -------------------------------
