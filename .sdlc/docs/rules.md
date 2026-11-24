@@ -83,7 +83,7 @@ A holder can hold part of a rule only, such as the plan gate holding "no code be
 | `routing.invoke-next` | Invoke the next skill; don't ask the person to type it | nothing |
 | `routing.no-silent-redo` | Never redo a finished stage silently | nothing |
 | `routing.waiting` | Say who a change waits on; don't offer to do their part | nothing |
-| `routing.stage-branch` | A skill moves the copy to its stage's branch only when nothing would be left behind | nothing |
+| `routing.stage-branch` | A skill moves the copy to its stage's branch only when nothing would be left behind | `eval: build-moves-a-finished-copy-to-its-branch`, `eval: build-asks-before-leaving-uncommitted-work`, `eval: build-asks-before-leaving-unmerged-commits` |
 | `routing.go-back-by-amending` | Going back is amending an earlier artifact through a PR | nothing |
 | `routing.withdraw` | Only the product owner withdraws a change, with a `Withdrawn:` line | nothing |
 | `routing.after-merge-is-a-bug` | Anything found after merge is a new bug change; never reopen a merged change | nothing |
