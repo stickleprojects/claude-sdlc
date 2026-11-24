@@ -40,7 +40,7 @@ The framework itself. Its changes are tracked as GitHub issues (label `pipeline`
 ## Architecture
 
 - **Layout (#133):** everything synced to consumers lives in `.sdlc/`, and `scripts/` holds only the framework's own scripts (release, `docs-only.sh` for `make check`) plus a shim for older syncs. Claude Code and GitHub need a few files in their own folders:
-  - a stub per skill (the frontmatter and one line that runs `.sdlc/scripts/resolve.sh`) and one for the verifier. Here they live in `.sdlc/claude/skills/sdlc-<name>/SKILL.md` and `.sdlc/claude/agents/sdlc-verifier.md`, and the sync installs them into a consumer's `.claude/skills/` and `.claude/agents/` (#205). This repo doesn't load them, so its own `.claude/skills/` holds only skills for working on the framework. A skill's body lives in `.sdlc/skills/<name>/SKILL.md`, so edit the body there and the name or description in the stub;
+  - a stub per skill (the frontmatter and one line that runs `.sdlc/scripts/resolve.sh`) and one for the verifier. Here they live in `.sdlc/claude/skills/sdlc-<name>/SKILL.md` and `.sdlc/claude/agents/sdlc-verifier.md`, and the sync installs them into a consumer's `.claude/skills/` and `.claude/agents/` (#205). This repo doesn't load them, so its own `.claude/skills/` holds only skills for working on the framework. When someone asks for `/sdlc-pr <N>` here, follow `.sdlc/skills/pr/SKILL.md` through the resolver. A skill's body lives in `.sdlc/skills/<name>/SKILL.md`, so edit the body there and the name or description in the stub;
   - `.claude/settings.json`, whose hooks all call `.sdlc/hooks/dispatch.sh <event>`. A new hook is a row in `.sdlc/hooks/hooks.tsv`, never a settings change;
   - the workflows.
 
