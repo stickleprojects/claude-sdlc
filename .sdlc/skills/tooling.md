@@ -6,7 +6,7 @@ Read this only when the repo's `CLAUDE.md` has a `Tooling paths:` line. Without 
 
 - **When to offer it:** the change is only scripts, CI support or dev tools, every file of its code is inside the `Tooling paths:` entries, and nothing about how the product behaves changes. Then offer the path in one line ("this only touches `scripts/`, so one PR can carry the intent, the plan and the code, with no spec"). The person can refuse it. Take the full path if any part is product code, or if you're not sure. <!-- rule: tooling.offer -->
 - **Draft the intent** as for any change, and show the person the file for corrections. `Product owner:` names whoever owns the tooling, usually an engineer. Under it, add the line `Kind: tooling`, on its own and outside any comment. CI and `make next` read it.
-- Commit `intent.md` (`chore(<slug>): intent`) on `build/<slug>`, from `origin/main`, number included, and push. Open no intent PR: the one PR comes with the code. Then hand over to the `sdlc-plan` skill (Skill tool, passing the slug). <!-- rule: tooling.intent-branch -->
+- Commit `intent.md` and `change.toml` (`chore(<slug>): intent`) on `build/<slug>`, from `origin/main`, number included, and push. Open no intent PR: the one PR comes with the code. Then hand over to the `sdlc-plan` skill (Skill tool, passing the slug). <!-- rule: tooling.intent-branch -->
 
 ## Plan (`sdlc-plan`)
 

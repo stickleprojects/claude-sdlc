@@ -24,9 +24,11 @@ from sdlc.artifacts import (
     stage,
 )
 from sdlc.clauses import STAGE_FIELDS, ClauseError, change_blocks
+from sdlc.meta import DONE, OPEN, STATUSES, WITHDRAWN, MetaError, check_meta, expected, read
 from sdlc.resolve import OverrideError, check_overrides, resolve
 from sdlc.roadmap import check_roadmap
 from sdlc.routing import steps
+from sdlc.sweep import matching, set_status, sweep, write
 
 # `make new-change NAME=x TYPE=bug`: make exports command-line variables to recipes, so the
 # type arrives as $TYPE even when a consumer's Makefile doesn't pass it on.
@@ -57,6 +59,7 @@ def cmd_new(root: Path, name: str, kind: str = "feature") -> int:
     if first == "intent.md" and (root / "docs" / "roadmap.md").is_file():
         text = add_milestone_line(text)
     (target / first).write_text(text, encoding="utf-8")
+    write(target, expected(target, OPEN))
     print(target / first)
     # Branches take the slug with its number; shown only the path, agents dropped it (#185).
     print(f"slug: {slug} (its branches: build/{slug}, plan/{slug}, …)")
@@ -222,6 +225,7 @@ def cmd_check(root: Path) -> int:
     problems: list[object] = [
         p for d in change_dirs(root) for p in check_change(d, words, changed, dod)
     ]
+    problems += check_meta(change_dirs(root))
     problems += dod.problems
     problems += check_adrs(root, words)
     problems += check_config(root)
@@ -239,19 +243,71 @@ def cmd_check(root: Path) -> int:
 
 def cmd_status(root: Path) -> int:
     for d in change_dirs(root):
-        progress = build_progress(d)
+        try:
+            meta = read(d)
+        except MetaError:
+            meta = None  # make validate reports it
+        if meta and meta.status != OPEN:
+            progress = meta.status + (f" ({meta.pr})" if meta.pr else "")
+        else:
+            progress = build_progress(d)
         print(f"{d.name}\t{stage(d)}" + (f"\t{progress}" if progress else ""))
     return 0
 
 
-def cmd_next(root: Path, ref: str | None, slug: str | None) -> int:
+def cmd_next(root: Path, ref: str | None, slug: str | None, only_open: bool = False) -> int:
     found = steps(root, ref, slug)
+    closed = [s.skill for s in found if s.skill in (DONE, WITHDRAWN)]
     for step in found:
-        print(step)
+        if not (only_open and step.skill in (DONE, WITHDRAWN)):
+            print(step)
+    if only_open:  # on stderr, so the output stays one change a line
+        left_out = f"{closed.count(DONE)} done, {closed.count(WITHDRAWN)} withdrawn"
+        print(f"left out: {left_out}", file=sys.stderr)
     if slug and not found:
         print(f"no change matching {slug!r}", file=sys.stderr)
         return 1
     return 0
+
+
+def cmd_sync_changes(
+    root: Path, slug: str | None, fix: bool, status: str | None, pr: str | None
+) -> int:
+    """Report, or fix, each change.toml. 0 when nothing is left wrong."""
+    folders = matching(root, slug)
+    if slug and len(folders) != 1:
+        what = "matches several changes" if folders else "matches no change"
+        print(f"{slug!r} {what}", file=sys.stderr)
+        return 2
+    if (status or pr) and not (slug and status):
+        print("STATUS needs CHANGE, and PR needs both", file=sys.stderr)
+        return 2
+    if status:
+        if pr and not re.fullmatch(r"#?[1-9][0-9]*", pr):
+            print(f"PR must be a number, got {pr!r}", file=sys.stderr)
+            return 2
+        meta = set_status(folders[0], status, f"#{pr.removeprefix('#')}" if pr else None)
+        print(f"{folders[0].name}\tstatus {meta.status}" + (f" ({meta.pr})" if meta.pr else ""))
+        if fix:
+            write(folders[0], meta)
+        else:
+            print("nothing written: add FIX=1", file=sys.stderr)
+        return 0
+    left = 0
+    fixable = 0
+    for finding in sweep(root, slug):
+        if finding.meta and fix:
+            write(root / "changes" / finding.slug, finding.meta)
+            print(f"fixed\t{finding}")
+        else:
+            left += 1
+            fixable += finding.meta is not None
+            print(f"{'fixable' if finding.meta else 'decide'}\t{finding}")
+    if not left:
+        print(f"ok: {len(folders)} change.toml file(s) in sync")
+    elif fixable:
+        print(f"{fixable} can be fixed: add FIX=1", file=sys.stderr)
+    return 1 if left else 0
 
 
 def find_change(root: Path, name: str) -> Path | None:
@@ -303,6 +359,21 @@ def main(argv: list[str] | None = None) -> int:
     nxt.add_argument("slug", nargs="?", help="one change: 0002 or 0002-name")
     nxt.add_argument("--ref", help="read the changes from this git ref, e.g. origin/main")
 
+    nxt.add_argument(
+        "--open", dest="only_open", action="store_true", help="leave out done and withdrawn changes"
+    )
+
+    sc = sub.add_parser(
+        "sync-changes", help="compare each change.toml with its folder and git; --fix corrects it"
+    )
+    sc.add_argument("slug", nargs="?", help="one change: 0002 or 0002-name")
+    sc.add_argument("--fix", action="store_true", help="write the corrections (never commits)")
+    sc.add_argument("--status", choices=STATUSES, help="set this change's status by hand")
+    sc.add_argument("--pr", help="with --status, the PR that shipped it")
+
+    cs = sub.add_parser("change-status", help="print change.toml's status, or 'none' (for scripts)")
+    cs.add_argument("change_dir", type=Path, help="a change folder, e.g. changes/0002-name")
+
     cl = sub.add_parser(
         "clauses",
         help="split a spec into one block per requirement, with the criteria and plan lines "
@@ -343,6 +414,16 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         print(kind(args.change_dir))
         return 0
+    if args.command == "change-status":
+        try:
+            meta = read(args.change_dir)
+        except MetaError as e:
+            print(f"{args.change_dir}: change.toml {e}", file=sys.stderr)
+            return 1
+        print(meta.status if meta else "none")
+        return 0
+    if args.command == "sync-changes":
+        return cmd_sync_changes(args.root, args.slug, args.fix, args.status, args.pr)
     if args.command == "new":
         return cmd_new(args.root, args.name, args.kind)
     if args.command == "check":
@@ -350,7 +431,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "clauses":
         return cmd_clauses(args.root, args.change, args.ref, args.stage)
     if args.command == "next":
-        return cmd_next(args.root, args.ref, args.slug)
+        return cmd_next(args.root, args.ref, args.slug, args.only_open)
     return cmd_status(args.root)
 
 

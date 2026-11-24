@@ -11,7 +11,7 @@ slug="$(ls changes 2>/dev/null | grep -E '^[0-9]{4}-' | head -1)"
 dir="changes/$slug"
 branch="$(git branch --show-current)"
 [[ "$branch" == "build/$slug" ]] || fail "on '$branch', not build/$slug"
-for f in bug.md spec.md; do
+for f in bug.md spec.md change.toml; do
   git cat-file -e "HEAD:$dir/$f" 2>/dev/null || fail "$dir/$f isn't committed on the branch"
 done
 for f in plan.md build.md; do
@@ -37,6 +37,9 @@ make -s check >/dev/null 2>&1 || fail "make check fails at HEAD"
 python3 -c 'import sys; sys.path.insert(0, "."); from app.prices import format_price as f; sys.exit(f(150) != "$1.50")' \
   || fail "150 cents still doesn't show as \$1.50"
 
+status="$(PYTHONPATH=.sdlc/src python3 -m sdlc.cli change-status "$dir")"
+[[ "$status" == done ]] || fail "change.toml says $status, not done"
+
 # What CI checks on the PR.
 files="$(git diff --name-only main...HEAD)"
 [[ -s pr-title.txt ]] || fail "no pr-title.txt"
@@ -47,5 +50,5 @@ title="$(head -1 pr-title.txt)"
 # Merged the way GitHub merges it, `make next` shows the bug fixed.
 git checkout -q main
 git merge -q --no-ff -m "Merge pull request #1 from o/build/$slug" "build/$slug" || fail "merge failed"
-make -s next | grep -qF "$slug	spec	done	fixed on the fast path" || fail "make next: $(make -s next)"
+make -s next | grep -qF "$slug	spec	done	" || fail "make next: $(make -s next)"
 echo "check: $slug took the fast path"

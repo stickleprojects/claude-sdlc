@@ -42,6 +42,7 @@ Copy `.sdlc/templates/roadmap.md` to `docs/roadmap.md` and fill in the first mil
 |---|---|
 | The intent PR (`/sdlc-intent`) | The intent gets `Milestone: M<n>` (`make new-change` writes the line, and `make validate` fails it until the milestone is filled in). The milestone's table gets the change's row as `planned`. Any adjustment record is added. |
 | The build PR (`/sdlc-build`) | The row becomes `✅ done`. If that finishes the milestone, the person decides whether to mark the milestone done and tick its exit criteria. |
+| `change.toml` ([change-file.md](change-file.md)) | Its status must agree with the row: `open` with `planned`, `done` with `✅ done`, `withdrawn` with `withdrawn`. |
 | Withdrawing a change | The intent gets its `Withdrawn:` line and the row becomes `withdrawn`, in the same PR. |
 
 The check compares each row with the change's state as `make next` reads it:
