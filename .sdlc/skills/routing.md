@@ -32,7 +32,8 @@ Then check what isn't on main yet:
 
 ## 2. Pick the change
 
-- **The person named one** (`0002` or `0002-breadcrumbs`): use it.
+- **The person named one** (`0002` or `0002-breadcrumbs`): use it. If `.sdlc/scripts/current-change.sh` prints another change that isn't done or withdrawn, warn in one line that this copy is for that one, and go on. <!-- rule: routing.other-change-warning -->
+- **None named, and `current-change.sh` prints one** that isn't done or withdrawn: use it, saying which in one line. Don't ask, even when other changes are candidates. If its next step isn't this skill's, go to step 4. <!-- rule: routing.change-from-branch -->
 - **Otherwise:** the candidates are the changes whose next step is this skill's. One: use it, and say which. Several: ask which with AskUserQuestion, any already under way first. None: go to step 4. <!-- rule: routing.pick-change -->
 
 ## 3. The table
@@ -70,6 +71,10 @@ Say in one line where it is and what comes next, then ask with AskUserQuestion, 
 - **Never redo a finished stage silently.** Replacing a merged intent, spec or plan needs the person to choose it, and goes through a new PR like the first one. <!-- rule: routing.no-silent-redo -->
 - **Nothing for this skill at all** (for example `/sdlc-build` with nothing planned): look one stage back and offer that. `/sdlc-build` offers `/sdlc-plan` when there's something to plan, which in turn offers the spec or the intent. When everything is done or waiting on someone else, say so, with what each change is waiting on, and stop.
 - **Waiting on someone else** (a PR the product owner must review, a spec the workflow is still generating): say who, and link the PR. Don't offer to do their part. <!-- rule: routing.waiting -->
+
+## Getting onto the stage's branch
+
+A change keeps one copy through its stages; only the branch changes. Before writing, be on the skill's `<stage>/<slug>` (tooling and fast-path work stays on `build/<slug>`). Coming from another branch: fetch, then stop and ask if there are uncommitted files or commits that no merged PR holds. Otherwise switch to the branch if it exists, else create it from `origin/main`. If another worktree has it checked out, say where and stop; never force it. <!-- rule: routing.stage-branch -->
 
 ## Going back and pushback
 

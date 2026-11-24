@@ -210,7 +210,8 @@ def test_protect_paths_locks_a_bug_fixes_tests_after_its_failing_test(tmp_path):
 
     repo = init_repo(tmp_path / "r")
     (repo / ".sdlc" / "scripts").mkdir(parents=True)
-    shutil.copy2(REPO / ".sdlc/scripts/tests-locked.sh", repo / ".sdlc/scripts/tests-locked.sh")
+    for name in ("tests-locked.sh", "current-change.sh"):
+        shutil.copy2(REPO / ".sdlc/scripts" / name, repo / ".sdlc/scripts" / name)
     commit(repo, "bug: 0003-x", {"changes/0003-x/bug.md": "# bug\n"})
     git(repo, "switch", "-q", "-c", "build/0003-x")
     payload = {"tool_input": {"file_path": str(repo / "tests/test_x.py")}}
@@ -296,7 +297,8 @@ def project_with_local_hooks(tmp_path, rows, scripts):
     root = init_repo(tmp_path / "p")
     shutil.copytree(REPO / ".sdlc/hooks", root / ".sdlc/hooks")
     (root / ".sdlc/scripts").mkdir(parents=True)
-    shutil.copy2(REPO / ".sdlc/scripts/tests-locked.sh", root / ".sdlc/scripts/tests-locked.sh")
+    for name in ("tests-locked.sh", "current-change.sh"):
+        shutil.copy2(REPO / ".sdlc/scripts" / name, root / ".sdlc/scripts" / name)
     (root / ".sdlc-local/hooks").mkdir(parents=True)
     (root / ".sdlc-local/hooks/hooks.tsv").write_text("".join(r + "\n" for r in rows))
     for name, body in scripts.items():
@@ -434,6 +436,17 @@ def test_plan_gate_reads_the_change_from_the_worktree_or_sdlc_change(plan_repo, 
     assert plan_gate(plan_repo, "src/x.py").returncode == 0
     named = plan_gate(plan_repo, "src/x.py", env={"SDLC_CHANGE": "0003-x"})
     assert named.returncode == 2
+
+
+def test_plan_gate_reads_the_change_from_a_worktree_named_by_its_number(plan_repo, tmp_path):
+    """`claude --worktree 0003` makes the folder 0003 on a branch with no slug (#279)."""
+    from conftest import commit, git
+
+    worktree = tmp_path / "0003"
+    git(plan_repo, "worktree", "add", "-q", "-b", "worktree-0003", str(worktree))
+    assert plan_gate(worktree, "src/x.py").returncode == 2
+    commit(worktree, "plan(0003-x): plan", {"changes/0003-x/plan.md": "# plan\n"})
+    assert plan_gate(worktree, "src/x.py").returncode == 0
 
 
 def gate_from(project, path, env=None):
@@ -605,8 +618,7 @@ def test_the_dispatcher_runs_the_plan_gate(plan_repo):
 
     shutil.copytree(REPO / ".sdlc/hooks", plan_repo / ".sdlc/hooks")
     (plan_repo / ".sdlc/scripts").mkdir(parents=True)
-    shutil.copy2(
-        REPO / ".sdlc/scripts/tests-locked.sh", plan_repo / ".sdlc/scripts/tests-locked.sh"
-    )
+    for name in ("tests-locked.sh", "current-change.sh"):
+        shutil.copy2(REPO / ".sdlc/scripts" / name, plan_repo / ".sdlc/scripts" / name)
     payload = {"tool_name": "Write", "tool_input": {"file_path": str(plan_repo / "src/x.py")}}
     assert dispatch("PreToolUse", payload, plan_repo).returncode == 2

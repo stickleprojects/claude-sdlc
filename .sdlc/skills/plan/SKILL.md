@@ -14,6 +14,8 @@ Follow `.sdlc/skills/routing.md`. The candidates are the changes whose next step
 
 ## 2. Plan it in plan mode
 
+Get onto `plan/<slug>` before saving (*Getting onto the stage's branch* in `.sdlc/skills/routing.md`).
+
 Planning happens in plan mode, with the change's `intent.md` (or `bug.md`) and `spec.md`. If this session isn't in plan mode, enter it (or ask the person to press Shift+Tab until it says plan mode). Read CLAUDE.md, the intent or bug, the spec, the code involved and every architecture decision record in `docs/adr/` (if there are any), then propose the plan. The engineer iterates with you until it can be implemented, then approves it.
 
 Plan mode can't write `plan.md`, and its approval dialog offers to start implementing at once. Tell the engineer before asking for approval: choose **keep planning**, switch the mode selector to *ask before edits*, then run `/sdlc-plan` again to save it. Never start writing code from the dialog: the `plan-gate` hook blocks code edits until `plan.md` is committed. <!-- rule: plan.no-code-from-dialog -->
@@ -55,4 +57,4 @@ Once the plan is approved:
 6. Size the steps to the change. A small change (a message, a one-line fix) needs one to three steps, not a breakdown: `/sdlc-build` builds a plan that small in one session.
 7. Run `make validate`, then commit `plan.md` alone on `plan/<slug>`, push, and open its PR titled `plan(<slug>): <summary>`. No code is written before it merges. Follow the `sdlc-agent-identity` skill for the commit trailer and PR signature. <!-- rule: plan.no-code-before-merge -->
 
-Then tell the engineer: once the plan PR merges, run `/sdlc-build` (`/sdlc-pr` handles its review first). `/sdlc-build` builds it in its own worktree (`claude --worktree <slug>`): in one session for a small plan, or milestone by milestone from an approved `build.md` for a larger one. It finishes with `make local-check` and the `sdlc-verifier` subagent before opening a PR.
+Then tell the engineer: once the plan PR merges, run `/sdlc-build` (`/sdlc-pr` handles its review first). `/sdlc-build` carries on in this copy of the code (type `/clear` first, so the build works from plan.md): in one session for a small plan, or milestone by milestone from an approved `build.md` for a larger one. It finishes with `make local-check` and the `sdlc-verifier` subagent before opening a PR.

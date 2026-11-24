@@ -8,7 +8,7 @@ This is the one skill to remember for PR reviews. It works out what kind of PR i
 ## 1. Which PR
 
 - **A number was given:** use it.
-- **No number:** list the open PRs (`gh api 'repos/{owner}/{repo}/pulls?state=open&per_page=100'`). For each, read the latest review summary comment (`gh api repos/{owner}/{repo}/issues/<N>/comments`, the one starting `Review summary`) and count its open findings. Ask which one with AskUserQuestion: PRs with open findings first, each option saying its title, its kind and how many findings are open. If none has open findings, say which PRs are waiting for a merge, and stop.
+- **No number:** if `.sdlc/scripts/current-change.sh` prints a change with exactly one open PR, use it and say so. Otherwise list the open PRs (`gh api 'repos/{owner}/{repo}/pulls?state=open&per_page=100'`). For each, read the latest review summary comment (`gh api repos/{owner}/{repo}/issues/<N>/comments`, the one starting `Review summary`) and count its open findings. Ask which one with AskUserQuestion: PRs with open findings first, each option saying its title, its kind and how many findings are open. If none has open findings, say which PRs are waiting for a merge, and stop.
 
 ## 2. Hand over
 

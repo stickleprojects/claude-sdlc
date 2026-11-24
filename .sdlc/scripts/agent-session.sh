@@ -2,7 +2,7 @@
 # Start Claude Code as the agent's GitHub identity (see .sdlc/docs/agent-identity.md).
 #
 # Usage: .sdlc/scripts/agent-session.sh [claude arguments...]
-#          e.g. .sdlc/scripts/agent-session.sh --worktree 0002-jd-extraction
+#          e.g. .sdlc/scripts/agent-session.sh --worktree 0002
 #        .sdlc/scripts/agent-session.sh --hook
 #          As a SessionStart hook: appends the identity's environment to $CLAUDE_ENV_FILE, so
 #          every Bash command in the session commits, pushes and comments as the agent.

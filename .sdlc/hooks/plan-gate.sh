@@ -4,8 +4,8 @@
 #
 # Claude Code's plan-mode dialog offers to leave plan mode and start implementing at once, which
 # skips /sdlc-plan. This holds whichever button was pressed:
-#   - On a branch or worktree named after a change (build/0003-x, plan/0003-x, …; the same
-#     detection as .sdlc/scripts/tests-locked.sh, or $SDLC_CHANGE), code waits until
+#   - On a branch or worktree named after a change (build/0003-x, a folder 0003, …:
+#     .sdlc/scripts/current-change.sh says which, or $SDLC_CHANGE), code waits until
 #     changes/<slug>/plan.md is committed. "Committed" means in HEAD: a half-written draft in
 #     the working tree doesn't count.
 #   - The bug fast path (#148): on build/<slug>, a bug whose bug.md and spec.md are both
@@ -22,6 +22,7 @@ set -euo pipefail
 [[ "${SDLC_PLAN_GATE:-}" == "0" ]] && exit 0
 path="$(jq -r '.tool_input.file_path // .tool_input.notebook_path // empty')"
 [[ -z "$path" ]] && exit 0
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="${CLAUDE_PROJECT_DIR:-$PWD}"
 cd "$root" 2>/dev/null || exit 0
 common="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || exit 0
@@ -72,13 +73,7 @@ block() {
 branch="$(git branch --show-current 2>/dev/null || true)"
 [[ -n "$branch" ]] || exit 0  # detached HEAD: a CI checkout or a rebase in progress
 
-slug="${SDLC_CHANGE:-}"
-if [[ -z "$slug" ]]; then
-  for name in "$branch" "$(basename "$top")"; do
-    candidate="$(grep -oE '[0-9]{4}-[a-z0-9]+(-[a-z0-9]+)*' <<<"$name" | head -1 || true)"
-    if [[ -n "$candidate" && -d "changes/$candidate" ]]; then slug="$candidate"; break; fi
-  done
-fi
+slug="$("$here/../scripts/current-change.sh")"
 
 # build/price-decimals for changes/0007-price-decimals: the number is missing, so nothing above
 # matched and every rule below would silently stop applying (#185).

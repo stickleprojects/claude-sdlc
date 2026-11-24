@@ -78,7 +78,7 @@ Ask whenever something is ambiguous, but **one decision at a time**. Use AskUser
 
 ## 2. Get onto the branch and check what the last session left
 
-1. **Get onto the branch.** If `origin/build/<slug>` exists, check it out and fast-forward to it. Otherwise create `build/<slug>` from `origin/main`. If the session was started with `--worktree`, switch the worktree to that branch.
+1. **Get onto the branch.** If `origin/build/<slug>` exists, check it out and fast-forward to it. Otherwise create `build/<slug>` from `origin/main`. Coming from another branch, first check it's safe to leave (*Getting onto the stage's branch* in `.sdlc/skills/routing.md`).
 2. **Uncommitted changes** mean the last session stopped mid-step. Show `git status`, `git diff --stat` and any in-progress notes from build.md, then ask: **keep and continue** (the tests must pass before anything is committed), **stash**, or **discard** (after showing what would be lost).
 3. **Local commits not on origin:** say so, and push them once the checks pass.
 4. **The spec or plan changed on main after the build plan was made.** Check with `git log <built-against sha>..origin/main -- changes/<slug>/spec.md changes/<slug>/plan.md`. If either changed, show what changed, merge `origin/main` into the branch, and update build.md for it as a draft (section 4): changed milestones need approving again.

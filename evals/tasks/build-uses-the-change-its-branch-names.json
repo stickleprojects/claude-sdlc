@@ -1,0 +1,8 @@
+{
+  "name": "a plain sdlc-build on build/0063-… picks 0063 without asking, with 0022 also ready (#279)",
+  "setup": "bash \"$EVAL_ROOT/evals/consumer.sh\" bug-path && for s in 0022-tests-in-parallel 0063-roof-garden; do mkdir -p changes/$s && cp .sdlc/templates/intent.md .sdlc/templates/spec.md .sdlc/templates/plan.md changes/$s/; done && git add -A && git commit -qm \"plans merged\" && git clone -q --bare . .git/origin.git && git remote add origin \"$PWD/.git/origin.git\" && git fetch -q origin && git switch -qc build/0063-roof-garden",
+  "prompt": "You're working in a project that uses the claude-sdlc pipeline. The person typed /sdlc-build and nothing else. Use the sdlc-build skill (read it with `.sdlc/scripts/resolve.sh skills/build/SKILL.md`, and any other skill file it names the same way) and follow it only until it has settled which change it works on. This repo has no GitHub: treat it as having no open PRs. Then write that change's slug on one line to picked.txt in the repo root, and stop: no build, no commits. If the skill says to ask the person which change, write ASK to picked.txt instead and stop.",
+  "check": "grep -qx 0063-roof-garden picked.txt && test \"$(wc -l < picked.txt)\" -le 1",
+  "tools": "Read,Grep,Glob,Write,Bash(git:*),Bash(make:*),Bash(ls:*),Bash(.sdlc/scripts/resolve.sh:*),Bash(.sdlc/scripts/current-change.sh:*)",
+  "max_turns": 40
+}

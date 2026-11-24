@@ -133,3 +133,10 @@ def test_use_and_setup_refuse_to_replace_an_existing_config(agent_env):
     assert identity(env, "use", str(other), "--force").returncode == 0
     setup = identity(env, "setup", "--app-id", "1", "--key", env["SDLC_AGENT_KEY_FILE"])
     assert setup.returncode == 1 and "already exists" in setup.stderr
+
+
+def test_a_worktree_named_by_the_number_locks_too(bug_branch):
+    commit(bug_branch, "test(0003-overlap): failing test", {"tests/test_overlap.py": "x\n"})
+    worktree = bug_branch.parent / "0003"
+    git(bug_branch, "worktree", "add", "-q", "-b", "wip", str(worktree))
+    assert locked(worktree, "tests/test_overlap.py")
