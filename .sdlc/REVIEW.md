@@ -70,6 +70,6 @@ Keep exactly **one** summary comment per PR, and replace it on each new review r
 4. One line per open finding: a short quote of the text it's about, the owner who decides, and a link to its thread.
 5. One line on whether the change matches its spec, saying what was compared, and claiming only what was checked. For example: "Every clause of R1–R45 traced to an acceptance criterion and to a plan step and test (112 clauses)", or "IDs only: every acceptance criterion has a Verification row". <!-- rule: review.claim-only-checked -->
 6. How to handle the findings, as a one-line reminder:
-   - Whoever decides runs `/sdlc-pr <N>` in Claude Code: the product owner for `intent:`, `bug:` and `spec:` PRs, the engineer for the rest.
+   - Whoever decides runs `/sdlc-pr <N>` in Claude Code (if the repo has no `.claude/skills/sdlc-pr/SKILL.md`, as in the framework's own repo, write instead: asks Claude Code to "work through the review on PR <N>, following `.sdlc/skills/pr/SKILL.md`"): the product owner for `intent:`, `bug:` and `spec:` PRs, the engineer for the rest.
    - Tagging `@claude` on a thread is optional. It hands that finding to the GitHub bot instead, so don't do both for one finding.
 7. Last, the hidden count line from [Posting findings](#posting-findings).
