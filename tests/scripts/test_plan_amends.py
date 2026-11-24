@@ -171,7 +171,7 @@ def test_update_branch_needs_a_review_when_main_changed_a_file_the_pr_changes(ba
     main_moves_on(git_, "notes.md", "one\nmain's line\ntwo\nthree\n")
     git_("merge", "-q", "--no-edit", "main")
     _, posted = go(git_("rev-parse", "HEAD"))
-    assert "state=failure" in posted, posted
+    assert "state=pending" in posted, posted
     assert "Not reviewed: main changed notes.md too, which this PR changes" in posted
 
 
@@ -204,7 +204,7 @@ def test_a_conflict_resolved_by_hand_needs_a_review(base_merge):
     git_("add", "app.py")
     git_("commit", "-qm", "merge main, keeping the PR's line")
     _, posted = go(git_("rev-parse", "HEAD"))
-    assert "state=failure" in posted and "Not reviewed" in posted
+    assert "state=pending" in posted and "Not reviewed" in posted
 
 
 def test_a_merge_of_a_branch_that_isnt_the_base_needs_a_review(base_merge):
@@ -216,7 +216,7 @@ def test_a_merge_of_a_branch_that_isnt_the_base_needs_a_review(base_merge):
     git_("checkout", "-q", "pr")
     git_("merge", "-q", "--no-edit", "side")
     _, posted = go(git_("rev-parse", "HEAD"))
-    assert "state=failure" in posted
+    assert "state=pending" in posted
 
 
 @pytest.mark.parametrize(

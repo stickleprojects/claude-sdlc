@@ -268,6 +268,11 @@ case "$2" in
   repos/o/r/statuses/*)
     [[ -f "$D/post-fails" ]] && exit 1
     printf '%s\n' "$*" > "$D/posted" ;;
+  repos/o/r/pulls/7) jq -r "$jqf" < "$D/pull" ;;
+  repos/o/r/actions/workflows/sdlc-claude-review.yml/runs*) jq -r "$jqf" < "$D/runs" ;;
+  -X)
+    [[ -f "$D/cancel-fails" ]] && exit 1
+    id="${4#repos/o/r/actions/runs/}"; echo "${id%/cancel}" >> "$D/cancelled" ;;
   *) exit 1 ;;
 esac
 """

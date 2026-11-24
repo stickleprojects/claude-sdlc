@@ -12,8 +12,9 @@
 # requirement the way the job's own `review` check run could (#101).
 # Every repo requires `claude-review`, so nobody merges on a stale review (#46): without
 # auto-merge, a push isn't reviewed, and the `unreviewed-push` job marks its commit as not
-# reviewed, with what to do. The `review` label then reviews it. A push that only merges the base
-# in, leaving the PR's diff as reviewed (GitHub's Update branch), keeps its review (#182).
+# reviewed (pending), with what to do, and cancels a review of an older commit (#277). The
+# `review` label then reviews it. A push that only merges the base in, leaving the PR's diff as
+# reviewed (GitHub's Update branch), keeps its review (#182).
 name: Claude review
 
 on:
@@ -419,10 +420,16 @@ jobs:
       github.event.pull_request.head.repo.full_name == github.repository &&
       (vars.SDLC_AUTO_MERGE == '' || vars.SDLC_AUTO_MERGE == 'off')
     runs-on: ${{ vars.SDLC_RUNNER && !github.event.issue.pull_request && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && vars.SDLC_RUNNER || 'ubuntu-latest' }}
+    permissions:
+      contents: read
+      pull-requests: read
+      statuses: write
+      actions: write  # cancel a review still running on an older commit (#277)
     env:
       GH_TOKEN: ${{ github.token }}
       PR: ${{ github.event.pull_request.number }}
       HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      HEAD_REF: ${{ github.event.pull_request.head.ref }}
       # A push that only merges the base in keeps the review (#182), unless the repo sets
       # SDLC_REVIEW_CARRY_FORWARD to `off`.
       BASE_REF: ${{ github.event.pull_request.base.ref }}

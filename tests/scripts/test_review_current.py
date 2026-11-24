@@ -15,10 +15,12 @@ def review_current(tmp_path):
     (fake / "gh").write_text(FAKE_GH_REVIEW_CURRENT)
     (fake / "gh").chmod(0o755)
 
-    def go(commits, statuses, post_fails=False):
+    def go(
+        commits, statuses, post_fails=False, runs=(), head_ref="", pr_head=None, cancel_fails=False
+    ):
         for f in tmp_path.glob("status-*"):
             f.unlink()
-        for name in ("posted", "post-fails", "calls"):
+        for name in ("posted", "post-fails", "calls", "cancel-fails", "cancelled"):
             (tmp_path / name).unlink(missing_ok=True)
         (tmp_path / "commits").write_text("".join(f"{sha(c)}\n" for c in commits))
         for c, states in statuses.items():
@@ -26,14 +28,21 @@ def review_current(tmp_path):
             (tmp_path / f"status-{sha(c)}").write_text(json.dumps(entries))
         if post_fails:
             (tmp_path / "post-fails").write_text("")
+        (tmp_path / "runs").write_text(json.dumps({"workflow_runs": list(runs)}))
+        (tmp_path / "pull").write_text(json.dumps({"head": {"sha": sha(pr_head or commits[-1])}}))
+        if cancel_fails:
+            (tmp_path / "cancel-fails").write_text("")
         result = run(
             ["bash", str(REPO / ".sdlc/scripts/review-current.sh"), "7", sha(commits[-1])],
             env={
                 "PATH": f"{fake}:{os.environ['PATH']}",
                 "D": str(tmp_path),
                 "GITHUB_REPOSITORY": "o/r",
+                "HEAD_REF": head_ref,
             },
         )
+        cancelled = tmp_path / "cancelled"
+        result.cancelled = cancelled.read_text().split() if cancelled.exists() else []
         posted = tmp_path / "posted"
         return result, posted.read_text() if posted.exists() else None
 
@@ -45,7 +54,7 @@ def test_review_current_marks_commits_after_the_review_as_not_reviewed(review_cu
     result, posted = review_current([1, 2, 3, 4], {2: [("claude-review", "success")]})
     assert result.returncode == 0, result.stderr
     assert f"repos/o/r/statuses/{sha(4)}" in posted
-    assert "-f state=failure" in posted and "-f context=claude-review" in posted
+    assert "-f state=pending" in posted and "-f context=claude-review" in posted
     assert "Not reviewed: 2 commits since the review of 0000000. Add the review label" in posted
 
 
@@ -84,6 +93,47 @@ def test_review_current_fails_when_it_cant_post(review_current):
     assert result.returncode == 1 and "can't post" in result.stderr
 
 
+def run_of(n, status="in_progress", branch="b", repo="o/r", id=1):
+    return {
+        "id": id,
+        "status": status,
+        "head_branch": branch,
+        "head_sha": sha(n),
+        "head_repository": {"full_name": repo},
+    }
+
+
+def test_a_push_cancels_only_reviews_of_its_branchs_older_commits(review_current):
+    runs = [
+        run_of(1, id=11),
+        run_of(9, "queued", id=12),  # force-pushed away
+        run_of(2, id=13),  # the pushed commit's own
+        run_of(1, "completed", id=14),
+        run_of(1, branch="other", id=15),
+        run_of(1, repo="fork/r", id=16),
+    ]
+    result, posted = review_current([1, 2], {1: []}, runs=runs, head_ref="b")
+    assert result.returncode == 0 and "state=pending" in posted
+    assert result.cancelled == ["11", "12"]
+
+
+def test_nothing_is_cancelled_when_it_shouldnt_be(review_current):
+    runs = [run_of(1, id=11)]
+    newer, _ = review_current([1, 2], {}, runs=runs, head_ref="b", pr_head=3)
+    assert newer.cancelled == [], "a newer push's review isn't older"
+    assert review_current([1, 2], {}, runs=runs)[0].cancelled == [], "no HEAD_REF"
+    own = {2: [("claude-review", "pending")]}
+    assert review_current([1, 2], own, runs=runs, head_ref="b")[0].cancelled == []
+
+
+def test_a_cancel_that_fails_doesnt_fail_the_push(review_current):
+    result, posted = review_current(
+        [1, 2], {}, runs=[run_of(1, id=11)], head_ref="b", cancel_fails=True
+    )
+    assert result.returncode == 0 and "state=pending" in posted
+    assert "couldn't cancel run 11" in result.stdout
+
+
 def test_review_current_usage():
     assert run(["bash", ".sdlc/scripts/review-current.sh", "7"]).returncode == 2
     assert run(["bash", ".sdlc/scripts/review-current.sh", "x", sha(1)]).returncode == 2
@@ -97,6 +147,7 @@ def test_unreviewed_pushes_are_marked_when_the_review_doesnt_run():
     assert "(vars.SDLC_AUTO_MERGE == '' || vars.SDLC_AUTO_MERGE == 'off')" in job
     assert "github.event.pull_request.head.repo.full_name == github.repository" in job
     assert '.sdlc/scripts/review-current.sh "$PR" "$HEAD_SHA"' in job
+    assert "actions: write" in job and "HEAD_REF: ${{ github.event.pull_request.head.ref" in job
     assert "claude-code-action" not in job and "secrets." not in job, "no model, no secrets"
     for script in ("review-current.sh", "check-pr-title.sh"):
         assert synced(f".sdlc/scripts/{script}"), script
