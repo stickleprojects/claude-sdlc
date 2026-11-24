@@ -211,7 +211,7 @@ def test_an_open_important_thread_waits_and_says_why(gate):
         ),
         (
             status(
-                "claude-review", "failure", "Not reviewed: 1 commit since the review of abc1234"
+                "claude-review", "pending", "Not reviewed: 1 commit since the review of abc1234"
             ),
             "Waiting for a clean Claude review: Not reviewed: 1 commit since",
         ),

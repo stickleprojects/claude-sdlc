@@ -5,10 +5,11 @@
 #
 # The review posts a `claude-review` commit status on each commit it reviews, and main requires
 # it, so nobody merges on a stale review. Without auto-merge, a push doesn't start a review, so
-# the new commit has no status and GitHub would only show "Expected". This puts a failure there
-# that says why and what to do: "Not reviewed: 2 commits since the review of abc1234. Add the
+# the new commit has no status and GitHub would only show "Expected". This puts a pending status there
+# (nothing failed, and pending blocks the merge too, #277) that says why and what to do: "Not reviewed: 2 commits since the review of abc1234. Add the
 # review label." Adding the label (.sdlc/scripts/request-review.sh does it after a skill's push) runs
-# the review, which replaces the failure.
+# the review, which replaces it. A review still running on an older commit of the PR can't count
+# any more, so it's cancelled (best effort).
 #
 # Every push counts, docs and sketches too: any commit after the review needs a new one. The
 # exception is a push that only merges the base branch in, such as GitHub's Update branch
@@ -24,6 +25,7 @@
 # left alone. Exits 0 unless it can't read or post, so the push's other checks are unaffected.
 #
 # Env: GITHUB_REPOSITORY (owner/name; default: the gh repo of this checkout).
+#      HEAD_REF  the PR's branch, to find the review runs to cancel. Unset: none are cancelled.
 #      BASE_REF  the PR's base branch, as origin/<BASE_REF> in this checkout with the PR's
 #                history (fetch-depth: 0). Unset or unreadable: every push needs a review.
 #      SDLC_REVIEW_CARRY_FORWARD  `off`: every push needs a review, base merges too (the repo
@@ -101,6 +103,23 @@ elif [[ -n "$reviewed" ]]; then
 else
   description="Not reviewed yet: add the review label to run the Claude review"
 fi
-gh api "repos/$repo/statuses/$head" --silent -f state=failure -f context=claude-review \
+gh api "repos/$repo/statuses/$head" --silent -f state=pending -f context=claude-review \
   -f description="${description:0:140}" || { echo "review-current: can't post the status" >&2; exit 1; }
 echo "review-current: ${head:0:7}: $description"
+
+# Cancel the reviews of older commits, unless a newer push came in: its review isn't older.
+[[ -n "${HEAD_REF:-}" ]] || exit 0
+[[ "$(gh api "repos/$repo/pulls/$pr" --jq .head.sha 2>/dev/null)" == "$head" ]] || exit 0
+export HEAD_REF REPO="$repo" HEAD="$head"
+stale="$(gh api "repos/$repo/actions/workflows/sdlc-claude-review.yml/runs?event=pull_request&per_page=50" \
+  --jq '.workflow_runs[] | select(.status != "completed" and .head_branch == env.HEAD_REF
+    and .head_repository.full_name == env.REPO and .head_sha != env.HEAD) | .id' 2>/dev/null)" || stale=""
+while IFS= read -r id; do
+  [[ -n "$id" ]] || continue
+  if gh api -X POST "repos/$repo/actions/runs/$id/cancel" --silent 2>/dev/null; then
+    echo "review-current: cancelled run $id, a review of an older commit"
+  else
+    echo "review-current: couldn't cancel run $id, a review of an older commit"
+  fi
+done <<<"$stale"
+exit 0

@@ -71,7 +71,7 @@ def test_descope_reasons_fit_a_status(descopes):
         ),
         (("success", "The Claude review is posted"), [], ""),  # nothing to change
         (("pending", "The Claude review is running"), [descope_thread()], ""),  # the review's
-        (("failure", "Not reviewed: add the review label"), [], ""),  # not ours to clear
+        (("pending", "Not reviewed: add the review label"), [], ""),  # not ours to clear
         (("failure", "The review ran but posted no summary"), [], ""),
     ],
 )

@@ -97,6 +97,7 @@ wait_for() {
 review="$(latest claude-review)" || fail "can't read the statuses of ${head:0:7}"
 case "$review" in
   "") wait_for "Waiting for the Claude review" ;;
+  "pending Not reviewed"*) wait_for "Waiting for a clean Claude review: ${review#* }" ;;
   pending*) wait_for "Waiting for the Claude review, which is running" ;;
   success*) ;;
   *) wait_for "Waiting for a clean Claude review: ${review#* }" ;;

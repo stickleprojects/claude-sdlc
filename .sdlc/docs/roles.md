@@ -128,7 +128,7 @@ To regenerate a spec by hand, run `claude`, then `/sdlc-next NNNN`: when the spe
    > /sdlc-pr <N>
    ```
    Claude goes through the findings one at a time and asks what you want. Then it fixes the code, pushes, replies on every thread and resolves it. Tagging `@claude` on a GitHub comment is an optional alternative, where the bot pushes the fix. Use one or the other for a finding, never both: before it pushes, Claude Code checks the branch for bot commits.
-   The review runs when the PR opens, not on every push. A push after the review marks the PR's `claude-review` check "Not reviewed", which blocks the merge until you add the `review` label; it removes itself so you can add it again.
+   The review runs when the PR opens, not on every push. A push after the review marks the PR's `claude-review` check pending, "Not reviewed", which blocks the merge until you add the `review` label; it removes itself so you can add it again.
 
 **Stays with you:** Approving the plan and the build plan, and deciding the work is done. When Claude makes the same mistake twice, add the correction to `CLAUDE.md`.
 
