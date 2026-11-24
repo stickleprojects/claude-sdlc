@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from conftest import REPO, copy_working_tree, git, run
+from sdlc.meta import Meta
 
 SLUG = "0001-price-decimals"
 FAST = REPO / "evals/checks/bug-fast-path.sh"
@@ -101,10 +102,12 @@ def commit(repo: Path, message: str, files: dict[str, str]) -> None:
     git(repo, "commit", "-q", "-m", message)
 
 
-def report_and_spec(repo: Path, spec: bool = True) -> None:
+def report_and_spec(repo: Path, spec: bool = True, status: str = "done") -> None:
     files = {f"changes/{SLUG}/bug.md": BUG}
     if spec:
         files[f"changes/{SLUG}/spec.md"] = SPEC
+        heading = BUG.split("\n")[0].removeprefix("# Bug: ")
+        files[f"changes/{SLUG}/change.toml"] = Meta(SLUG[:4], SLUG, heading, status).render()
     commit(repo, f"bug({SLUG}): 150 cents shows as $1.5", files)
 
 
@@ -203,6 +206,15 @@ def test_fast_path_check_fails_off_the_build_branch(consumer):
     fix(consumer)
     title(consumer)
     assert f"not build/{SLUG}" in check(consumer, FAST).stdout
+
+
+def test_fast_path_check_fails_a_change_left_open(consumer):
+    git(consumer, "switch", "-q", "-c", f"build/{SLUG}")
+    report_and_spec(consumer, status="open")
+    failing_test(consumer)
+    fix(consumer)
+    title(consumer)
+    assert "change.toml says open, not done" in check(consumer, FAST).stdout
 
 
 def test_fast_path_check_fails_when_the_bug_is_still_there(consumer):

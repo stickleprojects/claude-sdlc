@@ -121,6 +121,7 @@ A holder can hold part of a rule only, such as the plan gate holding "no code be
 | `build.draft-never-built` | A draft build.md is committed but never built from | nothing |
 | `build.approval-no-open-questions` | An approved build.md has no open questions | `check: .sdlc/src/sdlc/artifacts.py::check_build` |
 | `build.repair-first` | Repair reopened milestones before new work | nothing |
+| `build.change-done` | The build PR sets `change.toml` to done | `check: .sdlc/scripts/check-plan-first.sh` |
 | `build.roadmap-row` | Mark the roadmap row done in the build PR; ask before marking a milestone done | `check: .sdlc/src/sdlc/roadmap.py::check_roadmap` |
 | `build.verifier` | Run the verifier before the PR; open it with unapproved large gaps listed first | nothing |
 | `build.pr-body-order` | The build PR body leads with what needs a decision | nothing |

@@ -13,7 +13,7 @@ SDLC ?= PYTHONPATH=.sdlc/src python3 -m sdlc.cli
 # Including this file mustn't change the project's default target.
 _sdlc_default_goal := $(.DEFAULT_GOAL)
 
-.PHONY: new-change status next clauses exec-bits evals sync-sdlc local-check
+.PHONY: new-change status next sync-changes clauses exec-bits evals sync-sdlc local-check
 
 # Start a change: make new-change NAME=add-login (TYPE=bug for a bug: bug.md).
 new-change:
@@ -25,9 +25,16 @@ status:
 	@$(SDLC) status
 
 # Each change's next step and the skill that owns it; the entry skills route by it.
-# CHANGE=0002 limits it to one change, REF=origin/main reads what's merged.
+# CHANGE=0002 limits it to one change, REF=origin/main reads what's merged,
+# OPEN=1 leaves out done and withdrawn changes.
 next:
-	@$(SDLC) next $(CHANGE) $(if $(REF),--ref $(REF))
+	@$(SDLC) next $(CHANGE) $(if $(REF),--ref $(REF)) $(if $(OPEN),--open)
+
+# Housekeeping, only when needed: compare each change.toml with its folder and with git (#272).
+# It reports; FIX=1 writes the corrections, to review and commit. CHANGE=0002 limits it to one,
+# and CHANGE=0002 STATUS=done [PR=12] FIX=1 sets a status by hand.
+sync-changes:
+	@$(SDLC) sync-changes $(CHANGE) $(if $(FIX),--fix) $(if $(STATUS),--status $(STATUS)) $(if $(PR),--pr "$(PR)")
 
 # One block per requirement (its text, the criteria and plan lines citing it), read by
 # .sdlc/scripts/clause-check.sh. CHANGE=0002 is required; REF=origin/main keeps only what changed,
