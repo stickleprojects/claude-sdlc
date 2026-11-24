@@ -37,9 +37,36 @@ def test_a_descope_sent_back_waits_for_a_review_after_the_reply(descopes):
     assert waiting.returncode == 1
     assert "@po sent a descope back (The export" in waiting.stdout
     assert "add the review label" in waiting.stdout
-    reviewed = descopes([descope_thread(back)], reviewed="2026-11-13T12:00:00Z")
+    built = descope_thread(back, resolved=True)
+    reviewed = descopes([built], reviewed="2026-11-13T12:00:00Z")
     assert reviewed.returncode == 0 and "sent back by @po, re-reviewed" in reviewed.stdout
     assert descopes([descope_thread(back)], reviewed=None).returncode == 1  # no review at all
+
+
+def test_a_thread_left_open_needs_the_approved_reply(descopes):
+    """#275: a reply from the person's account (an agent's, say) and a re-review that still lists
+    the thread isn't a decision. Built, resolved and re-reviewed is, and so is Approved."""
+    said = note("kieron", "Ran the evals, 3/3 passed. Claude Code", "2026-11-13T11:00:00Z")
+    later = "2026-11-13T12:00:00Z"
+    result = descopes([descope_thread(said)], reviewed=later)
+    assert result.returncode == 1
+    assert result.stdout.startswith("A descope still needs approval: The export")
+    long = descopes([descope_thread(said, first=DESCOPE + " " + "x" * 300)], reviewed=later)
+    assert len(long.stdout.strip()) <= 140
+    assert descopes([descope_thread(said, resolved=True)], reviewed=later).returncode == 0
+    approved = note("kieron", "Approved: Kieron, 2026-11-13", "2026-11-13T13:00:00Z")
+    result = descopes([descope_thread(said, approved)], reviewed=later)
+    assert result.returncode == 0 and "approved by @kieron" in result.stdout
+    status = ("failure", "A descope still needs approval: x")
+    cleared = descopes([descope_thread(said, approved)], status=status, script="status")
+    assert "state=success" in cleared.posted
+
+
+def test_resolving_without_a_reply_or_before_a_review_doesnt_settle_it(descopes):
+    assert descopes([descope_thread(resolved=True)]).returncode == 1
+    said = note("kieron", "Built.", "2026-11-13T11:00:00Z")
+    early = descopes([descope_thread(said, resolved=True)], reviewed="2026-11-13T10:30:00Z")
+    assert early.returncode == 1
 
 
 def test_every_descope_must_be_decided(descopes):
