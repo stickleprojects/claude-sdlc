@@ -19,20 +19,24 @@ permissions:
   pull-requests: read
   statuses: write
 
-# A newer reply or review on the same PR replaces a check still running.
-concurrency:
-  group: descopes-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
-
 jobs:
   descopes:
     # Fork PRs get a read-only token, and their review job doesn't run either. A comment from
     # a bot (the review itself, the agent's App) can't decide a descope, and neither can a
     # bot's review (the reviewer posts one per run, #189), so neither changes anything.
+    # A reply in a thread also submits a `commented` review with no body: the comment's own event
+    # covers it, so that review is skipped, as is one that only carries inline comments (#283).
     if: >-
       github.event.pull_request.head.repo.full_name == github.repository &&
       (github.event_name != 'pull_request_review_comment' || github.event.comment.user.type == 'User') &&
-      (github.event_name != 'pull_request_review' || github.event.review.user.type == 'User')
+      (github.event_name != 'pull_request_review' || (github.event.review.user.type == 'User' &&
+      (github.event.review.state != 'commented' || github.event.review.body)))
+    # One at a time per PR, never cancelled: a cancelled job shows on the PR as a failure (#283).
+    # On the job, so a skipped run takes no turn. Each run reads the threads as they are when it
+    # starts, so the last one has the last word.
+    concurrency:
+      group: descopes-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
     runs-on: ${{ vars.SDLC_RUNNER && !github.event.issue.pull_request && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && vars.SDLC_RUNNER || 'ubuntu-latest' }}
     env:
       GH_TOKEN: ${{ github.token }}
