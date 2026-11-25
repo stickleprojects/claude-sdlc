@@ -61,12 +61,35 @@ def git(root: Path, *args: str) -> str | None:
     return result.stdout.strip() if result.returncode == 0 else None
 
 
+# The header lines that place a change on the roadmap: they say nothing about what it does (#280).
+PLACEMENT_RE = re.compile(r"(Milestone|Adjustment):")
+
+
+def without_placement(text: str) -> list[str]:
+    """An intent's or bug's lines, less the roadmap lines (and blank lines) of its header, which
+    ends at the first `##` heading."""
+    lines = text.splitlines()
+    end = next((i for i, line in enumerate(lines) if line.startswith("## ")), len(lines))
+    header = [line for line in lines[:end] if line.strip() and not PLACEMENT_RE.match(line)]
+    return header + lines[end:]
+
+
+def only_placement_changed(root: Path, path: str, old: str, new: str) -> bool:
+    """Whether the file differs between two revisions only in where it sits on the roadmap.
+    False when either can't be read: then it counts as changed."""
+    before, after = (git(root, "show", f"{rev}:{path}") for rev in (old, new))
+    if before is None or after is None:
+        return False
+    return without_placement(before) == without_placement(after)
+
+
 def out_of_date(
     root: Path, rev: str, slug: str, present: set[str], tooling: bool = False
 ) -> tuple[str, str] | None:
     """(artifact, why) for the earliest artifact whose base changed after it was last
     committed at `rev`, or None. Outside git, or before anything is committed, nothing is.
-    A tooling change's plan (#221) has no spec, so its base is the intent."""
+    A tooling change's plan (#221) has no spec, so its base is the intent. A base whose only
+    difference since is its roadmap lines hasn't changed (#280)."""
     folder = f"changes/{slug}"
     bases_of = dict(BASES)
     if tooling:
@@ -85,6 +108,11 @@ def out_of_date(
         for base in bases:
             theirs = last(base) if base in present else None
             if theirs and git(root, "merge-base", "--is-ancestor", theirs, mine) is None:
+                path = f"{folder}/{base}"
+                if base in ("intent.md", "bug.md") and only_placement_changed(
+                    root, path, mine, rev
+                ):
+                    continue
                 return artifact, (
                     f"out of date: {base} changed in {theirs[:7]} after {artifact}; "
                     f"update {artifact}, or confirm it still holds"

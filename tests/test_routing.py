@@ -177,6 +177,93 @@ def test_an_amended_intent_sends_it_back_to_the_spec(tmp_path: Path) -> None:
     assert step.skill == "sdlc-spec" and "intent.md changed" in step.detail
 
 
+HEADER = "# T\n\nOriginator: A\nProduct owner: B\nMilestone: M1\n\n## Outcome\n\nx\n"
+
+
+def placed_repo(tmp_path: Path, name: str = "intent.md") -> Path:
+    """A change whose spec is written against HEADER; returns its intent or bug."""
+    repo = init_repo(tmp_path / "r")
+    commit(repo, "start", {f"changes/0001-x/{name}": HEADER})
+    commit(repo, "spec", {"changes/0001-x/spec.md": files(CHAIN["spec.md"])})
+    return repo / "changes/0001-x" / name
+
+
+@pytest.mark.parametrize("name", ["intent.md", "bug.md"])
+@pytest.mark.parametrize(
+    "edits",
+    [
+        [("Milestone: M1", "Milestone: M2")],
+        [("Milestone: M1\n", "")],
+        [("Milestone: M1", "Milestone: M3\nAdjustment: 0004-x")],
+        [("Milestone: M1", "Milestone: M1\n\nAdjustment: 0004-x\n")],
+        [("Milestone: M1", "Milestone: M2"), ("Milestone: M2", "Milestone: M3")],
+    ],
+    ids=["moved", "removed", "adjusted", "blank-lines", "moved-twice"],
+)
+def test_a_roadmap_move_does_not_make_the_spec_out_of_date(tmp_path: Path, name, edits) -> None:
+    """#280: placing a change on the roadmap says nothing about what it does."""
+    path = placed_repo(tmp_path, name)
+    for old, new in edits:
+        path.write_text(path.read_text().replace(old, new))
+        commit(tmp_path / "r", "roadmap move")
+    assert steps(tmp_path / "r", ref="HEAD")[0].skill == "sdlc-plan"
+
+
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [
+        ("Product owner: B", "Product owner: C"),
+        ("Milestone: M1", "Milestone: M1\nReleased-by: D"),
+        ("Milestone: M1", "Milestone: M2\nReleased-by: D"),
+        ("# T", "# U"),
+        ("\nx\n", "\nx, and y\n"),
+        ("\nx\n", "\nx\nMilestone: M2\n"),
+        ("\nx\n", "\nx\n\nAdjustment: none\n"),
+        ("Milestone: M1", "Milestones: M1"),
+    ],
+    ids=["owner", "new-line", "move-and-line", "title", "body", "in-body", "adjust-body", "name"],
+)
+def test_any_other_intent_edit_makes_the_spec_out_of_date(tmp_path: Path, old, new) -> None:
+    path = placed_repo(tmp_path)
+    path.write_text(path.read_text().replace(old, new))
+    commit(tmp_path / "r", "edit")
+    [step] = steps(tmp_path / "r", ref="HEAD")
+    assert step.skill == "sdlc-spec" and "intent.md changed in" in step.detail
+
+
+def test_a_kind_line_is_a_change(tmp_path: Path) -> None:
+    path = placed_repo(tmp_path)
+    path.write_text(path.read_text().replace("Milestone: M1", "Milestone: M1\nKind: tooling"))
+    commit(tmp_path / "r", "edit")
+    [step] = steps(tmp_path / "r", ref="HEAD")
+    assert step.detail.startswith("out of date: intent.md changed in")
+
+
+def test_a_roadmap_move_after_a_real_edit_still_counts(tmp_path: Path) -> None:
+    path = placed_repo(tmp_path)
+    for old, new in [("\nx\n", "\nx, and y\n"), ("Milestone: M1", "Milestone: M2")]:
+        path.write_text(path.read_text().replace(old, new))
+        commit(tmp_path / "r", "edit")
+    assert steps(tmp_path / "r", ref="HEAD")[0].skill == "sdlc-spec"
+
+
+def test_an_intent_that_cannot_be_compared_counts_as_changed(tmp_path: Path) -> None:
+    """The spec was committed before any intent: there's nothing to compare with."""
+    repo = init_repo(tmp_path / "r")
+    commit(repo, "spec", {"changes/0001-x/spec.md": files(CHAIN["spec.md"])})
+    commit(repo, "intent", {"changes/0001-x/intent.md": HEADER})
+    assert steps(repo, ref="HEAD")[0].skill == "sdlc-spec"
+
+
+def test_a_roadmap_line_in_a_spec_is_not_exempt(tmp_path: Path) -> None:
+    repo = planned_repo(tmp_path)
+    spec = repo / "changes/0001-x/spec.md"
+    spec.write_text(spec.read_text().replace("# T\n", "# T\n\nMilestone: M2\n", 1))
+    commit(repo, "spec edit")
+    assert steps(repo, ref="HEAD")[0].skill == "sdlc-plan"
+    assert "spec.md changed in" in steps(repo, ref="HEAD")[0].detail
+
+
 def test_a_build_in_progress_goes_out_of_date_when_the_plan_changes(tmp_path: Path) -> None:
     repo = planned_repo(tmp_path)
     approved = BUILD_TEMPLATE.replace("draft, awaiting approval", "in progress", 1)
