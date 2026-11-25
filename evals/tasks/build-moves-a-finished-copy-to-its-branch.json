@@ -1,0 +1,8 @@
+{
+  "name": "a plain sdlc-build on a merged plan branch moves the copy to build/<slug> (#279)",
+  "setup": "bash \"$EVAL_ROOT/evals/consumer.sh\" bug-path && bash \"$EVAL_ROOT/evals/checks/stage-branch.sh\" setup clean",
+  "prompt": "You're working in a project that uses the claude-sdlc pipeline. The person typed /sdlc-build and nothing else. Use the sdlc-build skill (read it with `.sdlc/scripts/resolve.sh skills/build/SKILL.md`, and any other skill file it names the same way) and follow it only until it has got onto its branch, or has to ask the person something first. There is no GitHub here: treat it as having no open PRs, and a commit counts as merged when origin/main has it. The change files are templates: don't judge their content. When it is on its branch, write MOVED on one line to outcome.txt in the repo root (don't commit it). If the skill has to ask first, write ASK to outcome.txt instead, with the question on the next line, and leave everything as it is. Then stop: no build, no build plan.",
+  "check": "bash \"$EVAL_ROOT/evals/checks/stage-branch.sh\" check clean",
+  "tools": "Read,Grep,Glob,Write,Bash(git:*),Bash(make:*),Bash(ls:*),Bash(.sdlc/scripts/resolve.sh:*),Bash(.sdlc/scripts/current-change.sh:*)",
+  "max_turns": 40
+}

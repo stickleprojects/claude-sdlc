@@ -76,11 +76,14 @@ A holder can hold part of a rule only, such as the plan gate holding "no code be
 | Id | Rule | Held by |
 |---|---|---|
 | `routing.entry-skills` | Six entry skills; the rest are internal and reached through them | `test: tests/test_routing.py::test_routing_lists_exactly_the_entry_and_internal_skills` |
+| `routing.other-change-warning` | Naming another change in a copy made for one gets a one-line warning, not a block | nothing |
+| `routing.change-from-branch` | With no change named, the copy's own change is used without asking | `eval: build-uses-the-change-its-branch-names`, `test: tests/scripts/test_current_change.py::test_the_branch_names_the_change` |
 | `routing.pick-change` | One candidate: use it; several: ask; none: look one stage back | nothing |
 | `routing.open-pr-first` | An open PR for the next artifact comes before what's on main | nothing |
 | `routing.invoke-next` | Invoke the next skill; don't ask the person to type it | nothing |
 | `routing.no-silent-redo` | Never redo a finished stage silently | nothing |
 | `routing.waiting` | Say who a change waits on; don't offer to do their part | nothing |
+| `routing.stage-branch` | A skill moves the copy to its stage's branch only when nothing would be left behind | `eval: build-moves-a-finished-copy-to-its-branch`, `eval: build-asks-before-leaving-uncommitted-work`, `eval: build-asks-before-leaving-unmerged-commits` |
 | `routing.go-back-by-amending` | Going back is amending an earlier artifact through a PR | nothing |
 | `routing.withdraw` | Only the product owner withdraws a change, with a `Withdrawn:` line | nothing |
 | `routing.after-merge-is-a-bug` | Anything found after merge is a new bug change; never reopen a merged change | nothing |

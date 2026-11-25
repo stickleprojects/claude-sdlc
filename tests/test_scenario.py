@@ -73,6 +73,7 @@ def test_sync_installs_framework_owned_files(consumer):
         ".sdlc/scripts/spec-pr.sh",
         ".sdlc/scripts/agent-identity.sh",
         ".sdlc/scripts/tests-locked.sh",
+        ".sdlc/scripts/current-change.sh",
     ]:
         assert (consumer / rel).exists(), rel
     assert not (consumer / ".github/workflows/release.yml").exists(), "framework-only workflow"

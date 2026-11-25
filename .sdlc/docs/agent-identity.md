@@ -50,7 +50,7 @@ Each repo that uses the pipeline gets its own App, named after the repo: `jobhun
 ## Start sessions as the agent
 
 ```
-.sdlc/scripts/agent-session.sh --worktree 0002-jd-extraction
+.sdlc/scripts/agent-session.sh --worktree 0002
 ```
 
 Everything goes on to `claude`. In that session, `git` commits as `<app>[bot]` and pushes with the App's token; your SSH remote is rewritten to HTTPS for the session only. `gh` uses a fresh App token on each call. Nothing changes in your git config.

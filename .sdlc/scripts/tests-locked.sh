@@ -14,9 +14,10 @@
 #     (coverage, regression guards) in other files. Before that commit the test is still
 #     being written, so it stays editable.
 #
-# The change is $SDLC_CHANGE, or the NNNN-name slug in the branch name (build/0003-x,
-# fix/0003-x, …) or in the worktree folder's name, when changes/<slug>/ exists.
+# The change is the one current-change.sh prints: $SDLC_CHANGE, or from the branch name or the
+# worktree folder's name.
 set -euo pipefail
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 path="${1:-}"
 top="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 1
@@ -41,13 +42,7 @@ case "${SDLC_LOCK_TESTS:-}" in
   0) exit 1 ;;
 esac
 
-slug="${SDLC_CHANGE:-}"
-if [[ -z "$slug" ]]; then
-  for name in "$(git branch --show-current 2>/dev/null || true)" "$(basename "$top")"; do
-    candidate="$(grep -oE '[0-9]{4}-[a-z0-9]+(-[a-z0-9]+)*' <<<"$name" | head -1 || true)"
-    if [[ -n "$candidate" && -d "changes/$candidate" ]]; then slug="$candidate"; break; fi
-  done
-fi
+slug="$("$here/current-change.sh")"
 [[ -n "$slug" && -f "changes/$slug/bug.md" ]] || exit 1
 
 base=""
