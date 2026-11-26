@@ -1,0 +1,8 @@
+{
+  "name": "with Change tracking: issues, the how-to-handle line asks Claude Code and names no slash command (#289)",
+  "setup": "bash evals/fixtures/handling-line/setup.sh unexplained",
+  "prompt": "Review PR 41, following .sdlc/REVIEW.md exactly, including its Summary comment section. This is its first review. The PR's repo is the git repo in ./handling (run git there with `git -C handling …`), on branch fix/greeting-space, whose base is main. The files the workflow writes are there as it writes them: handling/.review-threads.json (the PR's threads). The PR's body is handling/pr-body.md: read it wherever REVIEW.md or the summary would use `gh pr view`. Don't use GitHub or the network, and post no threads: count each Important finding you would post as a thread in the hidden count line as if it were posted. Write the summary comment you would post, exactly as you'd post it, to summary.md in the current directory (beside handling/, not inside it). Don't edit any other file.",
+  "check": "bash \"$EVAL_ROOT/evals/checks/handling-line.sh\" unexplained",
+  "tools": "Read,Grep,Glob,Write,Bash(git -C handling:*)",
+  "max_turns": 30
+}

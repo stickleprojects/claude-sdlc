@@ -1,0 +1,5 @@
+from app.greet import greet
+
+
+def test_greet_puts_a_space_after_the_comma():
+    assert greet("Ana") == "Hello, Ana"
