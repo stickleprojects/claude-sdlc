@@ -18,7 +18,7 @@ cp "../$src/greet_old.py" app/greet.py
 git add -A && git commit -q -m "feat: greet a visitor by name"
 git switch -q -c fix/greeting-space
 cp "../$src/greet_new.py" app/greet.py
-cp "../$src/test_greet.txt" tests/test_greet.py  # .txt: ruff would lint it here
+cp "../$src/test_greet.txt" tests/test_greet.py  # .txt, so the linter skips it here
 git add -A && git commit -q -m "fix: a space after the greeting's comma"
 cp "../$src/pr-body-$variant.md" pr-body.md
 echo '[]' > .review-threads.json
