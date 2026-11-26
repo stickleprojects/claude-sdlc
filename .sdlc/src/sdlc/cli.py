@@ -24,7 +24,17 @@ from sdlc.artifacts import (
     stage,
 )
 from sdlc.clauses import STAGE_FIELDS, ClauseError, change_blocks
-from sdlc.meta import DONE, OPEN, STATUSES, WITHDRAWN, MetaError, check_meta, expected, read
+from sdlc.meta import (
+    DONE,
+    OPEN,
+    STATUSES,
+    WITHDRAWN,
+    MetaError,
+    check_meta,
+    expected,
+    read,
+    withdrawal,
+)
 from sdlc.resolve import OverrideError, check_overrides, resolve
 from sdlc.roadmap import check_roadmap
 from sdlc.routing import steps
@@ -394,6 +404,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     kd.add_argument("change_dir", type=Path, help="a change folder, e.g. changes/0002-name")
 
+    wd = sub.add_parser(
+        "withdrawn",
+        help="print why a change is withdrawn, or nothing if it isn't (the scripts read it, #286)",
+    )
+    wd.add_argument("change_dir", type=Path, help="a change folder, e.g. changes/0002-name")
+
     res = sub.add_parser(
         "resolve",
         help="print a framework file with the project's override applied (.sdlc-local/)",
@@ -413,6 +429,12 @@ def main(argv: list[str] | None = None) -> int:
             print(f"no change folder {args.change_dir}", file=sys.stderr)
             return 1
         print(kind(args.change_dir))
+        return 0
+    if args.command == "withdrawn":
+        if not args.change_dir.is_dir():
+            print(f"no change folder {args.change_dir}", file=sys.stderr)
+            return 1
+        print(withdrawal(args.change_dir) or "")
         return 0
     if args.command == "change-status":
         try:

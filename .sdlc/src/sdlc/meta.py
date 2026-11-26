@@ -103,6 +103,20 @@ def withdrawn(change_dir: Path) -> str | None:
     return m.group(1).strip() if m else None
 
 
+def withdrawal(change_dir: Path) -> str | None:
+    """Why the change counts as withdrawn: its Withdrawn: line, or else a change.toml that says
+    so. None when neither does, or when change.toml can't be read (make validate reports that)."""
+    for name in ("intent.md", "bug.md"):  # both, as routing always read them
+        path = change_dir / name
+        if path.exists() and (m := WITHDRAWN_RE.search(path.read_text(encoding="utf-8"))):
+            return m.group(1).strip()
+    try:
+        meta = read(change_dir)
+    except MetaError:
+        return None
+    return f"{META} says withdrawn" if meta and meta.status == WITHDRAWN else None
+
+
 def expected(change_dir: Path, status: str, pr: str | None = None) -> Meta:
     """What the folder's change.toml should say, given its status."""
     number, _, name = change_dir.name.partition("-")
