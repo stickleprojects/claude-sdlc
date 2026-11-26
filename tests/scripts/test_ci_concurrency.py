@@ -1,6 +1,9 @@
 import re
 
+import pytest
+
 from conftest import REPO
+from test_check_after_review import load
 
 from .helpers import gh_expr
 
@@ -53,3 +56,50 @@ def test_pr_title_cancels_the_older_check_on_the_same_pr():
     assert cancel == "true"
     on = (REPO / ".github/workflows/sdlc-pr-title.yml").read_text()
     assert "\n  push:" not in on  # only PR events, so cancelling never touches main
+
+
+# --- #283: one reply in a thread runs the descope check once, and nothing cancels it ------------
+
+
+def descopes_job():
+    workflow = load(REPO / ".github/workflows/sdlc-descopes.yml")
+    assert "concurrency" not in workflow, "a skipped run mustn't take the group's turn"
+    return workflow["jobs"]["descopes"]
+
+
+def review(state, body, user="User"):
+    return "pull_request_review", {"review": {"state": state, "body": body, "user": {"type": user}}}
+
+
+def reply(user="User"):
+    return "pull_request_review_comment", {"comment": {"user": {"type": user}}}
+
+
+@pytest.mark.parametrize(
+    ("event", "runs"),
+    [
+        (reply(), True),
+        (review("commented", None), False),
+        (review("commented", ""), False),
+        (review("commented", "Approved: Kieron"), True),
+        (review("approved", None), True),
+        (review("changes_requested", None), True),
+        (review("dismissed", None), True),
+        (reply("Bot"), False),
+        (review("commented", None, "Bot"), False),
+        (review("approved", "ok", "Bot"), False),
+    ],
+)
+@pytest.mark.parametrize("same_repo", [True, False])
+def test_which_events_run_the_descope_check(event, runs, same_repo):
+    name, payload = event
+    head = {"repo": {"full_name": "o/r" if same_repo else "fork/r"}}
+    payload = {**payload, "pull_request": {"number": 7, "head": head}}
+    ctx = {"github": {"event_name": name, "repository": "o/r", "event": payload}}
+    assert bool(gh_expr(" ".join(descopes_job()["if"].split()), ctx)) is (runs and same_repo)
+
+
+def test_a_descope_check_is_never_cancelled():
+    concurrency = descopes_job()["concurrency"]
+    assert concurrency["cancel-in-progress"] is False
+    assert group(concurrency["group"], PR_PUSH) == "descopes-7"
