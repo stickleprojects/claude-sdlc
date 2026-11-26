@@ -6,7 +6,7 @@ import pytest
 
 from conftest import REPO, commit, git, init_repo, run
 from sdlc.cli import main
-from sdlc.meta import META, Meta, MetaError, check_meta, parse, read
+from sdlc.meta import META, Meta, MetaError, check_meta, parse, read, withdrawal
 from sdlc.routing import steps
 from sdlc.sweep import sweep
 
@@ -232,3 +232,23 @@ def test_the_roadmap_row_and_the_status_agree(tmp_path) -> None:
     assert any("change.toml says open" in p.message for p in check_roadmap(root))
     (intent.parent / META).write_text(toml(status="done"))
     assert not any("change.toml" in p.message for p in check_roadmap(root))
+
+
+def test_withdrawal_reads_the_line_in_either_file_then_change_toml(tmp_path, capsys) -> None:
+    # #286: one rule for routing and spec-pr.sh pending, which reads it through the CLI.
+    d = tmp_path / "changes" / SLUG
+    d.mkdir(parents=True)
+    (d / "intent.md").write_text("# Intent: A title\n")
+    assert withdrawal(d) is None
+    (d / "bug.md").write_text("# Bug\n\nWithdrawn: Kieron, 2026-11-27. Fixed elsewhere.\n")
+    assert withdrawal(d) == "Kieron, 2026-11-27. Fixed elsewhere."  # bug.md beside intent.md
+    (d / "bug.md").unlink()
+    (d / META).write_text(toml(status="withdrawn"))
+    assert withdrawal(d) == f"{META} says withdrawn"
+    (d / META).write_text("status = \n")  # unreadable: make validate reports it, not this
+    assert withdrawal(d) is None
+    (d / META).write_text(toml(status="withdrawn"))
+    assert main(["withdrawn", str(d)]) == 0
+    assert capsys.readouterr().out == f"{META} says withdrawn\n"
+    assert main(["withdrawn", str(tmp_path / "nope")]) == 1
+    assert "no change folder" in capsys.readouterr().err

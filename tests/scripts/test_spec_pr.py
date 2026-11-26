@@ -54,3 +54,25 @@ def test_spec_from_intent_queues_runs_and_uses_spec_pr():
     assert "cancel-in-progress: false" in workflow
     assert ".sdlc/scripts/spec-pr.sh pending" in workflow
     assert "GITHUB_RUN_ID" not in workflow
+
+
+def test_spec_pr_pending_skips_a_withdrawn_change(spec_repo):
+    # #286: spellbound3d's 0078 was withdrawn at the intent stage, and every later merge to main
+    # that touched an intent listed it again, so a spec was generated for a binned change.
+    repo, _, _, env = spec_repo
+    withdrawn = "Withdrawn: Kieron, 2026-11-25. Not needed.\n"
+    (repo / "changes/0001-a/intent.md").write_text(f"# a\n\n{withdrawn}")
+    (repo / "changes/0002-b/bug.md").write_text(f"# b\n\n{withdrawn}")
+    (repo / "changes/0004-d").mkdir()
+    (repo / "changes/0004-d/intent.md").write_text("# d\n")
+    (repo / "changes/0004-d/change.toml").write_text(
+        'number = "0004"\nslug = "0004-d"\ntitle = "d"\nstatus = "withdrawn"\n'
+    )
+    (repo / "changes/0005-e").mkdir()
+    (repo / "changes/0005-e/intent.md").write_text("# e\n\nWithdrawn:\n")  # no reason: not one
+    result = spec_pr(repo, env, "pending")
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.split() == ["changes/0005-e"]
+    assert "skip changes/0001-a: withdrawn (Kieron, 2026-11-25. Not needed.)" in result.stderr
+    assert "skip changes/0002-b: withdrawn (Kieron" in result.stderr
+    assert "skip changes/0004-d: withdrawn (change.toml says withdrawn)" in result.stderr

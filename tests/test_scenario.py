@@ -1147,6 +1147,28 @@ def test_request_review_arrives_with_the_sync(consumer):
     assert usage.returncode == 2 and "[--again] <pr-number>" in usage.stderr
 
 
+def test_spec_pending_skips_a_withdrawn_change_in_the_consumer(consumer, tmp_path):
+    """#286: the synced spec-pr.sh reads the synced CLI's `withdrawn`, so a change binned at the
+    intent stage gets no spec, and one still wanted does."""
+    commit(
+        consumer,
+        "intent: two changes, one withdrawn",
+        {
+            "changes/0001-binned/intent.md": "# Intent: Binned\n\nWithdrawn: PO, 2026-11-27. No.\n",
+            "changes/0002-wanted/intent.md": "# Intent: Wanted\n",
+        },
+    )
+    fake = tmp_path / "fakebin"
+    fake.mkdir()
+    (fake / "gh").write_text("#!/usr/bin/env bash\nexit 0\n")  # no open spec PRs
+    (fake / "gh").chmod(0o755)
+    env = {"PATH": f"{fake}:{os.environ['PATH']}", "GITHUB_REPOSITORY": "o/r"}
+    result = run(["bash", ".sdlc/scripts/spec-pr.sh", "pending"], cwd=consumer, env=env)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.split() == ["changes/0002-wanted"]
+    assert "skip changes/0001-binned: withdrawn (PO, 2026-11-27. No.)" in result.stderr
+
+
 def test_sync_reports_the_repos_own_scripts_that_arent_executable(consumer, framework_snapshot):
     """#101 finding 10: the sync sets modes only on framework files, so a repo-owned script that
     lost its bit (NTFS) is reported with the fix, not changed."""

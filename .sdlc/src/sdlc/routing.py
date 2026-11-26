@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from sdlc.artifacts import BUILD, Build, change_dirs, kind, stage
-from sdlc.meta import DONE, META, OPEN, WITHDRAWN, MetaError, parse, read
+from sdlc.meta import DONE, META, OPEN, MetaError, parse, read, withdrawal
 from sdlc.meta import WITHDRAWN_RE as WITHDRAWN_RE
 
 
@@ -203,16 +203,12 @@ def next_step(change_dir: Path, merged: bool, root: Path | None = None, rev: str
     plan saying "PR open" there has been merged (it only reaches main with its PR). With
     `root`, git history at `rev` also says whether an artifact is out of date."""
     slug, where = change_dir.name, stage(change_dir)
-    for first in ("intent.md", "bug.md"):
-        path = change_dir / first
-        if path.exists() and (m := WITHDRAWN_RE.search(path.read_text(encoding="utf-8"))):
-            return Next(slug, where, "withdrawn", m.group(1).strip())
+    if (why := withdrawal(change_dir)) is not None:
+        return Next(slug, where, "withdrawn", why)
     try:
         meta = read(change_dir)
     except MetaError as e:
         return Next(slug, where, "sdlc-next", f"{META} {e}: correct it")
-    if meta and meta.status == WITHDRAWN:
-        return Next(slug, where, "withdrawn", f"{META} says withdrawn")
     # In a checkout, a build branch says done before its PR merges, so main has the last word.
     unmerged = False
     if meta and meta.status == DONE:
