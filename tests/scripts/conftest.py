@@ -170,6 +170,8 @@ def request_review(tmp_path):
         sha=PUSHED,
         ref="feat/x",
         cwd=REPO,
+        flags=(),
+        trailing=(),
     ):
         (state / "heads").write_text("\n".join(heads) + "\n")
         (state / "ref").write_text(ref)
@@ -190,7 +192,9 @@ def request_review(tmp_path):
         }
         args = [] if sha is None else [sha]
         result = run(
-            ["bash", str(REPO / ".sdlc/scripts/request-review.sh"), "7", *args], cwd=cwd, env=env
+            ["bash", str(REPO / ".sdlc/scripts/request-review.sh"), *flags, "7", *args, *trailing],
+            cwd=cwd,
+            env=env,
         )
         calls = (state / "calls").read_text()
         labelled = any(c.startswith("api repos/o/r/issues/7/labels -f") for c in calls.splitlines())

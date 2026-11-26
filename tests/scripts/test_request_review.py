@@ -48,6 +48,45 @@ def test_request_review_counts_a_finished_review_of_the_push(request_review):
     assert not labelled and "already started a review" in result.stdout
 
 
+@pytest.mark.parametrize("variable", ["merge", "", "off"])
+@pytest.mark.parametrize("where", ["flags", "trailing"])  # before the PR number, or after the sha
+def test_request_review_again_labels_once_the_last_review_has_finished(
+    request_review, variable, where
+):
+    # spellbound3d PR #316: a resolved descope thread, no push; the finished review on the head
+    # read as "this push already started a review", so the label was never added (#287).
+    result, labelled, _ = request_review(
+        variable=variable,
+        runs=[review_run("failure"), review_run("cancelled")],
+        **{where: ("--again",)},
+    )
+    assert result.returncode == 0 and labelled, result.stdout + result.stderr
+    assert result.stdout == (
+        "Added the review label: asked again (--again), and no review of abc1234 is queued "
+        "or running.\n"
+    )
+
+
+def test_request_review_again_still_checks_the_sha(request_review):
+    assert run(["bash", ".sdlc/scripts/request-review.sh", "--again"]).returncode == 2
+    assert run(["bash", ".sdlc/scripts/request-review.sh", "7", "--again", "nope"]).returncode == 2
+
+
+@pytest.mark.parametrize("status", ["queued", "in_progress", "waiting"])
+def test_request_review_again_leaves_a_running_review_alone(request_review, status):
+    run_ = {**review_run(), "status": status}
+    result, labelled, calls = request_review(variable="merge", runs=[run_], flags=("--again",))
+    assert result.returncode == 0 and not labelled
+    assert "review of abc1234 is still queued or running" in result.stdout
+    # Nothing was pushed, so no run is coming: it checks once rather than waiting for one.
+    assert calls.count("actions/runs?head_sha=") == 1
+
+
+def test_request_review_again_still_waits_for_the_prs_head(request_review):
+    result, labelled, _ = request_review(variable="merge", heads=("0ld0000",), flags=("--again",))
+    assert not labelled and "still 0ld0000, not the pushed abc1234" in result.stdout
+
+
 @pytest.mark.parametrize("status", [403, 500])
 def test_request_review_falls_back_to_the_runs_when_the_variable_cant_be_read(
     request_review, status
@@ -166,6 +205,9 @@ def test_skills_ask_for_a_review_through_request_review():
         text = (REPO / path).read_text()
         assert ".sdlc/scripts/request-review.sh <N>" in text, path
         assert 'labels[]=review"' not in text, f"{path} adds the label directly"
+        if "build" not in path:  # the build skill asks only after a push
+            assert "`--again`" in text, f"{path} doesn't say when nothing was pushed (#287)"
+    assert "== --again ]]" in (REPO / ".sdlc/scripts/request-review.sh").read_text()
     assert synced(".sdlc/scripts/request-review.sh")
 
 

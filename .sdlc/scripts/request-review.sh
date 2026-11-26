@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Ask for a fresh Claude review of a push, without cancelling one the push already started (#105).
 #
-# Usage: .sdlc/scripts/request-review.sh <pr-number> [<sha>]     sha: the commit just pushed
+# Usage: .sdlc/scripts/request-review.sh [--again] <pr-number> [<sha>]   sha: the commit just pushed
 #   Default: this checkout's HEAD when it's on the PR's branch (the session that just pushed, which
 #   GitHub may not show yet), otherwise the PR's head on GitHub (another checkout pushed nothing).
+#   --again: nothing was pushed since the last review (only replies or resolved threads), so a
+#   finished review of the commit doesn't count, only one still queued or running (#287).
 #
 # sdlc-claude-review.yml runs on a push (`synchronize`) only when the repo variable SDLC_AUTO_MERGE is
 # set; otherwise a review needs the `review` label. Adding the label after a push that already
@@ -16,6 +18,8 @@
 #      unset: adds the label; can't be read: looks for the run, and adds the label if none starts;
 #   3. before adding the label, waits until the PR's head is the pushed commit, so the label's
 #      review never runs on the old one. Without a label to add, there's nothing to wait for.
+# With --again, steps 1 and 2 become one check for a queued or running review: if there is none,
+# it adds the label, whatever SDLC_AUTO_MERGE says.
 # It prints one line saying what it did and why, for the session and the PR reply. It exits 0
 # whatever happened, so it never fails the session that called it.
 #
@@ -24,8 +28,14 @@
 #      REQUEST_REVIEW_POLL  seconds between checks (default 5).
 set -uo pipefail
 
+again=""
+args=()
+for arg in "$@"; do
+  if [[ "$arg" == --again ]]; then again=1; else args+=("$arg"); fi
+done
+set -- ${args[@]+"${args[@]}"}  # bash 3.2 (macOS) calls an empty array unbound
 pr="${1:-}"
-[[ "$pr" =~ ^[0-9]+$ ]] || { sed -n '2,24p' "$0" >&2; exit 2; }
+[[ "$pr" =~ ^[0-9]+$ ]] || { sed -n '2,28p' "$0" >&2; exit 2; }
 # A sha given as an argument is checked before anything else, so a bad one is a usage error
 # wherever the script runs, even where it can't tell which repo this is.
 if [[ -n "${2:-}" ]]; then
@@ -65,13 +75,16 @@ head_is_pushed() {
   head="$(gh api "repos/$repo/pulls/$pr" --jq .head.sha 2>/dev/null)" && [[ "$head" == "$sha"* ]]
 }
 # A Claude review run on the pushed commit that is queued, running or finished: not one the job's
-# condition skipped (a push without auto-merge) or one a newer run cancelled.
+# condition skipped (a push without auto-merge) or one a newer run cancelled. Right after a push, a
+# finished one is that push's review. With --again it was the last review, so only an unfinished
+# run counts.
 review_run_started() {
-  local runs
-  runs="$(gh api "repos/$repo/actions/runs?head_sha=$sha&event=pull_request&per_page=100" --jq '
-    [.workflow_runs[] | select(.path | endswith("/sdlc-claude-review.yml"))
-      | select(.conclusion != "skipped" and .conclusion != "cancelled")] | length' 2>/dev/null)" \
-    && ((runs > 0))
+  local runs unfinished=""
+  [[ -n "$again" ]] && unfinished='| select(.status != "completed")'
+  runs="$(gh api "repos/$repo/actions/runs?head_sha=$sha&event=pull_request&per_page=100" --jq "
+    [.workflow_runs[] | select(.path | endswith(\"/sdlc-claude-review.yml\"))
+      | select(.conclusion != \"skipped\" and .conclusion != \"cancelled\") $unfinished]
+    | length" 2>/dev/null)" && ((runs > 0))
 }
 add_label() {
   until_ok head_is_pushed || {
@@ -90,6 +103,18 @@ head=""
 labels="$(gh api "repos/$repo/issues/$pr/labels" --jq '[.[].name] | index("review") != null' 2>/dev/null)"
 if [[ "$labels" == true ]]; then
   echo "Not adding the review label: it's already on, so a review of $short is about to start."
+  exit 0
+fi
+
+# Asked again with no push: nothing new will start, so check once. Auto-merge doesn't matter here,
+# since a label added while a review runs cancels it either way.
+if [[ -n "$again" ]]; then
+  if review_run_started; then
+    echo "Not adding the review label: a review of $short is still queued or running, and the" \
+      "label would cancel it. Ask again once it has finished."
+  else
+    add_label "asked again (--again), and no review of $short is queued or running"
+  fi
   exit 0
 fi
 
