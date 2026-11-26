@@ -1141,6 +1141,10 @@ def test_request_review_arrives_with_the_sync(consumer):
     assert ".sdlc/scripts/request-review.sh" in (consumer / ".sdlc/files").read_text()
     skill = (consumer / ".sdlc" / "skills" / "review-findings" / "SKILL.md").read_text()
     assert ".sdlc/scripts/request-review.sh <N>" in skill
+    # #287: the re-review with no push arrives in both halves, the skill and the script.
+    assert "`--again`" in skill
+    usage = run(["bash", str(script), "--again"], cwd=consumer)
+    assert usage.returncode == 2 and "[--again] <pr-number>" in usage.stderr
 
 
 def test_sync_reports_the_repos_own_scripts_that_arent_executable(consumer, framework_snapshot):
