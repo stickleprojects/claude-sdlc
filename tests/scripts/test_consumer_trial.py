@@ -12,10 +12,13 @@ SCRIPT = REPO / "scripts/consumer-trial.sh"
 
 # A consumer's sync script that records the ref it was given and stages a file, as the real
 # one does. $STUB_SYNC_FAIL makes it stop as on a conflict; $STUB_SYNC_PENDING leaves upgrade
-# steps behind.
+# steps behind; $STUB_SYNC_WORKFLOW names a workflow file it changes.
 STUB_SYNC = r"""#!/usr/bin/env bash
 set -euo pipefail
 echo "$1" > synced-ref
+if [[ -n "${STUB_SYNC_WORKFLOW:-}" ]]; then
+  mkdir -p .github/workflows && echo "on: pull_request" > ".github/workflows/$STUB_SYNC_WORKFLOW"
+fi
 if [[ -n "${STUB_SYNC_PENDING:-}" ]]; then
   mkdir -p .sdlc && echo "1. Do it." > .sdlc/upgrade-pending.md
 fi
@@ -41,7 +44,15 @@ def trial(tmp_path):
     sha = git(framework, "rev-parse", "HEAD")
 
     seed = init_repo(tmp_path / "seed")
-    commit(seed, "chore: consumer", {".sdlc/scripts/sync-sdlc.sh": STUB_SYNC, "Makefile": MAKEFILE})
+    commit(
+        seed,
+        "chore: consumer",
+        {
+            ".sdlc/scripts/sync-sdlc.sh": STUB_SYNC,
+            "Makefile": MAKEFILE,
+            ".sdlc/version": "stickleprojects/claude-sdlc@v0.17.1\n5df79ee\n",
+        },
+    )
     origin = tmp_path / "consumer.git"
     git(tmp_path, "clone", "-q", "--bare", str(seed), str(origin))
 
@@ -143,6 +154,25 @@ def test_sync_says_when_upgrade_steps_are_pending(trial):
     assert result.returncode == 0
     assert "upgrade-pending.md" in result.stderr
     assert (trial["tmp"] / folder / "repo/.sdlc/upgrade-pending.md").exists()
+
+
+@pytest.mark.parametrize("workflow", ["sdlc-claude-review.yml", "claude-mention.yml"])
+def test_sync_says_when_the_trial_pr_will_get_no_ai_review(trial, workflow):
+    # #292: sdlc-sandbox#19 changed sdlc-claude-review.yml (the sandbox was on v0.17.1), so the
+    # review action refused to run, and the trial had no AI review to read.
+    result, folder = _sync(trial, env={"STUB_SYNC_WORKFLOW": workflow})
+    assert result.returncode == 0, result.stderr
+    assert f"no AI review on the trial PR: the sync changes .github/workflows/{workflow}" in (
+        result.stderr
+    )
+    assert "o/consumer is on v0.17.1" in result.stderr
+    assert "sync it to the last release for real first" in result.stderr
+
+
+def test_sync_says_nothing_about_the_review_when_no_review_workflow_changes(trial):
+    result, _ = _sync(trial, env={"STUB_SYNC_WORKFLOW": "sdlc-ci.yml"})
+    assert result.returncode == 0, result.stderr
+    assert "no AI review" not in result.stderr
 
 
 def test_check_runs_setup_and_check_and_keeps_the_log(trial):

@@ -36,7 +36,7 @@ load() {
 }
 
 cmd_sync() {
-  local ref="${1:-main}" script
+  local ref="${1:-main}" script base
   sha="$(git ls-remote "$framework" "refs/heads/$ref" "refs/tags/$ref" | awk 'NR==1 {print $1}')"
   if [[ -z "$sha" ]]; then
     # Not a branch or tag name: take it as a commit.
@@ -58,6 +58,7 @@ cmd_sync() {
   [[ -f "$dir/repo/$script" ]] || script="scripts/sync-sdlc.sh"
   [[ -f "$dir/repo/$script" ]] || { echo "$consumer has no sync script" >&2; exit 1; }
   echo "trying claude-sdlc ${sha:0:7} in $consumer ($dir/repo)"
+  base="$(git -C "$dir/repo" rev-parse HEAD)"
   if ! (cd "$dir/repo" && bash "$script" "$sha"); then
     echo "the sync stopped (conflicts?): resolve them in $dir/repo with the person, as /sdlc" >&2
     echo "would, and commit; that's a finding for the release notes" >&2
@@ -65,11 +66,29 @@ cmd_sync() {
     exit 1
   fi
   git -C "$dir/repo" commit --quiet -m "chore: trial sync of claude-sdlc ${sha:0:7}"
+  warn_no_review "$base"
   if [[ -f "$dir/repo/.sdlc/upgrade-pending.md" ]]; then
     echo "upgrade steps are pending: work through $dir/repo/.sdlc/upgrade-pending.md with the" >&2
     echo "person, as /sdlc does, and commit, before the check" >&2
   fi
   echo "$dir"
+}
+
+# The review action won't run while the PR changes its workflow (it must match main), so a trial
+# that changes one gets no AI review to read in step 4 (#292). Usually the consumer is behind the
+# last release; the fix that lets the review run anyway is #293.
+warn_no_review() {
+  local changed was
+  changed="$(git -C "$dir/repo" diff --name-only "$1" HEAD \
+    | grep -E '^\.github/workflows/(sdlc-)?claude-' | tr '\n' ' ' || true)"
+  [[ -n "$changed" ]] || return 0
+  was="$(git -C "$dir/repo" show "$1:.sdlc/version" 2>/dev/null | head -n 1)"
+  was="${was##*@}"
+  echo "no AI review on the trial PR: the sync changes ${changed% }, and the review won't run" \
+    "while its workflow differs from the consumer's main. $consumer is on ${was:-an unknown version}:" \
+    "if that's older than the last release, sync it to the last release for real first (its" \
+    "own PR, merged), then trial again. If this release itself changes the workflow, the" \
+    "trial line says 'review: not run (workflow changed)'." >&2
 }
 
 cmd_check() {
