@@ -12,6 +12,11 @@ updates:
       default-days: 7
     commit-message:
       prefix: ci
+    # One PR for every action bump: they all edit actions.lock, so separate PRs conflict with
+    # each other, and each merge costs the rest a rebase and a CI run.
+    groups:
+      actions:
+        patterns: ["*"]
   - package-ecosystem: pip
     directory: /.github/actions/setup-stack
     schedule:

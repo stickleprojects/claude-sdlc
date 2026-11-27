@@ -80,7 +80,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - name: Find the PR and its head
@@ -153,7 +153,7 @@ jobs:
           gh api "repos/$GITHUB_REPOSITORY/statuses/$HEAD_SHA" --silent -f state=pending
           -f context=check -f description="make check is running" -f target_url="$RUN_URL"
       # The PR merged into main, as sdlc-ci.yml tests it on a pull_request event.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: refs/pull/${{ needs.gate.outputs.pr }}/merge
           fetch-depth: 0  # make validate and the docs-only check compare the branch with main
