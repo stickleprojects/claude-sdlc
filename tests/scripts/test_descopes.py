@@ -210,3 +210,54 @@ def test_descopes_status_clears_a_session_decision_once_approved(descopes):
     result = descopes([descope_thread(approved, first=SESSION)], status=status, script="status")
     assert "state=success" in result.posted
     assert "session decisions approved by @kieron" in result.posted
+
+
+# --- a CI change needs a person's approval (ADR 0001, #293) -----------------------------------
+
+CI_CHANGE = (
+    "**Important (a person approves):** CI change: needs approval. "
+    "This PR changes .github/workflows/sdlc-ci.yml."
+)
+
+
+def ci_thread(*replies, resolved=False):
+    return descope_thread(*replies, first=CI_CHANGE, by="github-actions", resolved=resolved)
+
+
+def test_a_ci_change_waits_for_a_persons_approved_reply(descopes):
+    app = note("stickle-claude", "Approved: Kieron, 27 Nov", "2026-11-27T11:00:00Z", "Bot")
+    for thread in (ci_thread(), ci_thread(app)):
+        result = descopes([thread])
+        assert result.returncode == 1
+        assert result.stdout.startswith("A CI change needs a person's approval: This PR changes")
+        assert result.stdout.strip().endswith("Reply Approved: <name>, <date>")
+        assert len(result.stdout.strip()) <= 140
+    approved = note("kieron", "Read it.\n\nApproved: Kieron, 27 Nov", "2026-11-27T11:00:00Z")
+    result = descopes([ci_thread(approved)])
+    assert result.returncode == 0
+    assert result.stdout.strip() == "descopes decided: CI change approved by @kieron (2026-11-27)"
+
+
+def test_a_ci_change_isnt_settled_by_a_reply_resolve_and_re_review(descopes):
+    """A descope can be sent back and built; a CI change has nothing to build, so only Approved."""
+    said = note("kieron", "Looks fine.", "2026-11-27T11:00:00Z")
+    result = descopes([ci_thread(said, resolved=True)], reviewed="2026-11-27T12:00:00Z")
+    assert result.returncode == 1 and "A CI change needs a person's approval" in result.stdout
+
+
+def test_only_the_review_job_posts_a_ci_change_thread(descopes):
+    """The job posts it as github-actions; one from the reviewer or anyone else isn't read."""
+    for by in ("claude", "someone"):
+        other = descope_thread(first=CI_CHANGE, by=by)
+        assert descopes([other]).stdout.strip() == "no descopes to approve", by
+    approved = note("kieron", "Approved: Kieron, 27 Nov", "2026-11-27T11:00:00Z")
+    assert descopes([descope_thread(approved), ci_thread()]).returncode == 1
+
+
+def test_descopes_status_clears_a_ci_change_once_approved(descopes):
+    status = ("failure", "A CI change needs a person's approval: This PR changes")
+    waiting = descopes([ci_thread()], status=status, script="status")
+    assert "state=failure" in waiting.posted
+    approved = note("kieron", "Approved: Kieron, 27 Nov", "2026-11-27T11:00:00Z")
+    cleared = descopes([ci_thread(approved)], status=status, script="status")
+    assert "state=success" in cleared.posted and "CI change approved by @kieron" in cleared.posted

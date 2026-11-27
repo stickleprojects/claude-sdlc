@@ -5,7 +5,8 @@
 #
 # Run by .github/workflows/sdlc-descopes.yml when a decision can change (a reply in a thread,
 # a review of the PR). It moves the status only between the review's own "posted" (success)
-# and a failure this check set, whose description mentions a descope, a plan change (#174) or a session decision (#218):
+# and a failure this check set, whose description mentions a descope, a plan change (#174), a
+# session decision (#218) or a CI change (#293):
 #   - success, and a descope isn't decided  -> failure, saying which and what to do;
 #   - descope failure, and now all decided  -> success, naming who approved each one;
 #   - descope failure, still not decided    -> failure, with the current reason.
@@ -17,7 +18,7 @@ set -uo pipefail
 
 pr="${1:-}"
 sha="${2:-}"
-[[ "$pr" =~ ^[0-9]+$ && "$sha" =~ ^[0-9a-f]{7,40}$ ]] || { sed -n '2,15p' "$0" >&2; exit 2; }
+[[ "$pr" =~ ^[0-9]+$ && "$sha" =~ ^[0-9a-f]{7,40}$ ]] || { sed -n '2,16p' "$0" >&2; exit 2; }
 repo="${GITHUB_REPOSITORY:-$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)}"
 [[ "$repo" == */* ]] || { echo "descopes-status: can't tell which repo this is" >&2; exit 1; }
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -29,7 +30,7 @@ state="${current%%$'\t'*}"
 description="${current#*$'\t'}"
 ours=""
 [[ "$state" == failure && ( "$description" == *descope* || "$description" == *"plan change"* ||
-  "$description" == *"session decision"* ) ]] && ours=1
+  "$description" == *"session decision"* || "$description" == *"CI change"* ) ]] && ours=1
 if [[ "$state" != success && -z "$ours" ]]; then
   echo "descopes-status: claude-review is '${state:-unset}' on $sha; the review job owns it, leaving it"
   exit 0
