@@ -2,7 +2,7 @@
 
 ## Status
 
-proposed
+accepted (Kieron, 2026-11-27)
 
 ## Context
 

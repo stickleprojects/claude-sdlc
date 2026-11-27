@@ -23,8 +23,9 @@
 #      (0 approvals) the merge click is the only human gate, so it's never automated.
 #   3. The Claude review's `claude-review` status is required on the PR's base branch. The review
 #      job posts it itself, so a skipped job can't satisfy it; the job's own `review` check
-#      could, and doesn't count (#101). And the PR doesn't change an sdlc-claude-*.yml workflow: the
-#      AI review can't run on such a PR, so it's merged by hand.
+#      could, and doesn't count (#101). And the PR doesn't change a file on the CI approval list
+#      (ci-changes.sh: .github/, the hooks, .claude/settings.json, uv.lock): a person approves
+#      those in the PR (ADR 0001), so it's merged by hand.
 #   4. Stale approvals are dismissed on push, so an approval covers every commit that merges.
 #      Read from branch protection or rulesets. A token that can't read protection (an App
 #      without Administration: read) relies on SDLC_AUTO_MERGE_CONFIRMED=true, which only
@@ -144,12 +145,14 @@ fi
 grep -qxF claude-review <<<"$checks" \
   || skip "the Claude review's claude-review status isn't required on $base (re-run .sdlc/scripts/bootstrap-github.sh --mode team)"
 
-# A PR that changes an sdlc-claude-*.yml workflow isn't AI-reviewed (the action won't run until the file
-# matches the base branch), so it's never auto-merged: a person merges it after reviewing it.
+# A PR that changes a file setting CI's rules needs a person's approval of that change (ADR 0001),
+# so it's never auto-merged: a person merges it after reading it. That covers today's review
+# workflows, which the AI review can't review until the file matches the base branch.
 files="$(gh api "repos/$repo/pulls/$pr/files" --paginate --jq '.[].filename' 2>/dev/null)" \
   || skip "can't list the PR's files"
-grep -qE '^\.github/workflows/(sdlc-)?claude-' <<<"$files" \
-  && skip "it changes a .github/workflows/sdlc-claude-*.yml file, which the AI review can't review"
+ci="$("$(dirname "${BASH_SOURCE[0]}")/ci-changes.sh" --filter <<<"$files" | head -1)"
+[[ -z "$ci" ]] \
+  || skip "it changes $ci, which is on the CI approval list, so a person approves and merges it"
 
 # 4. Stale approvals are dismissed on push. "Branch not protected" means there's no classic
 #    protection at all (rulesets only), so the rulesets alone decide: a stale CONFIRMED left over

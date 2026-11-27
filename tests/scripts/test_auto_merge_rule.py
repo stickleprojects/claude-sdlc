@@ -204,19 +204,31 @@ def test_auto_merge_refuses_the_old_review_check_as_the_gate(auto_merge):
     assert "requires the old 'review' check, which a skipped review job satisfies" in result.stderr
 
 
-def test_auto_merge_never_merges_a_pr_that_changes_a_claude_workflow(auto_merge):
-    # The AI review can't run on such a PR (#14), so a person merges it.
+def test_auto_merge_never_merges_a_pr_that_changes_a_file_on_the_ci_approval_list(auto_merge):
+    # A person approves those files in the PR (ADR 0001, #293), so a person merges it. The
+    # review workflows (#14), with their names since #23 and before it, are on the list too.
     state, go = auto_merge
-    # The names since #23, and the ones before it, which a PR renaming them deletes.
-    for workflow in ("sdlc-claude-review.yml", "sdlc-claude-mention.yml", "claude-review.yml"):
-        files = [{"filename": "README.md"}, {"filename": f".github/workflows/{workflow}"}]
+    for path in (
+        ".github/workflows/sdlc-claude-review.yml",
+        ".github/workflows/sdlc-claude-mention.yml",
+        ".github/workflows/claude-review.yml",
+        ".github/workflows/sdlc-ci.yml",
+        ".github/dependabot.yml",
+        ".sdlc/hooks/plan-gate.sh",
+        ".claude/settings.json",
+        "uv.lock",
+    ):
+        files = [{"filename": "README.md"}, {"filename": path}]
         (state / "pr-files.json").write_text(json.dumps(files))
         result, mutated, calls = go(SDLC_AUTO_MERGE="merge")
-        assert not mutated and "sdlc-claude-*.yml" in result.stderr, workflow
+        assert not mutated and f"it changes {path}, which is on the CI approval list" in (
+            result.stderr
+        ), path
         assert "pulls/7/files --paginate" in calls
-    (state / "pr-files.json").write_text(json.dumps([{"filename": "README.md"}]))
-    _, mutated, _ = go(SDLC_AUTO_MERGE="merge")
-    assert mutated
+    for path in ("README.md", "Makefile", ".sdlc/scripts/clause-check.sh"):
+        (state / "pr-files.json").write_text(json.dumps([{"filename": path}]))
+        _, mutated, _ = go(SDLC_AUTO_MERGE="merge")
+        assert mutated, path
 
 
 def test_review_posts_its_own_claude_review_status():
