@@ -1,0 +1,27 @@
+# Framework-only (#143): checks .github/workflows/actions.lock, which pins every action the
+# workflows use (and the actions those call) to a verified commit. The runner checks the same
+# pins at job start. After changing any `uses:`, run `make lock-actions` and commit the lockfile.
+# The sync never ships this workflow or the lockfile (sync-sdlc.sh skip_workflows): a consumer
+# has workflows of its own, so it locks them itself (#298).
+name: Actions lockfile
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      # --ignore-local-actions: ./.github/actions/setup-stack stays a ./ action (consumers own
+      # theirs), so its astral-sh/setup-uv isn't covered by the lockfile yet (#298).
+      - uses: github/gh-actions-lock@verify/v0.5.1
+        with:
+          args: --verify --ignore-local-actions

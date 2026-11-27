@@ -1,0 +1,15 @@
+# Framework-only (#143): keeps the actions in .github/workflows and the setup-stack action
+# current, and actions.lock with them. The cooldown lets a fresh release settle before it's
+# proposed, so a hijacked tag has time to be noticed. The sync never ships this file.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directories:
+      - /
+      - /.github/actions/setup-stack
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: ci
