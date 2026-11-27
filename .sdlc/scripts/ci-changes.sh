@@ -24,11 +24,12 @@
 # can't compare the two commits.
 set -uo pipefail
 
-on_the_list() {  # stdin: paths; stdout: those on the approval list
-  local path
-  while IFS= read -r path; do
+on_the_list() {  # stdin: paths; stdout: those on the list. -z: NUL-ended in and out
+  local path delim=$'\n' end='\n'
+  [[ "${1:-}" == -z ]] && delim='' end='\0'
+  while IFS= read -r -d "$delim" path || [[ -n "$path" ]]; do
     case "$path" in
-      .github/* | .sdlc/hooks/* | .claude/settings.json | uv.lock) printf '%s\n' "$path" ;;
+      .github/* | .sdlc/hooks/* | .claude/settings.json | uv.lock) printf "%s$end" "$path" ;;
     esac
   done
 }
@@ -46,14 +47,17 @@ mode="${3:-}"
 
 fork="$(git merge-base "$base" "$head" 2>/dev/null)" \
   || { echo "ci-changes: can't find where $head forked from $base" >&2; exit 3; }
-changed="$(git diff --no-renames --name-only "$fork" "$head" 2>/dev/null)" \
+# -z: without it git quotes a name with unusual characters, and the quoted name would miss the list.
+changed="$(mktemp)"
+trap 'rm -f "$changed"' EXIT
+git diff --no-renames --name-only -z "$fork" "$head" > "$changed" 2>/dev/null \
   || { echo "ci-changes: can't compare $fork with $head" >&2; exit 3; }
 
-mapfile -t files < <(on_the_list <<<"$changed")
+mapfile -t -d '' files < <(on_the_list -z < "$changed")
 
 ((${#files[@]})) || exit 0
 if [[ "$mode" == --digest ]]; then
-  diff="$(git diff --no-renames "$fork" "$head" -- "${files[@]}")" \
+  diff="$(git --literal-pathspecs diff --no-renames "$fork" "$head" -- "${files[@]}")" \
     || { echo "ci-changes: can't diff $fork with $head" >&2; exit 3; }
   sha256sum <<<"$diff" | cut -c1-16
 else
