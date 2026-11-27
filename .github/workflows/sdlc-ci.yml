@@ -91,7 +91,7 @@ jobs:
           make "$target"
       # A project's test reports, if it writes any to reports/ (#188): kept with the run, pass or
       # fail, so a consumer never has to add an upload step to this synced workflow.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always() && env.DEFERRED != 'true'
         with:
           name: reports
