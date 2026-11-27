@@ -1,0 +1,21 @@
+# uv for CI, pinned by version and hash (#143). Installed by action.yml with --require-hashes;
+# a remote action here would need a lockfile pin that ./ actions can't have. Dependabot bumps it.
+uv==0.13.10 \
+    --hash=sha256:19a76fd50a6a2bba38ee088d8336566856569be08196865f98132a08806581fc \
+    --hash=sha256:2a9ff188b442419c7aadebc445fcc1f287b25f99af50fa6d563b90cc0047b7cf \
+    --hash=sha256:3bf1c1b13cac2533a342ca16b1c5f41347cd399404c9477a04ff79c5f7cb4dea \
+    --hash=sha256:50bee2a59ea9422b493aabc0cde9288f58fbcf6e8d688c30c4ecd8309459cac1 \
+    --hash=sha256:5bcf77c50760146ff7b41022ab7aeb1954d42dd47b89fad36b43a1a8a43da994 \
+    --hash=sha256:771a749b34477501092c9fe6d5e52f45cef944d875b0f2e2c989047a2ee647ab \
+    --hash=sha256:7cc9c41b43d583e34c781fd3446405b06e9c5fa2db468ce2a534d353db6429e5 \
+    --hash=sha256:7fa025c4b0f33b9a5357252e1be058d94157e13bfb8ae45d7e27cfce3759c65d \
+    --hash=sha256:8b0a15613aae9a3e1c134bb5ee706583af0addced7eb1add992f8b1b3e3a92a0 \
+    --hash=sha256:a52ee170c00d4de1d42026c4dbb00c5d7f327edcf2b2bddeecd0cfb169868ac7 \
+    --hash=sha256:a9636b4430a9b8a37ecc4d85111d1fd2560ef616edf5301b84f474073bf89e2f \
+    --hash=sha256:bf7174b00c88879d4a1019b51256bbdb2dd61c55c7dc896031e16d090e380ce6 \
+    --hash=sha256:c85a2ecb62d09d61904f5405b525fcc51f971d081f8508a881fa2f9bae7543a7 \
+    --hash=sha256:d87b9cf8165f2b3cc596e856b5bf794da9cfad6d1b110ca9d87eed42a15b3684 \
+    --hash=sha256:e52a1af7f97b717572f9e2bd69e54eb253b2c88a705500e35811c21106c439d4 \
+    --hash=sha256:e89dd26ea831dde70639ba0a798fa04a4c7c0226fd2b241da86218bfa370e495 \
+    --hash=sha256:ee3bca6523ed93c3ae0d1a90c2733be307f5f7cc5287c746214e93a3bae0da13 \
+    --hash=sha256:ee403b6bbcfda1bc7db269be5c40c1624df27b3b838d3f8a416648e00e2de5d4

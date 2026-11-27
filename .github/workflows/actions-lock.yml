@@ -21,7 +21,7 @@ jobs:
         with:
           persist-credentials: false
       # --ignore-local-actions: ./.github/actions/setup-stack stays a ./ action (consumers own
-      # theirs), so its astral-sh/setup-uv isn't covered by the lockfile yet (#298).
+      # theirs). It has only run: steps, so there's nothing in it to pin (#298).
       - uses: github/gh-actions-lock@verify/v0.5.1
         with:
           args: --verify --ignore-local-actions

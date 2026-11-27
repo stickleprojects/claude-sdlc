@@ -54,7 +54,8 @@ check: lint check-test validate exec-bits prompt-budget
 # Pin every action the workflows use in .github/workflows/actions.lock (#143). Run it after
 # changing any `uses:`, then commit the lockfile; CI's actions-lock.yml checks it. Needs gh with
 # the github/gh-actions-lock extension, pinned. --no-narrow keeps the workflows' tags as written
-# (they're synced to consumers); --ignore-local-actions keeps ./.github/actions/setup-stack (#298).
+# (they're synced to consumers); --ignore-local-actions keeps ./.github/actions/setup-stack, which must
+# use no remote action: the runner would fail it for want of a pin (#298).
 lock-actions:
 	@gh extension list | grep -q 'gh-actions-lock' \
 		|| gh extension install github/gh-actions-lock --pin v0.5.1
