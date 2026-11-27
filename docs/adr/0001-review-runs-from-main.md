@@ -30,9 +30,20 @@ What constrains the choice:
 - **The job checks out main at the workspace root:** its scripts, `REVIEW.md` and `setup-stack`.
 - **The PR's head is checked out into `pr/` as data only.** It gets no credentials, isn't on `PATH`, and nothing in it is sourced or run with `make`.
 - **The clause check runs main's tool over the PR's spec and plan files as input.** It doesn't run the PR's Makefile.
-- **The review covers every file.** A PR that changes `.github/workflows/**` or `.github/actions/**` also gets one `CI change: needs approval` thread, listing those files.
-  - `descopes-decided.sh` holds it like a descope: `claude-review` fails until a person replies `Approved: <name>, <date>`.
-  - The AI review of a workflow file is advice, never the only check.
+- **The review covers every file.** A PR that changes a file that sets the safety rules also gets one `CI change: needs approval` thread, listing those files.
+  - The files (Kieron, 27 Nov):
+    - everything under `.github/`: workflows, actions, `dependabot.yml`, `CODEOWNERS`;
+    - `.sdlc/hooks/**`, the agent's guardrails;
+    - `.claude/settings.json`, which wires those hooks in;
+    - the lockfiles, `uv.lock` and `.github/workflows/actions.lock`.
+  - They decide what runs in CI, with what permissions, who approves, and what the agent may do, so a change to any of them changes the rules, not the product.
+  - The `Makefile` and `.sdlc/scripts/` aren't on the list:
+    - the `Makefile` is the stack contract, changed routinely, and in CI it runs only with a read-only token;
+    - most PRs touch `.sdlc/scripts/`, so a thread on every PR would teach people to approve without reading.
+    
+    The normal review covers both.
+  - `descopes-decided.sh` holds the thread like a descope: `claude-review` fails until a person replies `Approved: <name>, <date>`.
+  - The AI review of these files is advice, never the only check.
 - **The fork guard moves to the job's `if`,** so a fork's PR runs no step.
 - **Dependabot PRs still get no AI review** (#303).
 - **The run carries its PR number in a `run-name`,** e.g. `Claude review #123`. The after-review gate reads the number from `workflow_run.display_title` and then takes the PR's current head from the API, as it already does for *Descope decisions* (#223). It also accepts `workflow_run.event == 'pull_request_target'`.
@@ -61,7 +72,8 @@ What constrains the choice:
   - The workflow is framework-owned, so every consumer gets the change through the sync. That sync PR is the last one that skips its AI review.
   - No repo setting changes, but behaviour does: `claude-review` now fails on a CI change until someone approves it. So the PR title takes a `!`.
   - The release notes say so.
-- **The mention workflow stays as it is.** Its job is to run the PR's code and commit to it, so it can't be data-only. It answers only to `issue_comment`, which already runs main's copy, and to `pull_request_review_comment`. Its exposure is a separate question, with its own issue.
+- **The mention workflow stays as it is.** Its job is to run the PR's code and commit to it, so it can't be data-only. It answers only to `issue_comment`, which already runs main's copy, and to `pull_request_review_comment`, which runs the PR's. Its exposure is a separate question: #306.
+- **Almost every consumer sync PR gets the approval thread,** since a sync usually changes a workflow or a hook. That's one thread to read, in place of 900 unreviewed files.
 - **What we maintain:**
   - the `pr/` layout;
   - the `run-name` contract between the review and the gate;
@@ -72,5 +84,6 @@ What constrains the choice:
 - a plan makes the review job run a command, `make` target or action from the PR's checkout
 - a plan widens the review's tool allowlist to anything that writes files or runs commands
 - claude-code-action stops handling `pull_request_target` as a PR event, or its token swap accepts a PR's copy of the workflow
-- a plan adds a file outside `.github/workflows/` and `.github/actions/` that controls what CI runs with secrets (it joins the `CI change: needs approval` list)
+- a plan adds a file outside the approval list that sets what CI runs with secrets, or what the agent may do (it joins the list)
+- people approve `CI change: needs approval` threads without reading them, e.g. because the list now matches most PRs
 - the after-review gate needs the reviewed head and can't get it from the PR number
