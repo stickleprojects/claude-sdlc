@@ -121,8 +121,8 @@ def test_the_review_runs_once_more_when_it_posts_nothing():
 
     assert inputs(retry) == inputs(first) and len(inputs(first)) > 20
     assert (
-        "uses: anthropics/claude-code-action@v1" in first
-        and "uses: anthropics/claude-code-action@v1" in retry
+        "uses: anthropics/claude-code-action@" in first
+        and "uses: anthropics/claude-code-action@" in retry
     )
     assert "if: steps.posted.outputs.posted == 'false'" in retry
     assert "if: steps.workflow_change.outputs.skipped != 'true'" in posted
@@ -138,7 +138,7 @@ def test_the_review_runs_once_more_when_it_posts_nothing():
     assert [names.index(n) for n in order] == sorted(names.index(n) for n in order)
     keep = step["Keep the review's output"]
     assert "if: always() && (failure() || steps.posted.outputs.posted == 'false')" in keep
-    assert "uses: actions/upload-artifact@v4" in keep and "retention-days: 7" in keep
+    assert "uses: actions/upload-artifact@" in keep and "retention-days: 7" in keep
     assert "${{ runner.temp }}/review-attempt-1.json" in keep
     assert "if: failure()" in step["Show why the review stopped"]
     calls = step["List the review's tool calls"]

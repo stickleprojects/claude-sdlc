@@ -141,7 +141,7 @@ def test_the_check_job_keeps_a_projects_reports():
     # #188: spellbound3d's last edit to a synced workflow was its own report upload.
     workflow = (REPO / ".github/workflows/sdlc-ci.yml").read_text()
     check = workflow[workflow.index("make check") :]
-    step = check[check.index("- uses: actions/upload-artifact@v4") :][:300]
+    step = check[check.index("- uses: actions/upload-artifact@") :][:300]
     assert "if: always()" in step and "path: reports/" in step
     assert "if-no-files-found: ignore" in step
 

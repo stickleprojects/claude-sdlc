@@ -68,11 +68,22 @@ jobs:
       # claude-code-action skips itself when the PR changes its own workflow (the file must
       # match main), yet the check still goes green. Say so on the PR (#14): when it opens, and on
       # a push whose own commits start touching such a file (#101), not on every later push.
+      # A Dependabot PR isn't AI-reviewed either: its diff is a tag and a SHA, and what matters
+      # (the action's release notes, the runner version it needs) isn't in it.
       - name: Note when the AI review can't run
         id: workflow_change
         env:
           BEFORE: ${{ github.event.before }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
         run: |
+          if [[ "$AUTHOR" == "dependabot[bot]" ]]; then
+            echo "skipped=true" >> "$GITHUB_OUTPUT"
+            echo "why=dependabot" >> "$GITHUB_OUTPUT"
+            if [[ "${{ github.event.action }}" == opened ]]; then
+              gh pr comment "$PR" -R "$GITHUB_REPOSITORY" --body "AI review skipped: this is a Dependabot update. Review it by hand: read the new version's release notes for breaking changes (inputs, the runner version it needs) and check who gets it through the sync."
+            fi
+            exit 0
+          fi
           base="${{ github.event.pull_request.base.sha }}"
           git diff --name-only "$base"...HEAD | grep -qE '^\.github/workflows/(sdlc-)?claude-' || exit 0
           echo "skipped=true" >> "$GITHUB_OUTPUT"
@@ -177,6 +188,7 @@ jobs:
           echo "edit=$edit" >> "$GITHUB_OUTPUT"
       - name: Review
         id: review
+        if: steps.workflow_change.outputs.why != 'dependabot'
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -357,10 +369,13 @@ jobs:
         if: success()
         env:
           SKIPPED: ${{ steps.workflow_change.outputs.skipped }}
+          WHY: ${{ steps.workflow_change.outputs.why }}
           SINCE: ${{ steps.start.outputs.since }}
         run: |
           description="The Claude review is posted"
-          if [[ "$SKIPPED" == true ]]; then
+          if [[ "$WHY" == dependabot ]]; then
+            description="No AI review: a Dependabot update, so a person reviews it by hand"
+          elif [[ "$SKIPPED" == true ]]; then
             description="No AI review: the PR changes an sdlc-claude-*.yml workflow, so a code owner reviews it by hand"
           elif ! .sdlc/scripts/review-posted.sh "$PR" "$SINCE"; then
             echo "reported=true" >> "$GITHUB_OUTPUT"

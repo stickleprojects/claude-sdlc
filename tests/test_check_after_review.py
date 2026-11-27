@@ -519,7 +519,10 @@ def test_a_new_head_cancels_the_old_heads_check_and_nothing_else_does():
 
 def steps(job):
     return {
-        s.get("name") or s.get("uses") or s["run"]: s for s in load(AFTER)["jobs"][job]["steps"]
+        # An unnamed step is keyed by its action without the version, so a Dependabot bump of
+        # the version doesn't break the tests.
+        s.get("name") or re.sub(r"@[^@]+$", "", s.get("uses", "")) or s["run"]: s
+        for s in load(AFTER)["jobs"][job]["steps"]
     }
 
 
@@ -535,14 +538,13 @@ def test_pr_code_runs_with_no_github_token():
             assert not re.search(r"^\s*make |\.sdlc/|\./", step["run"], re.M), name
     job = load(AFTER)["jobs"]["make-check"]
     assert "GH_TOKEN" not in job.get("env", {})
-    assert steps("gate")["actions/checkout@v4"]["with"]["persist-credentials"] is False
+    assert steps("gate")["actions/checkout"]["with"]["persist-credentials"] is False
 
 
 def test_check_tests_the_merge_of_the_gated_head_and_posts_the_status():
     check = steps("make-check")
     assert (
-        check["actions/checkout@v4"]["with"]["ref"]
-        == "refs/pull/${{ needs.gate.outputs.pr }}/merge"
+        check["actions/checkout"]["with"]["ref"] == "refs/pull/${{ needs.gate.outputs.pr }}/merge"
     )
     assert '[[ "$parent" == "$HEAD_SHA" ]]' in check["Check the merge is of this head"]["run"]
     run = check["make check (or SDLC_PR_CHECK_TARGET)"]
