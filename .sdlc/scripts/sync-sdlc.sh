@@ -36,8 +36,9 @@ main() {
   # Where the sync keeps its own records, and where versions before v0.11 kept them.
   local files_list=".sdlc/files" version_file=".sdlc/version"
   local old_files_list=".sdlc-files" old_version_file=".sdlc-version"
-  # Framework-only workflows that consumers must not run.
-  local skip_workflows=("release.yml")
+  # Framework-only workflows that consumers must not run, and this repo's actions lockfile,
+  # which covers only its own workflows (#143; a consumer locks its own, #298).
+  local skip_workflows=("release.yml" "actions-lock.yml" "actions.lock")
   # make targets the synced files call: "<target> <what uses it>". The project's Makefile
   # defines the stack contract and includes .sdlc/sdlc.mk, which brings the rest (#133).
   local contract_targets=(

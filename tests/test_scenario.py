@@ -77,6 +77,10 @@ def test_sync_installs_framework_owned_files(consumer):
     ]:
         assert (consumer / rel).exists(), rel
     assert not (consumer / ".github/workflows/release.yml").exists(), "framework-only workflow"
+    # This repo's actions lockfile covers only its own workflows; a consumer locks its own (#143).
+    assert not (consumer / ".github/workflows/actions-lock.yml").exists(), "framework-only"
+    assert not (consumer / ".github/workflows/actions.lock").exists(), "framework-only lockfile"
+    assert not (consumer / ".github/dependabot.yml").exists(), "framework-only"
     assert not (consumer / "scripts/next-version.sh").exists(), "framework-only script"
     assert not (consumer / "scripts/backlog-labels.sh").exists(), "framework-only script (#204)"
     assert not (consumer / ".claude/skills/backlog").exists(), "framework-only skill (#204)"
@@ -481,6 +485,7 @@ def test_sdlc_files_lists_what_was_installed(consumer):
     assert ".sdlc/hooks/production-gate.sh" in files
     assert ".sdlc/src/sdlc/cli.py" in files
     assert ".github/workflows/release.yml" not in files
+    assert ".github/workflows/actions.lock" not in files
     assert "Makefile" not in files
     assert all((consumer / f).is_file() for f in files)
 

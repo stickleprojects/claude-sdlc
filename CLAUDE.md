@@ -24,6 +24,7 @@ make sync-changes   # check each change.toml (title, status) against its folder 
 make clauses CHANGE=0002    # a spec as one JSON block per requirement (the clause check reads it)
 make evals       # agent evals (calls the model; in CI it uses CLAUDE_CODE_OAUTH_TOKEN)
 scripts/next-version.sh --explain   # the version the next release would get
+make lock-actions  # after changing any `uses:` in a workflow: relock .github/workflows/actions.lock (#143)
 ```
 
 A healthy `make check` ends with `ok: N change(s) valid`.

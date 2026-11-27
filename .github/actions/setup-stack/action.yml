@@ -1,11 +1,20 @@
 # The CI half of the stack contract (the other half is the Makefile).
 # Installs the current language toolchain, then runs `make setup`.
 # Change this file and the Makefile to switch language; workflows stay the same.
+#
+# Only `run:` steps (#143): with .github/workflows/actions.lock present, the runner fails a
+# ./ action whose remote actions have no pin, and a ./ action's can't be pinned without changing
+# the synced workflows (#298). So uv comes from requirements.txt, by version and hash.
 name: Setup stack
 description: Install the language toolchain and project dependencies
 runs:
   using: composite
   steps:
-    - uses: astral-sh/setup-uv@v6
+    - shell: bash
+      run: |
+        python3 -m venv "$RUNNER_TEMP/uv-venv"
+        "$RUNNER_TEMP/uv-venv/bin/pip" install --quiet --require-hashes --no-deps \
+          -r "$GITHUB_ACTION_PATH/requirements.txt"
+        echo "$RUNNER_TEMP/uv-venv/bin" >> "$GITHUB_PATH"
     - shell: bash
       run: make setup
