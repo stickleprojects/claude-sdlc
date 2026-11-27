@@ -108,8 +108,12 @@ def test_filter_reads_paths_on_stdin():
 
 
 def test_a_name_git_would_quote_is_still_on_the_list(repo):
-    """PR #307's review: `git diff --name-only` quotes a non-ASCII name, which then missed the list."""
-    odd = [".github/workflows/ünïcode.yml", '.github/workflows/a "quoted" name.yml', ".github/[x].yml"]
+    """PR #307's review: `git diff --name-only` quotes a non-ASCII name, so it missed the list."""
+    odd = [
+        ".github/workflows/ünïcode.yml",
+        '.github/workflows/a "quoted" name.yml',
+        ".github/[x].yml",
+    ]
     commit(repo, "odd names", {name: "v1\n" for name in odd})
     assert sorted(changes(repo).stdout.splitlines()) == sorted(odd)
     first = changes(repo, "--digest").stdout.strip()
