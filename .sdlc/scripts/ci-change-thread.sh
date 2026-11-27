@@ -9,6 +9,10 @@
 # `claude-review` until a person replies `Approved: <name>, <date>`. The job posts it, not the
 # reviewer, so the thread doesn't depend on a model remembering to.
 #
+# It doesn't start with `**Important`, the review's finding marker: the review posts with the same
+# login (github-actions[bot], ADR 0001), and review-findings.sh and check-gate.sh count only the
+# review's own findings. descopes-decided.sh holds this one instead.
+#
 # The thread ends with a digest of those files' diff. A push that changes them again, or changes
 # another one, gets a new thread, so an approval covers only the change it was given for. The same
 # change keeps its thread: nothing is posted twice.
@@ -47,7 +51,7 @@ fi
 mapfile -t list <<<"$files"
 n="${#list[@]}"
 s=""; ((n == 1)) || s="s"
-body="**Important (a person approves):** CI change: needs approval. This PR changes $n file$s that set CI's rules:
+body="**CI change: needs approval.** This PR changes $n file$s that set CI's rules:
 
 $(printf -- '- `%s`\n' "${list[@]}")
 

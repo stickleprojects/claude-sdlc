@@ -186,6 +186,16 @@ def test_a_clean_review_runs_check(gate):
     assert "target_url=https://github.com/o/r/actions/runs/500" in claim
 
 
+def test_the_review_posting_with_the_job_token_counts_but_its_ci_change_thread_does_not(gate):
+    # ADR 0001: the review's findings are github-actions[bot]'s now; the job's CI-change thread,
+    # same login, is held by descopes-decided.sh, not counted here.
+    ci = "**CI change: needs approval.** This PR changes 1 file that set CI's rules:"
+    result, _ = gate(CLEAN, [thread(login="github-actions"), thread(ci, login="github-actions")])
+    assert result.stdout.startswith("wait Waiting: 1 open Important thread(s).")
+    result, _ = gate(CLEAN, [thread(ci, login="github-actions")])
+    assert result.stdout.startswith("run"), result.stdout
+
+
 def test_an_open_important_thread_waits_and_says_why(gate):
     result, posts = gate(
         CLEAN, [thread(), thread("**Important (product owner decides):** y", login="claude[bot]")]

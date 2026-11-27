@@ -77,10 +77,7 @@ def test_a_ci_change_gets_one_thread_listing_its_files(thread):
     result, body, on = go()
     assert result.returncode == 0, result.stderr
     first = body.splitlines()[0]
-    assert first == (
-        "**Important (a person approves):** CI change: needs approval. "
-        "This PR changes 2 files that set CI's rules:"
-    )
+    assert first == "**CI change: needs approval.** This PR changes 2 files that set CI's rules:"
     assert "- `.github/workflows/ci.yml`\n- `uv.lock`" in body and "src/app.py" not in body
     assert "Approved: <name>, <date>" in body and "<!-- ci-change: " in body
     assert on == [".github/workflows/ci.yml"]

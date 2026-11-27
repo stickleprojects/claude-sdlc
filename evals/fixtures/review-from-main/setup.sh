@@ -35,6 +35,6 @@ printf 'Rounds a discounted price to the cent, and lints in CI.\n\nKind: fix\n' 
 cat > .review-threads.json <<'JSON'
 [{"path": ".github/workflows/ci.yml", "line": null, "resolved": false, "outdated": false,
   "first": {"author": "github-actions", "bot": true,
-    "body": "**Important (a person approves):** CI change: needs approval. This PR changes 1 file that set CI's rules:\n\n- `.github/workflows/ci.yml`\n\nRead the change to each, then reply `Approved: <name>, <date>`."},
+    "body": "**CI change: needs approval.** This PR changes 1 file that set CI's rules:\n\n- `.github/workflows/ci.yml`\n\nRead the change to each, then reply `Approved: <name>, <date>`."},
   "replies": []}]
 JSON

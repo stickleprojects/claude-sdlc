@@ -23,7 +23,8 @@
 # Exits 0 with a decision, 2 on bad arguments, 3 when GitHub can't be read or written.
 #
 # Env: GITHUB_REPOSITORY (owner/name; default: the gh repo of this checkout).
-#      REVIEW_BOT (default: claude[bot], the login claude-code-action comments as).
+#      REVIEW_BOT (default: github-actions[bot],claude[bot]): the reviewer's logins, comma-separated.
+#        The review posts with the job's token (ADR 0001); claude[bot] covers earlier reviews.
 #      GITHUB_RUN_ID, GITHUB_SERVER_URL (set by Actions): the run the claim links to.
 set -uo pipefail
 
@@ -32,8 +33,10 @@ pr="${1:-}" head="${2:-}" force="${3:-}"
   || { sed -n '2,27p' "$0" >&2; exit 2; }
 repo="${GITHUB_REPOSITORY:-$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)}"
 [[ "$repo" == */* ]] || { echo "check-gate: can't tell which repo this is" >&2; exit 3; }
-bot="${REVIEW_BOT:-claude[bot]}"
-login="${bot%\[bot\]}"  # GraphQL names an App's account without the [bot] suffix
+bots="${REVIEW_BOT:-github-actions[bot],claude[bot]}"
+# As JSON arrays for jq: the REST logins, and GraphQL's, which drop an App's [bot] suffix.
+bots_json="[$(sed -E 's/[^,]+/"&"/g' <<<"$bots")]"
+logins_json="${bots_json//\[bot\]/}"
 RUNNING="make check is running"
 QUEUED="make check is queued"
 
@@ -113,7 +116,7 @@ threads="$(gh api graphql --paginate -f query="$query" -F owner="${repo%%/*}" \
   -F name="${repo#*/}" -F pr="$pr" --jq "
     .data.repository.pullRequest.reviewThreads.nodes[]
     | select(.isResolved | not) | .comments.nodes[0]
-    | select((.author.login | sub(\"\\\\[bot\\\\]\$\"; \"\")) == \"$login\")
+    | select(.author.login | sub(\"\\\\[bot\\\\]\$\"; \"\") | IN($logins_json[]))
     | select(.body | test(\"^\\\\s*\\\\*\\\\*Important\\\\b\"))
     | 1")" || fail "can't read PR #$pr's review threads"
 open="$(grep -c . <<<"$threads")"

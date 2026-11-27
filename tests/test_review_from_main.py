@@ -205,3 +205,16 @@ def test_every_reader_of_the_run_name_uses_its_one_form():
         text = (REPO / path).read_text()
         assert prefix in text or r"Claude\ review\ of\ \#" in text, path
         assert " at " in text, path
+
+
+def test_the_review_posts_with_the_jobs_token_not_the_claude_apps():
+    """ADR 0001's amendment: Anthropic's token exchange refuses pull_request_target
+    (anthropics/claude-code-action#713), so each review step passes the job's token and the
+    workflow asks for no OIDC token."""
+    workflow = load(REVIEW)
+    assert "id-token" not in workflow["permissions"]
+    steps = [s for s in jobs()["review"]["steps"] if "claude-code-action" in s.get("uses", "")]
+    assert len(steps) == 2, "the review and its retry"
+    for step in steps:
+        token = step["with"]["github_token"]
+        assert token == "${{ github.token }}", step["name"]  # noqa: S105 (an expression, not a secret)

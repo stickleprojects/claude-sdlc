@@ -37,7 +37,6 @@ on:
 permissions:
   contents: read
   pull-requests: write
-  id-token: write
   statuses: write
 
 jobs:
@@ -189,6 +188,11 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # The job's own token, so the review posts as github-actions[bot] (ADR 0001). Without it the
+          # action swaps an OIDC token for the Claude App's, and Anthropic's exchange refuses that
+          # under pull_request_target (anthropics/claude-code-action#713). The reviewer is still never
+          # the author, the agent App. A review App of its own is #311.
+          github_token: ${{ github.token }}
           # PRs and pushes from the agent's own App identity (.sdlc/docs/agent-identity.md) are reviewed
           # like a person's, and so are spec PRs opened with the default token when there's no
           # App (github-actions[bot], #82). The review only comments, so it can't start a loop.
@@ -245,7 +249,7 @@ jobs:
             refer to a finding as "above": the PR shows only what you post.
             End it with the hidden count line, <!-- review-findings: important=<N> nit=<M> -->:
             N is the unresolved threads in .review-threads.json whose first comment is the
-            review's own (author `claude`, bot true) and starts with **Important, plus the
+            review's own (author `github-actions`, or `claude` for an earlier review; bot true) and starts with **Important, plus the
             Important threads you post now. A resolved
             thread never counts. M is the Nits still open, in threads or in the summary. The
             job checks N against the open Important threads and that M Nits are written down,
@@ -286,6 +290,11 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # The job's own token, so the review posts as github-actions[bot] (ADR 0001). Without it the
+          # action swaps an OIDC token for the Claude App's, and Anthropic's exchange refuses that
+          # under pull_request_target (anthropics/claude-code-action#713). The reviewer is still never
+          # the author, the agent App. A review App of its own is #311.
+          github_token: ${{ github.token }}
           # PRs and pushes from the agent's own App identity (.sdlc/docs/agent-identity.md) are reviewed
           # like a person's, and so are spec PRs opened with the default token when there's no
           # App (github-actions[bot], #82). The review only comments, so it can't start a loop.
@@ -342,7 +351,7 @@ jobs:
             refer to a finding as "above": the PR shows only what you post.
             End it with the hidden count line, <!-- review-findings: important=<N> nit=<M> -->:
             N is the unresolved threads in .review-threads.json whose first comment is the
-            review's own (author `claude`, bot true) and starts with **Important, plus the
+            review's own (author `github-actions`, or `claude` for an earlier review; bot true) and starts with **Important, plus the
             Important threads you post now. A resolved
             thread never counts. M is the Nits still open, in threads or in the summary. The
             job checks N against the open Important threads and that M Nits are written down,
