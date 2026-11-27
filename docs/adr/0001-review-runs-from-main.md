@@ -74,6 +74,7 @@ What constrains the choice:
   - The release notes say so.
 - **The mention workflow stays as it is.** Its job is to run the PR's code and commit to it, so it can't be data-only. It answers only to `issue_comment`, which already runs main's copy, and to `pull_request_review_comment`, which runs the PR's. Its exposure is a separate question: #306.
 - **Almost every consumer sync PR gets the approval thread,** since a sync usually changes a workflow or a hook. That's one thread to read, in place of 900 unreviewed files.
+- **An approval only helps if it's read.** Whether people approve these threads without reading them can't be seen in one plan. So it's a question for the pipeline review (#255): how often the thread comes up, and how soon after it's posted it's approved.
 - **What we maintain:**
   - the `pr/` layout;
   - the `run-name` contract between the review and the gate;
@@ -84,6 +85,6 @@ What constrains the choice:
 - a plan makes the review job run a command, `make` target or action from the PR's checkout
 - a plan widens the review's tool allowlist to anything that writes files or runs commands
 - claude-code-action stops handling `pull_request_target` as a PR event, or its token swap accepts a PR's copy of the workflow
-- a plan adds a file outside the approval list that sets what CI runs with secrets, or what the agent may do (it joins the list)
-- people approve `CI change: needs approval` threads without reading them, e.g. because the list now matches most PRs
+- a plan gives a secret, or a token that can write, to a workflow step that reads or runs a file outside the approval list (that file joins the list)
+- a plan adds a path to the approval list, or a path that most PRs change
 - the after-review gate needs the reviewed head and can't get it from the PR number
