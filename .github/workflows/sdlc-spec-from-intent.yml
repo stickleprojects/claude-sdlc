@@ -28,11 +28,11 @@ jobs:
       - name: Agent identity token
         id: agent
         if: vars.SDLC_AGENT_APP_ID != ''
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ vars.SDLC_AGENT_APP_ID }}
           private-key: ${{ secrets.SDLC_AGENT_APP_KEY }}
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           token: ${{ steps.agent.outputs.token || github.token }}
       - uses: ./.github/actions/setup-stack
