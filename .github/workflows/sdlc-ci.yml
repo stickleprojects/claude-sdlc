@@ -40,7 +40,7 @@ jobs:
         run: >-
           echo "SDLC_CHECK_AFTER_REVIEW is on: make check runs in 'Check after review' once the
           Claude review is clean, and posts the required check status."
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: env.DEFERRED != 'true'
         with:
           fetch-depth: 0  # make validate and the docs-only check compare the branch with main

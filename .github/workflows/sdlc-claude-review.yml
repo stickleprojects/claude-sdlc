@@ -48,7 +48,7 @@ jobs:
       PR: ${{ github.event.pull_request.number }}
       HEAD_SHA: ${{ github.event.pull_request.head.sha }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       # A minute's margin for clock skew between the runner and GitHub: the summary has to be
@@ -450,7 +450,7 @@ jobs:
       BASE_REF: ${{ github.event.pull_request.base.ref }}
       SDLC_REVIEW_CARRY_FORWARD: ${{ vars.SDLC_REVIEW_CARRY_FORWARD }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - run: .sdlc/scripts/review-current.sh "$PR" "$HEAD_SHA"
