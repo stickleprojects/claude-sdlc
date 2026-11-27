@@ -172,8 +172,8 @@ def test_the_gate_needs_the_summary_not_just_a_green_action():
     done = step["Mark the review as done"]
     assert "SINCE: ${{ steps.start.outputs.since }}" in done
     assert '.sdlc/scripts/review-posted.sh "$PR" "$SINCE"' in done
-    # Skipped (an sdlc-claude-*.yml change) is checked first: the action posts nothing then.
-    assert done.index('"$SKIPPED" == true') < done.index("review-posted.sh")
+    # Skipped (a Dependabot PR) is checked first: the action posts nothing then.
+    assert done.index('"$WHY" == dependabot') < done.index("review-posted.sh")
     assert "-f state=failure" in done and "posted no summary" in done
     failed = step["Mark the review as failed"]
     assert "if: failure() && steps.done.outputs.reported != 'true'" in failed
@@ -336,8 +336,8 @@ def test_the_gate_checks_what_the_review_found():
     steps = workflow.split("\n      - ")
     step = {s.split("\n", 1)[0].removeprefix("name: "): s for s in steps}
     done = step["Mark the review as done"]
-    # In order: the sdlc-claude-*.yml exception, then a summary, then a thread per finding.
-    order = ['"$SKIPPED" == true', "review-posted.sh", '.sdlc/scripts/review-findings.sh "$PR"']
+    # In order: the Dependabot exception, then a summary, then a thread per finding.
+    order = ['"$WHY" == dependabot', "review-posted.sh", '.sdlc/scripts/review-findings.sh "$PR"']
     assert [done.index(x) for x in order] == sorted(done.index(x) for x in order)
     assert done.count('echo "reported=true"') == 3 and done.count("exit 1") == 3
     action = step["Review"]

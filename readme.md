@@ -258,7 +258,7 @@ Dependabot's PRs get only the repo's *Dependabot* secrets, not its Actions secre
 
 Open any small PR. **check**, **pr-title**, **review** and **claude-review** should pass, and Claude should post a single *Review summary* comment. Then merge it yourself; in solo mode no approval is needed, and no bypass either. Two things to expect:
 
-- **A PR that changes `.github/workflows/sdlc-claude-*.yml` gets no AI review.** The action skips itself on purpose until the file matches `main`, and a comment on the PR says so. Review those PRs by hand.
+- **The review runs main's copy of its workflow** (`pull_request_target`, ADR 0001), so a PR can't change how its own review runs, and a PR that changes a workflow is reviewed like any other. A PR that changes a file that sets CI's rules (`.github/`, `.sdlc/hooks/`, `.claude/settings.json`, `uv.lock`) also gets a `CI change: needs approval` thread: reply `Approved: <name>, <date>` once you've read those files. The one PR that gets no AI review is the one that moves a repo onto this workflow, which says so and is reviewed by hand.
 - **The review runs when a PR opens, not on every push**, to save subscription usage. But nobody merges on a stale review: a push after the review marks `claude-review` as pending, "Not reviewed: N commits since the review", which blocks the merge, and cancels a review still running on an older commit. Add the `review` label to review the latest push; the label removes itself, so you can add it again. The skills do this for you after they push a fix.
 - **A PR's title says which gate artifact it changes.** A PR that changes a spec must be titled `spec(...)`, and likewise for `intent`, `bug` and `plan`, or the *PR title* check fails.
 

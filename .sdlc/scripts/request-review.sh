@@ -81,9 +81,13 @@ head_is_pushed() {
 review_run_started() {
   local runs unfinished=""
   [[ -n "$again" ]] && unfinished='| select(.status != "completed")'
+  local counted="| select(.conclusion != \"skipped\" and .conclusion != \"cancelled\") $unfinished]"
   runs="$(gh api "repos/$repo/actions/runs?head_sha=$sha&event=pull_request&per_page=100" --jq "
-    [.workflow_runs[] | select(.path | endswith(\"/sdlc-claude-review.yml\"))
-      | select(.conclusion != \"skipped\" and .conclusion != \"cancelled\") $unfinished]
+    [.workflow_runs[] | select(.path | endswith(\"/sdlc-claude-review.yml\")) $counted
+    | length" 2>/dev/null)" && ((runs > 0)) && return 0
+  # A pull_request_target run (ADR 0001) has main's head: its name says which commit it reviews.
+  runs="$(gh api "repos/$repo/actions/workflows/sdlc-claude-review.yml/runs?event=pull_request_target&per_page=100" --jq "
+    [.workflow_runs[] | select(.display_title | startswith(\"Claude review of #$pr at $sha\")) $counted
     | length" 2>/dev/null)" && ((runs > 0))
 }
 add_label() {

@@ -45,12 +45,13 @@ A holder can hold part of a rule only, such as the plan gate holding "no code be
 | `review.exclusions` | Don't report what lint or tests enforce, lockfiles, generated files or intent/spec wording | nothing |
 | `review.finding-readable` | Quote what you refer to, say why it matters, suggest a fix, say who decides | nothing |
 | `review.important-thread` | Every Important finding is its own thread, starting `**Important` | `check: .sdlc/scripts/review-findings.sh` |
+| `review.ci-change-thread` | The job posts the `CI change: needs approval` thread; the review never does, and reviews those files as advice | `check: .sdlc/scripts/ci-change-thread.sh`, `check: .sdlc/scripts/descopes-decided.sh`, `test: tests/test_review_from_main.py::test_both_prompts_point_the_review_at_pr`, `eval: review-reads-the-prs-files-under-pr` |
 | `review.descope-thread` | A descope thread says `Descope: needs approval`; only a person's reply decides it | `check: .sdlc/scripts/descopes-decided.sh`, `check: .sdlc/scripts/descopes-status.sh` |
 | `review.nit-thread` | A Nit is a thread or a summary line starting `**Nit:**`; every counted Nit is in one | `check: .sdlc/scripts/review-findings.sh` |
 | `review.rereview-open-threads` | An open earlier thread still counts; a resolved but unaddressed one gets a new thread | `check: .sdlc/scripts/review-findings.sh` |
 | `review.hidden-count` | The summary ends with the hidden findings count | `check: .sdlc/scripts/review-findings.sh` |
 | `review.one-summary` | One summary comment per PR, replaced on each review, in a fixed order | nothing |
-| `review.earlier-notes` | On a re-review, mark every earlier summary note addressed (with its commit) or still open; never drop one | `eval: review-marks-earlier-summary-notes`, `test: tests/scripts/test_review_earlier_summary.py::test_the_review_reads_the_earlier_summary_from_the_base_copy` |
+| `review.earlier-notes` | On a re-review, mark every earlier summary note addressed (with its commit) or still open; never drop one | `eval: review-marks-earlier-summary-notes`, `test: tests/scripts/test_review_earlier_summary.py::test_the_review_reads_the_earlier_summary_with_mains_copy` |
 | `review.claim-only-checked` | The summary claims only what was compared | nothing |
 | `review.handling-line` | The summary's how-to-handle line shows only when a finding is open, and names no command with `Change tracking: issues` | `eval: review-clean-pr-has-no-handling-line`, `eval: review-issues-repo-names-no-command` |
 

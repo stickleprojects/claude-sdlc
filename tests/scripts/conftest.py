@@ -165,6 +165,7 @@ def request_review(tmp_path):
         status=200,
         heads=(PUSHED,),
         runs=(),
+        target_runs=(),
         labels=(),
         label_fails=False,
         sha=PUSHED,
@@ -178,6 +179,7 @@ def request_review(tmp_path):
         (state / "var-status").write_text(str(status))
         (state / "var.json").write_text(json.dumps({"value": variable}))
         (state / "runs.json").write_text(json.dumps({"workflow_runs": list(runs)}))
+        (state / "target-runs.json").write_text(json.dumps({"workflow_runs": list(target_runs)}))
         (state / "labels.json").write_text(json.dumps([{"name": n} for n in labels]))
         (state / "label-fails").unlink(missing_ok=True)
         if label_fails:

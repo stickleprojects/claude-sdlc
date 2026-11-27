@@ -96,11 +96,38 @@ def test_review_current_fails_when_it_cant_post(review_current):
 def run_of(n, status="in_progress", branch="b", repo="o/r", id=1):
     return {
         "id": id,
+        "event": "pull_request",
         "status": status,
         "head_branch": branch,
         "head_sha": sha(n),
         "head_repository": {"full_name": repo},
+        "display_title": "a PR title",
     }
+
+
+def target_run_of(n, status="in_progress", pr=7, id=1):
+    """A pull_request_target run (ADR 0001): main's head; its name says what it reviews."""
+    return {
+        "id": id,
+        "event": "pull_request_target",
+        "status": status,
+        "head_branch": "main",
+        "head_sha": "f" * 40,
+        "head_repository": {"full_name": "o/r"},
+        "display_title": f"Claude review of #{pr} at {sha(n)}",
+    }
+
+
+def test_a_push_cancels_pull_request_target_reviews_of_older_commits_by_name(review_current):
+    runs = [
+        target_run_of(1, id=21),
+        target_run_of(2, id=22),  # the pushed commit's own (this run, too)
+        target_run_of(1, "completed", id=23),
+        target_run_of(1, pr=8, id=24),  # another PR's
+        target_run_of(1, pr=70, id=25),  # #70 starts with #7
+    ]
+    result, _ = review_current([1, 2], {1: []}, runs=runs, head_ref="b")
+    assert result.returncode == 0 and result.cancelled == ["21"]
 
 
 def test_a_push_cancels_only_reviews_of_its_branchs_older_commits(review_current):

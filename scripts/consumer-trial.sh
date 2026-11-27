@@ -74,11 +74,13 @@ cmd_sync() {
   echo "$dir"
 }
 
-# The review action won't run while the PR changes its workflow (it must match main), so a trial
-# that changes one gets no AI review to read in step 4 (#292). Usually the consumer is behind the
-# last release; the fix that lets the review run anyway is #293.
+# Before ADR 0001 (#293) the review action wouldn't run while the PR changed its workflow, so a
+# trial that changes one gets no AI review to read in step 4 (#292). Once the consumer's main runs
+# the review on pull_request_target, main's copy reviews every PR, and there's nothing to warn of.
 warn_no_review() {
   local changed was
+  git -C "$dir/repo" show "$1:.github/workflows/sdlc-claude-review.yml" 2>/dev/null \
+    | grep -qE '^  pull_request_target:' && return 0
   changed="$(git -C "$dir/repo" diff --name-only "$1" HEAD \
     | grep -E '^\.github/workflows/(sdlc-)?claude-' | tr '\n' ' ' || true)"
   [[ -n "$changed" ]] || return 0
