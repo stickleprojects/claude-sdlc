@@ -106,7 +106,8 @@ case "$review" in
   *) wait_for "Waiting for a clean Claude review: ${review#* }" ;;
 esac
 
-# Unresolved threads the reviewer started with **Important (as .sdlc/scripts/review-findings.sh).
+# Unresolved threads the reviewer started with **Important, not the job's CI-change thread
+# (as .sdlc/scripts/review-findings.sh).
 query='query($owner: String!, $name: String!, $pr: Int!, $endCursor: String) {
   repository(owner: $owner, name: $name) { pullRequest(number: $pr) {
     reviewThreads(first: 100, after: $endCursor) {
@@ -117,6 +118,7 @@ threads="$(gh api graphql --paginate -f query="$query" -F owner="${repo%%/*}" \
     .data.repository.pullRequest.reviewThreads.nodes[]
     | select(.isResolved | not) | .comments.nodes[0]
     | select(.author.login | sub(\"\\\\[bot\\\\]\$\"; \"\") | IN($logins_json[]))
+    | select(.body | test(\"CI change: needs approval\") | not)
     | select(.body | test(\"^\\\\s*\\\\*\\\\*Important\\\\b\"))
     | 1")" || fail "can't read PR #$pr's review threads"
 open="$(grep -c . <<<"$threads")"

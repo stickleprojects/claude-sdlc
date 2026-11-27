@@ -192,8 +192,10 @@ def test_the_review_posting_with_the_job_token_counts_but_its_ci_change_thread_d
     ci = "**CI change: needs approval.** This PR changes 1 file that set CI's rules:"
     result, _ = gate(CLEAN, [thread(login="github-actions"), thread(ci, login="github-actions")])
     assert result.stdout.startswith("wait Waiting: 1 open Important thread(s).")
-    result, _ = gate(CLEAN, [thread(ci, login="github-actions")])
-    assert result.stdout.startswith("run"), result.stdout
+    old = "**Important (a person approves):** CI change: needs approval."
+    for body in (ci, old):
+        result, _ = gate(CLEAN, [thread(body, login="github-actions")])
+        assert result.stdout.startswith("run"), result.stdout
 
 
 def test_an_open_important_thread_waits_and_says_why(gate):

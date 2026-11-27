@@ -51,7 +51,8 @@ if [[ -z "$marker" ]]; then
   exit 1
 fi
 
-# Unresolved threads the reviewer started with **Important or **Nit, one line each.
+# Unresolved threads the reviewer started with **Important or **Nit, one line each. The job's CI-change
+# thread shares the reviewer's login (ADR 0001) and is no finding: descopes-decided.sh holds it.
 query='query($owner: String!, $name: String!, $pr: Int!, $endCursor: String) {
   repository(owner: $owner, name: $name) { pullRequest(number: $pr) {
     reviewThreads(first: 100, after: $endCursor) {
@@ -62,6 +63,7 @@ threads="$(gh api graphql --paginate -f query="$query" -F owner="${repo%%/*}" \
     .data.repository.pullRequest.reviewThreads.nodes[]
     | select(.isResolved | not) | .comments.nodes[0]
     | select(.author.login | sub(\"\\\\[bot\\\\]\$\"; \"\") | IN($logins_json[]))
+    | select(.body | test(\"CI change: needs approval\") | not)
     | .body | capture(\"^\\\\s*\\\\*\\\\*(?<kind>Important|Nit)\\\\b\") | .kind")" \
   || { echo "review-findings: can't read PR #$pr's review threads" >&2; exit 3; }
 open="$(grep -cx Important <<<"$threads")"

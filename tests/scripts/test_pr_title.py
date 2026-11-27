@@ -290,6 +290,10 @@ def test_review_findings_counts_the_job_tokens_findings_not_its_ci_change_thread
         thread("**Important:** wrong total.", login="github-actions"),
         thread("**Important:** from the review before the sync.", login="claude"),
         thread(CI_THREAD, login="github-actions"),
+        # The first trial's script opened it with **Important: still not a finding.
+        thread(
+            "**Important (a person approves):** CI change: needs approval.", login="github-actions"
+        ),
     ]
     result = review_findings([summary(2)], found, logins=["github-actions[bot]"])
     assert result.returncode == 0, result.stdout + result.stderr
