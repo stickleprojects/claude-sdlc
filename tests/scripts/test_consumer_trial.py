@@ -169,6 +169,20 @@ def test_sync_says_when_the_trial_pr_will_get_no_ai_review(trial, workflow):
     assert "sync it to the last release for real first" in result.stderr
 
 
+def test_sync_says_nothing_when_the_consumers_main_reviews_from_main(trial):
+    """ADR 0001 (#293): main's copy runs on pull_request_target, so it reviews the trial PR."""
+    seed = trial["tmp"] / "seed"
+    commit(
+        seed,
+        "ci: review from main",
+        {".github/workflows/sdlc-claude-review.yml": "on:\n  pull_request_target:\n"},
+    )
+    git(trial["origin"], "fetch", "-q", str(seed), "+main:main")
+    result, _ = _sync(trial, env={"STUB_SYNC_WORKFLOW": "sdlc-claude-review.yml"})
+    assert result.returncode == 0, result.stderr
+    assert "no AI review" not in result.stderr
+
+
 def test_sync_says_nothing_about_the_review_when_no_review_workflow_changes(trial):
     result, _ = _sync(trial, env={"STUB_SYNC_WORKFLOW": "sdlc-ci.yml"})
     assert result.returncode == 0, result.stderr

@@ -1,0 +1,50 @@
+# The PR that moves a repo's Claude review onto pull_request_target (ADR 0001, #293) gets no
+# review at all. Its own copy of sdlc-claude-review.yml no longer listens to pull_request, and
+# main's copy doesn't listen to pull_request_target yet. Without this, `claude-review` would wait
+# forever. So when main's copy still runs on pull_request, this marks the PR for a review by hand,
+# as a PR that changed the review workflow was before. Once main's copy runs on
+# pull_request_target, it does nothing.
+#
+# It runs the PR's copy (pull_request), only on a PR that changes the review workflow, so it never
+# has main's secrets. It stays for good: a repo that skips releases still crosses over once.
+# It shares the review's name, so sdlc-check-after-review.yml's workflow_run on "Claude review"
+# looks at the PR again once this has posted, even with main's older copy of that gate.
+name: Claude review
+
+on:
+  pull_request:
+    types: [opened, ready_for_review, labeled, synchronize]
+    paths: [.github/workflows/sdlc-claude-review.yml]
+
+permissions:
+  contents: read
+  pull-requests: write
+  statuses: write
+
+jobs:
+  transition:
+    name: "review by hand while main's review runs on pull_request"
+    if: >-
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ${{ vars.SDLC_RUNNER && !github.event.issue.pull_request && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && vars.SDLC_RUNNER || 'ubuntu-latest' }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR: ${{ github.event.pull_request.number }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+    steps:
+      - name: Mark the PR for a review by hand if main's review can't run on it
+        run: |
+          main_copy="$(gh api "repos/$GITHUB_REPOSITORY/contents/.github/workflows/sdlc-claude-review.yml?ref=$BASE_SHA" \
+            --jq .content 2>/dev/null | base64 -d 2>/dev/null)" || main_copy=""
+          if grep -qE '^  pull_request_target:' <<<"$main_copy"; then
+            echo "Main's review runs on pull_request_target, so it reviews this PR: nothing to do."
+            exit 0
+          fi
+          gh api "repos/$GITHUB_REPOSITORY/statuses/$HEAD_SHA" --silent -f state=success \
+            -f context=claude-review \
+            -f description="No AI review: this PR moves the review onto main's copy, so a code owner reviews it by hand"
+          if [[ "${{ github.event.action }}" == opened || "${{ github.event.action }}" == ready_for_review ]]; then
+            gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" --silent -f body="AI review skipped: this PR moves the Claude review onto \`pull_request_target\` (ADR 0001), so main's copy of the review can't run on it. A code owner needs to review it by hand, with extra care for \`.github/\`, \`.sdlc/hooks/\` and \`.claude/settings.json\`. Every PR after it merges gets an AI review, including the ones that change workflows."
+          fi

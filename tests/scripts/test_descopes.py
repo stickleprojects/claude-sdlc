@@ -214,10 +214,7 @@ def test_descopes_status_clears_a_session_decision_once_approved(descopes):
 
 # --- a CI change needs a person's approval (ADR 0001, #293) -----------------------------------
 
-CI_CHANGE = (
-    "**Important (a person approves):** CI change: needs approval. "
-    "This PR changes .github/workflows/sdlc-ci.yml."
-)
+CI_CHANGE = "**CI change: needs approval.** This PR changes .github/workflows/sdlc-ci.yml."
 
 
 def ci_thread(*replies, resolved=False):
@@ -246,12 +243,20 @@ def test_a_ci_change_isnt_settled_by_a_reply_resolve_and_re_review(descopes):
 
 
 def test_only_the_review_job_posts_a_ci_change_thread(descopes):
-    """The job posts it as github-actions; one from the reviewer or anyone else isn't read."""
+    """The job posts it as github-actions; one from claude[bot] or anyone else isn't read."""
     for by in ("claude", "someone"):
         other = descope_thread(first=CI_CHANGE, by=by)
         assert descopes([other]).stdout.strip() == "no descopes to approve", by
     approved = note("kieron", "Approved: Kieron, 27 Nov", "2026-11-27T11:00:00Z")
     assert descopes([descope_thread(approved), ci_thread()]).returncode == 1
+
+
+def test_a_descope_from_either_reviewer_login_is_read(descopes):
+    """ADR 0001: the review posts as github-actions now; claude[bot] posted the earlier ones."""
+    for by in ("github-actions", "claude"):
+        result = descopes([descope_thread(by=by)])
+        assert result.returncode == 1, by
+        assert result.stdout.startswith("A descope waits for a person's decision"), result.stdout
 
 
 def test_descopes_status_clears_a_ci_change_once_approved(descopes):

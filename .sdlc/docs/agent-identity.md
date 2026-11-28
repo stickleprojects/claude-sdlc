@@ -8,7 +8,8 @@ By default, Claude sessions use your `gh` login and your git credentials, so the
 |---|---|---|
 | `agent`: your App, `<repo>-claude[bot]` | every Claude Code session in this repo | local sessions |
 | `agent` | the *Spec from intent* workflow | CI |
-| `claude`: Anthropic's Claude App, `claude[bot]` | the review and `@claude` workflows | CI |
+| `github-actions[bot]`, the job's own token | the review workflow (ADR 0001: Anthropic's token exchange refuses `pull_request_target`; a review App of its own is #311) | CI |
+| `claude`: Anthropic's Claude App, `claude[bot]` | the `@claude` workflow | CI |
 
 Claude never acts as you: comments are signed `— Claude`, and each commit carries a `Requested-by:` trailer naming the person who asked. The reviewer is a different identity from the author, so Claude never reviews as the account that wrote the code.
 

@@ -125,8 +125,13 @@ def review_posted(tmp_path):
     return go
 
 
-def comment(login="claude[bot]", updated="2026-11-12T09:00:30Z", url="https://x/c/1"):
-    return {"user": {"login": login}, "updated_at": updated, "html_url": url}
+SUMMARY = "## Review\n\n<!-- review-findings: important=0 nit=0 -->"
+
+
+def comment(
+    login="github-actions[bot]", updated="2026-11-12T09:00:30Z", url="https://x/c/1", body=SUMMARY
+):
+    return {"user": {"login": login}, "updated_at": updated, "html_url": url, "body": body}
 
 
 def test_review_posted_finds_a_summary_posted_or_edited_during_the_job(review_posted, tmp_path):
@@ -136,12 +141,19 @@ def test_review_posted_finds_a_summary_posted_or_edited_during_the_job(review_po
     assert review_posted([comment(updated=SINCE)]).returncode == 0, "at the start counts"
 
 
+def test_review_posted_finds_a_summary_from_either_reviewer_login(review_posted):
+    # ADR 0001: the review posts with the job's token; claude[bot] wrote the earlier summaries.
+    for login in ("github-actions[bot]", "claude[bot]"):
+        assert review_posted([comment(login=login)]).returncode == 0, login
+
+
 @pytest.mark.parametrize(
     "found",
     [
         [],
         [comment(updated="2026-11-12T08:59:59Z")],  # an older summary, not edited this time
-        [comment(login="github-actions[bot]")],  # the "AI review skipped" note
+        [comment(body="AI review skipped: this is a Dependabot update.")],  # the job's own note
+        [comment(login="claude[bot]", body="Working on it")],  # no count line: not a summary
         [comment(login="someone")],
     ],
 )
@@ -172,8 +184,8 @@ def test_the_gate_needs_the_summary_not_just_a_green_action():
     done = step["Mark the review as done"]
     assert "SINCE: ${{ steps.start.outputs.since }}" in done
     assert '.sdlc/scripts/review-posted.sh "$PR" "$SINCE"' in done
-    # Skipped (an sdlc-claude-*.yml change) is checked first: the action posts nothing then.
-    assert done.index('"$SKIPPED" == true') < done.index("review-posted.sh")
+    # Skipped (a Dependabot PR) is checked first: the action posts nothing then.
+    assert done.index('"$WHY" == dependabot') < done.index("review-posted.sh")
     assert "-f state=failure" in done and "posted no summary" in done
     failed = step["Mark the review as failed"]
     assert "if: failure() && steps.done.outputs.reported != 'true'" in failed
@@ -268,6 +280,26 @@ def test_review_findings_passes_when_each_finding_has_an_open_thread(review_find
     assert "graphql --paginate" in calls and "owner=o" in calls and "name=r" in calls
 
 
+CI_THREAD = "**CI change: needs approval.** This PR changes 1 file that set CI's rules:"
+
+
+def test_review_findings_counts_the_job_tokens_findings_not_its_ci_change_thread(review_findings):
+    # ADR 0001: the review posts as github-actions[bot], as the job's CI-change thread does. Its
+    # findings count; the CI thread is no finding (descopes-decided.sh holds it).
+    found = [
+        thread("**Important:** wrong total.", login="github-actions"),
+        thread("**Important:** from the review before the sync.", login="claude"),
+        thread(CI_THREAD, login="github-actions"),
+        # The first trial's script opened it with **Important: still not a finding.
+        thread(
+            "**Important (a person approves):** CI change: needs approval.", login="github-actions"
+        ),
+    ]
+    result = review_findings([summary(2)], found, logins=["github-actions[bot]"])
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "2 open Important finding(s)" in result.stdout
+
+
 def test_review_findings_fails_263_whose_nits_were_lost(review_findings):
     """#266: the summary counted two nits and wrote down neither."""
     result = review_findings([summary(0, 2, "Review: 0 Important, 2 Nit (see above)\n")])
@@ -336,8 +368,8 @@ def test_the_gate_checks_what_the_review_found():
     steps = workflow.split("\n      - ")
     step = {s.split("\n", 1)[0].removeprefix("name: "): s for s in steps}
     done = step["Mark the review as done"]
-    # In order: the sdlc-claude-*.yml exception, then a summary, then a thread per finding.
-    order = ['"$SKIPPED" == true', "review-posted.sh", '.sdlc/scripts/review-findings.sh "$PR"']
+    # In order: the Dependabot exception, then a summary, then a thread per finding.
+    order = ['"$WHY" == dependabot', "review-posted.sh", '.sdlc/scripts/review-findings.sh "$PR"']
     assert [done.index(x) for x in order] == sorted(done.index(x) for x in order)
     assert done.count('echo "reported=true"') == 3 and done.count("exit 1") == 3
     action = step["Review"]

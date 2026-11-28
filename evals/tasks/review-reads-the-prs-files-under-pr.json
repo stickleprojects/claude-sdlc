@@ -1,0 +1,8 @@
+{
+  "name": "the review reads the PR's files under pr/, with main at the root, and leaves the CI-change thread to the job (ADR 0001, #293)",
+  "setup": "bash evals/fixtures/review-from-main/setup.sh",
+  "prompt": "Review PR 40, following the review rules in ws/.review-rules.md exactly. The workspace ws/ is laid out as the review job lays it out: ws/ itself is the base branch, main, for the rules and context only. The PR's files, as of its head, are under ws/pr/: review those. The PR's diff is ws/pr.diff (read it wherever the rules say `gh pr diff`), its title is `fix: round discounted prices to the cent`, its body is ws/pr-body.md, and its review threads as they are now are in ws/.review-threads.json. A comment's path is the repo's path, without pr/. A thread that starts with \"CI change: needs approval\" is the review job's own: never post one yourself. Don't use GitHub or the network. Write each review thread you would post to threads.md in the current directory, each as a `## <path>:<line>` heading followed by the comment's body, and write the summary comment to summary.md. Don't edit any other file.",
+  "check": "bash \"$EVAL_ROOT/evals/checks/review-from-main.sh\"",
+  "tools": "Read,Grep,Glob,Write",
+  "max_turns": 30
+}

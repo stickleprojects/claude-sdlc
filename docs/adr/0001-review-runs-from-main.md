@@ -2,7 +2,7 @@
 
 ## Status
 
-accepted (Kieron, 2026-11-27)
+accepted (Kieron, 2026-11-27); amended 2026-11-28 (Kieron): the review posts with the job's token. See *Amendment*.
 
 ## Context
 
@@ -48,6 +48,32 @@ What constrains the choice:
 - **Dependabot PRs still get no AI review** (#303).
 - **The run carries its PR number in a `run-name`,** e.g. `Claude review #123`. The after-review gate reads the number from `workflow_run.display_title` and then takes the PR's current head from the API, as it already does for *Descope decisions* (#223). It also accepts `workflow_run.event == 'pull_request_target'`.
 
+## Amendment (2026-11-28): the review posts with the job's token
+
+**What the trial found.** In a throwaway repo (`sdlc-trial-293`), all three trial reviews failed before they started. claude-code-action swaps the job's OIDC token for the Claude App's, and Anthropic's exchange answered `401 Invalid OIDC token` for every `pull_request_target` run. It does that whatever the workflow file says. Two open upstream issues report the same: anthropics/claude-code-action#713 and #1886. So the first constraint above is wrong: under `pull_request_target`, the swap never passes. Everything else held:
+- the run-name reached the gate;
+- the job posted the CI-change thread;
+- the transition job did nothing once main's copy listened to `pull_request_target`.
+
+**Decision (Kieron, 28 Nov).**
+- The review passes `github_token: ${{ github.token }}`, so the action skips the swap. It posts as `github-actions[bot]`, and the workflow drops `id-token: write`.
+- The scripts that find the review's comments (`review-posted.sh`, `review-findings.sh`, `check-gate.sh`, `descopes-decided.sh`) take `REVIEW_BOT` as a list, defaulting to `github-actions[bot],claude[bot]`. A PR reviewed before the sync keeps its findings counted.
+- The job's CI-change thread no longer starts with `**Important`, the review's finding marker. It shares the review's login now, and the counters count only findings. `descopes-decided.sh` holds the thread as before.
+
+**Why this isn't the "own `github_token`" option Kieron rejected.** That option was rejected because under `pull_request` the PR would still run its own review (effect 2). Here main's copy runs, and the token is only who the review posts as.
+
+**What it costs.**
+- The review no longer shows as `claude[bot]`, so only its text says it came from Claude.
+- It shares its login with the job's own posts.
+- Comments made with the job's token don't start other workflows. Nothing relies on that: the gate already ignores the review's comments.
+- Without the agent App, a spec PR opens as `github-actions[bot]` too. The review only comments, never approves, so GitHub's rule against approving your own PR doesn't come into it.
+
+**Rejected:**
+- *The agent App's token.* Claude would review as the identity it writes code as, and `.sdlc/docs/agent-identity.md` keeps the two apart.
+- *Staying on `pull_request` until upstream fixes the exchange.* Effect 2 stays open for an unknown time.
+
+A review App of its own, used when a repo sets it up, is #311.
+
 ## Alternatives considered
 
 - **Pass our own `github_token`, so the App's check is skipped.** It gets the review running, but the PR still controls its own review (effect 2). Kieron rejected it on 27 Nov.
@@ -85,6 +111,7 @@ What constrains the choice:
 - a plan makes the review job run a command, `make` target or action from the PR's checkout
 - a plan widens the review's tool allowlist to anything that writes files or runs commands
 - claude-code-action stops handling `pull_request_target` as a PR event, or its token swap accepts a PR's copy of the workflow
+- Anthropic's token exchange accepts `pull_request_target` (anthropics/claude-code-action#713): the review could post as `claude[bot]` again
 - a plan gives a secret, or a token that can write, to a workflow step that reads or runs a file outside the approval list (that file joins the list)
 - a plan adds a path to the approval list, or a path that most PRs change
 - the after-review gate needs the reviewed head and can't get it from the PR number

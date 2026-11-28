@@ -21,19 +21,22 @@
 # reason, short enough for a commit status), and 3 when the comments or threads can't be read.
 #
 # Env: GITHUB_REPOSITORY (owner/name; default: the gh repo of this checkout).
-#      REVIEW_BOT (default: claude[bot], the login claude-code-action comments as).
+#      REVIEW_BOT (default: github-actions[bot],claude[bot]): the reviewer's logins, comma-separated.
+#        The review posts with the job's token (ADR 0001); claude[bot] covers earlier reviews.
 set -uo pipefail
 
 pr="${1:-}"
 [[ "$pr" =~ ^[0-9]+$ ]] || { sed -n '2,23p' "$0" >&2; exit 2; }
 repo="${GITHUB_REPOSITORY:-$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)}"
 [[ "$repo" == */* ]] || { echo "review-findings: can't tell which repo this is" >&2; exit 3; }
-bot="${REVIEW_BOT:-claude[bot]}"
-login="${bot%\[bot\]}"  # GraphQL names an App's account without the [bot] suffix
+bots="${REVIEW_BOT:-github-actions[bot],claude[bot]}"
+# As JSON arrays for jq: the REST logins, and GraphQL's, which drop an App's [bot] suffix.
+bots_json="[$(sed -E 's/[^,]+/"&"/g' <<<"$bots")]"
+logins_json="${bots_json//\[bot\]/}"
 
 # The reviewer's comments, oldest first; the last one with the count line is the summary.
 bodies="$(gh api "repos/$repo/issues/$pr/comments" --paginate \
-  --jq ".[] | select(.user.login == \"$bot\") | .body | @json")" \
+  --jq ".[] | select(.user.login | IN($bots_json[])) | .body | @json")" \
   || { echo "review-findings: can't read PR #$pr's comments" >&2; exit 3; }
 marker="" nits=0 summary=""
 while IFS= read -r body; do
@@ -48,7 +51,8 @@ if [[ -z "$marker" ]]; then
   exit 1
 fi
 
-# Unresolved threads the reviewer started with **Important or **Nit, one line each.
+# Unresolved threads the reviewer started with **Important or **Nit, one line each. The job's CI-change
+# thread shares the reviewer's login (ADR 0001) and is no finding: descopes-decided.sh holds it.
 query='query($owner: String!, $name: String!, $pr: Int!, $endCursor: String) {
   repository(owner: $owner, name: $name) { pullRequest(number: $pr) {
     reviewThreads(first: 100, after: $endCursor) {
@@ -58,7 +62,8 @@ threads="$(gh api graphql --paginate -f query="$query" -F owner="${repo%%/*}" \
   -F name="${repo#*/}" -F pr="$pr" --jq "
     .data.repository.pullRequest.reviewThreads.nodes[]
     | select(.isResolved | not) | .comments.nodes[0]
-    | select((.author.login | sub(\"\\\\[bot\\\\]\$\"; \"\")) == \"$login\")
+    | select(.author.login | sub(\"\\\\[bot\\\\]\$\"; \"\") | IN($logins_json[]))
+    | select(.body | test(\"CI change: needs approval\") | not)
     | .body | capture(\"^\\\\s*\\\\*\\\\*(?<kind>Important|Nit)\\\\b\") | .kind")" \
   || { echo "review-findings: can't read PR #$pr's review threads" >&2; exit 3; }
 open="$(grep -cx Important <<<"$threads")"

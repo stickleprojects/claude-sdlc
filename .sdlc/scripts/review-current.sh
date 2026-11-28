@@ -108,12 +108,17 @@ gh api "repos/$repo/statuses/$head" --silent -f state=pending -f context=claude-
 echo "review-current: ${head:0:7}: $description"
 
 # Cancel the reviews of older commits, unless a newer push came in: its review isn't older.
+# A pull_request_target run (ADR 0001) has main's branch and head, so it's found by its name,
+# "Claude review of #<pr> at <sha>"; a pull_request run (before ADR 0001) by its branch and head.
 [[ -n "${HEAD_REF:-}" ]] || exit 0
 [[ "$(gh api "repos/$repo/pulls/$pr" --jq .head.sha 2>/dev/null)" == "$head" ]] || exit 0
-export HEAD_REF REPO="$repo" HEAD="$head"
-stale="$(gh api "repos/$repo/actions/workflows/sdlc-claude-review.yml/runs?event=pull_request&per_page=50" \
-  --jq '.workflow_runs[] | select(.status != "completed" and .head_branch == env.HEAD_REF
-    and .head_repository.full_name == env.REPO and .head_sha != env.HEAD) | .id' 2>/dev/null)" || stale=""
+export HEAD_REF REPO="$repo" HEAD="$head" TITLE="Claude review of #$pr at "
+stale="$(gh api "repos/$repo/actions/workflows/sdlc-claude-review.yml/runs?per_page=50" \
+  --jq '.workflow_runs[] | select(.status != "completed")
+    | select((.event == "pull_request" and .head_branch == env.HEAD_REF
+              and .head_repository.full_name == env.REPO and .head_sha != env.HEAD)
+          or (.event == "pull_request_target" and (.display_title | startswith(env.TITLE))
+              and .display_title != env.TITLE + env.HEAD)) | .id' 2>/dev/null)" || stale=""
 while IFS= read -r id; do
   [[ -n "$id" ]] || continue
   if gh api -X POST "repos/$repo/actions/runs/$id/cancel" --silent 2>/dev/null; then

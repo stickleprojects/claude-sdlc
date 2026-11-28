@@ -43,6 +43,20 @@ def test_request_review_adds_the_label_when_no_review_started_on_the_push(reques
     assert "no review run started on abc1234" in result.stdout
 
 
+def target_run(conclusion=None, pr=7, sha=PUSHED):
+    """A pull_request_target run (ADR 0001): its head is main's; its name says what it reviews."""
+    return {**review_run(conclusion), "display_title": f"Claude review of #{pr} at {sha}"}
+
+
+def test_request_review_finds_a_pull_request_target_review_by_its_name(request_review):
+    result, labelled, calls = request_review(variable="merge", target_runs=[target_run()])
+    assert not labelled and "already started a review" in result.stdout
+    assert "actions/workflows/sdlc-claude-review.yml/runs?event=pull_request_target" in calls
+    for other in (target_run(pr=70), target_run(sha="0" * 40), target_run("skipped")):
+        result, labelled, _ = request_review(variable="merge", target_runs=[other])
+        assert labelled and "no review run started on abc1234" in result.stdout, other
+
+
 def test_request_review_counts_a_finished_review_of_the_push(request_review):
     result, labelled, _ = request_review(variable="merge", runs=[review_run("success")])
     assert not labelled and "already started a review" in result.stdout

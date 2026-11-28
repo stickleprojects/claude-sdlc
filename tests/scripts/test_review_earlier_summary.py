@@ -116,10 +116,11 @@ def test_the_script_arrives_executable():
     assert git(REPO, "ls-files", "-s", str(SCRIPT.relative_to(REPO))).startswith("100755")
 
 
-def test_the_review_reads_the_earlier_summary_from_the_base_copy():
+def test_the_review_reads_the_earlier_summary_with_mains_copy():
+    # Under pull_request_target the workspace root is main (ADR 0001), so its script is main's.
     text = WORKFLOW.read_text()
     step = text[text.index("- name: Read the earlier summary") :][:900]
-    assert 'git show "$BASE:.sdlc/scripts/review-earlier-summary.sh"' in step
+    assert '.sdlc/scripts/review-earlier-summary.sh "$PR"' in step and "pr/" not in step
     assert "> .review-earlier-summary.md" in step and "could not be read" in step
     assert text.index("- name: Read the earlier summary") < text.index("- name: Review\n")
     # Both review prompts are told to read it before replacing the summary.
