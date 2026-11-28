@@ -47,8 +47,13 @@ def artifact(sections):
     return "".join(f"## {s}\n\n{'- R1. x' if s == 'Requirements' else 'x'}\n\n" for s in sections)
 
 
+# sdlc.mk's inputs. Make reads the environment as make variables, so an outer job's PR or
+# STATUS would reach the consumer's make (#313): each make here starts with them empty.
+SDLC_MK_INPUTS = ("CHANGE", "FIX", "NAME", "OPEN", "PR", "REF", "STAGE", "STATUS")
+
+
 def make(repo, *args):
-    return run(["make", "-s", *args], cwd=repo)
+    return run(["make", "-s", *args], cwd=repo, env=dict.fromkeys(SDLC_MK_INPUTS, ""))
 
 
 def test_sync_installs_framework_owned_files(consumer):

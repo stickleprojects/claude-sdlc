@@ -619,3 +619,17 @@ def test_the_jobs_names_say_the_result_is_the_check_status():
         name = jobs[job]["name"]
         assert "${{" not in name and name.endswith("the result is the check status"), name
         assert name != "check"
+
+
+def test_the_make_check_job_keeps_sdlc_mks_inputs_out_of_makes_environment():
+    """#313: make reads the environment as make variables, and the job's PR reached the tests'
+    `make sync-changes FIX=1`, which then refused. Only the step that reads PR sets it."""
+    from test_scenario import SDLC_MK_INPUTS
+
+    job = load(AFTER)["jobs"]["make-check"]
+    assert not set(job.get("env", {})) & set(SDLC_MK_INPUTS), job["env"]
+    for step in job["steps"]:
+        if re.search(r"^\s*make\s", step.get("run", ""), re.M):  # a step that runs make
+            assert not set(step.get("env", {})) & set(SDLC_MK_INPUTS), step["name"]
+    [merge] = [s for s in job["steps"] if s.get("name") == "Check the merge is of this head"]
+    assert merge["env"]["PR"] == "${{ needs.gate.outputs.pr }}"
