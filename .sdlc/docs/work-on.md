@@ -51,12 +51,15 @@ A copy is removed only when:
 - it isn't the main checkout, locked, or the folder you're in;
 - no process works in it (a Claude session, a build).
 
+**Squash or rebase merges:** both the move to the next stage and the clean-up need the copy's commit to be on `origin/main`. A squash or rebase merge puts new commits there instead, so both refuse and change nothing: remove a finished copy yourself with `git worktree remove .claude/worktrees/<number>`.
+
 Ignored files you made by hand (notes, mock-ups; not caches, logs or test reports) are first copied to `~/.local/state/removed-worktrees/<repo>/<time>/`. The branches stay: `git branch -d <branch>` deletes a merged one.
 
 ## Needs
 
 - `git`, plus `gh` signed in (to read PRs);
-- Linux's `/proc` or `lsof`, to see which folders a Claude session runs in;
+- Linux's `/proc` or `lsof` (macOS), to see which folders a Claude session runs in. With neither, `work-on.sh` refuses rather than guess;
+- bash 3.2 or later, so stock macOS will do;
 - for `work-on.sh` to start Claude, a terminal and `claude` on `PATH`.
 
 Opening a new terminal window is up to your desktop: a launcher can run `work-on.sh` in a new window.

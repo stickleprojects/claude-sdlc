@@ -21,7 +21,9 @@
 # from a Claude session's tools), or with --no-start, it prints the command instead.
 #
 # Exits 0 when Claude started or the copy is ready, 1 when it stops (it says why), 2 on bad usage.
+# Runs on bash 3.2 (stock macOS): no mapfile, no empty-array expansion under set -u.
 # Env: SDLC_CLAUDE (agent-session.sh: the command to run instead of `claude`; the tests use it).
+#      SDLC_PROC (default /proc; the tests point it elsewhere to take the lsof path, as on macOS).
 set -euo pipefail
 
 usage() {
@@ -88,15 +90,18 @@ git -C "$root" fetch --quiet --prune origin || stop "can't fetch origin"
 busy() {
   local pid cwd folder
   folder="$(realpath -- "$1" 2>/dev/null || printf '%s' "$1")"  # the kernel reports resolved paths
-  if [[ -d /proc/self ]]; then
+  if [[ -d "${SDLC_PROC:-/proc}/self" ]]; then
     for pid in $(pgrep -x claude || true); do
       cwd="$(readlink -f "/proc/$pid/cwd" 2>/dev/null || true)"
       [[ "$cwd" == "$folder" || "$cwd" == "$folder"/* ]] && return 0
     done
   elif command -v lsof >/dev/null; then
     while IFS= read -r cwd; do
+      cwd="$(realpath -- "$cwd" 2>/dev/null || printf '%s' "$cwd")"
       [[ "$cwd" == "$folder" || "$cwd" == "$folder"/* ]] && return 0
     done < <(lsof -a -c claude -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')
+  else
+    stop "can't tell whether a Claude session is running in $1 (no /proc, no lsof)"
   fi
   return 1
 }
@@ -106,7 +111,9 @@ refuse_if_busy() {
 
 # The branch for a number alone.
 if [[ -z "$branch" ]]; then
-  mapfile -t found < <({ git -C "$root" for-each-ref --no-merged=origin/main --format='%(refname:lstrip=2)' refs/heads
+  found=()  # read line by line: stock macOS has bash 3.2
+  while IFS= read -r b; do found+=("$b"); done < <({
+      git -C "$root" for-each-ref --no-merged=origin/main --format='%(refname:lstrip=2)' refs/heads
       git -C "$root" for-each-ref --no-merged=origin/main --format='%(refname:lstrip=3)' refs/remotes/origin
     } | grep -E "^(intent|spec|plan|build)/$number-" | sort -u)
   if ((${#found[@]} > 1)); then
@@ -208,4 +215,5 @@ cd "$path"
 [[ -x .sdlc/scripts/agent-session.sh ]] || stop "$branch has no .sdlc/scripts/agent-session.sh: start Claude in $path yourself"
 [[ -z "$own_prompt" ]] || rm -f -- "$own_prompt"  # already read into the first prompt
 own_prompt=""
-exec .sdlc/scripts/agent-session.sh --name "$title" "${first[@]}"
+# ${first[@]+…}: bash 3.2 (stock macOS) calls an empty array unbound under set -u.
+exec .sdlc/scripts/agent-session.sh --name "$title" ${first[@]+"${first[@]}"}

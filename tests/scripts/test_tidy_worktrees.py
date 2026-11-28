@@ -45,11 +45,12 @@ def repo(tmp_path):
         def pr(self, branch, state, oid):
             self.prs.append({"headRefName": branch, "state": state, "headRefOid": oid})
 
-        def tidy(self, *args):
+        def tidy(self, *args, **extra):
             env = {
                 "PATH": f"{bin_dir}:{os.environ['PATH']}",
                 "GH_PRS": json.dumps(self.prs),
                 "HOME": str(self.home),
+                **extra,
             }
             return run(["python3", "-I", str(SCRIPT), *args], cwd=root, env=env)
 
@@ -136,3 +137,15 @@ def test_bad_arguments_print_the_usage():
 
 def test_it_is_synced_and_executable():
     assert git(REPO, "ls-files", "-s", ".sdlc/scripts/tidy-worktrees.py").startswith("100755")
+
+
+def test_without_proc_it_asks_lsof_which_folders_processes_run_in(repo, tmp_path):
+    """macOS has no /proc: lsof -d cwd -Fcn lists c<name> and n<folder> for each process."""
+    path = repo.copy("0066", "build/0066-gate")
+    repo.pr("build/0066-gate", "MERGED", git(path, "rev-parse", "HEAD"))
+    lsof = tmp_path / "bin/lsof"
+    lsof.write_text(f"#!/usr/bin/env bash\nprintf 'p4242\\ncclaude\\nfcwd\\nn%s\\n' '{path}'\n")
+    lsof.chmod(0o755)
+    result = repo.tidy("--go", SDLC_PROC=str(tmp_path / "no-proc"))
+    assert line(result, "0066").startswith("keep    0066: in use by claude"), result.stdout
+    assert path.exists()

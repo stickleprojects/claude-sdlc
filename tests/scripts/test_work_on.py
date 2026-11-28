@@ -313,3 +313,65 @@ def test_a_prompt_on_stdin_with_no_terminal_is_printed_with_the_command(world):
 
 def test_it_is_synced_and_executable():
     assert git(REPO, "ls-files", "-s", ".sdlc/scripts/work-on.sh").startswith("100755")
+
+
+@pytest.mark.parametrize("running_in", ["copy", "elsewhere"])
+def test_without_proc_it_asks_lsof_which_folders_claude_runs_in(world, tmp_path, running_in):
+    """macOS has no /proc: lsof lists each claude process's working folder (-Fn: n<path>)."""
+    world.branch(f"build/{SLUG}")
+    world.clone()
+    assert world.work_on("0063").returncode == 0
+    folder = world.copy if running_in == "copy" else tmp_path
+    lsof = tmp_path / "bin/lsof"
+    lsof.write_text(f"#!/usr/bin/env bash\nprintf 'p4242\\nfcwd\\nn%s\\n' '{folder}'\n")
+    lsof.chmod(0o755)
+    result = world.work_on("0063", SDLC_PROC=str(tmp_path / "no-proc"))
+    if running_in == "copy":
+        assert result.returncode == 1 and "already running in" in result.stderr
+    else:
+        assert result.returncode == 0, result.stderr
+
+
+def test_without_proc_or_lsof_it_refuses_rather_than_guess(world, tmp_path):
+    world.branch(f"build/{SLUG}")
+    world.clone()
+    assert world.work_on("0063").returncode == 0
+    bare = tmp_path / "bare-bin"  # the tools it needs, without lsof
+    bare.mkdir()
+    for tool in (
+        "bash",
+        "git",
+        "realpath",
+        "grep",
+        "sed",
+        "awk",
+        "sort",
+        "ls",
+        "mktemp",
+        "chmod",
+        "cat",
+        "rm",
+        "date",
+        "dirname",
+        "basename",
+        "printf",
+        "env",
+        "readlink",
+    ):
+        if found := shutil.which(tool):
+            (bare / tool).symlink_to(found)
+    for name in ("make", "gh"):
+        (bare / name).symlink_to(tmp_path / "bin" / name)
+    result = world.work_on("0063", SDLC_PROC=str(tmp_path / "no-proc"), PATH=str(bare))
+    assert result.returncode == 1
+    assert "can't tell whether a Claude session is running" in result.stderr
+
+
+def test_it_keeps_to_bash_3_2_which_stock_macos_has():
+    """No bash 3.2 here to run it under, so this holds the features it avoids: mapfile and
+    readarray (bash 4), associative arrays, and an array expanded bare where it may be empty."""
+    text = SCRIPT.read_text()
+    code = "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
+    for feature in ("mapfile", "readarray", "declare -A", '${first[@]}"\n'):
+        assert feature not in code, feature
+    assert '${first[@]+"${first[@]}"}' in code

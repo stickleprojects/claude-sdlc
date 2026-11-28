@@ -79,7 +79,10 @@ def inside(path: str, folder: str) -> bool:
 
 def process_folders() -> list[tuple[str, str]]:
     """Each process's working folder and name: Linux's /proc, else lsof (macOS)."""
-    if not os.path.isdir("/proc/self"):
+    proc = os.environ.get(
+        "SDLC_PROC", "/proc"
+    )  # the tests point it elsewhere to take the lsof path
+    if not os.path.isdir(f"{proc}/self"):
         if not shutil.which("lsof"):
             sys.exit("error: can't see which folders processes run in (no /proc, no lsof)")
         listing = run("lsof", "-d", "cwd", "-Fcn").stdout
@@ -113,7 +116,8 @@ def why_keep(tree, trees, prs, processes) -> str | None:
         return "its folder is missing (git worktree prune)"
     if any(t is not tree and inside(t["path"], path) for t in trees):
         return "another worktree is inside it"
-    users = sorted({name for folder, name in processes if inside(folder, path)})
+    real = os.path.realpath(path)  # the kernel and lsof report resolved paths
+    users = sorted({name for folder, name in processes if inside(os.path.realpath(folder), real)})
     if users:
         return "in use by " + ", ".join(users)
     if not branch:
