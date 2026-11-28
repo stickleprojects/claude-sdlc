@@ -24,6 +24,8 @@ make sync-changes   # check each change.toml (title, status) against its folder 
 make clauses CHANGE=0002    # a spec as one JSON block per requirement (the clause check reads it)
 make evals       # agent evals (calls the model; in CI it uses CLAUDE_CODE_OAUTH_TOKEN)
 scripts/next-version.sh --explain   # the version the next release would get
+.sdlc/scripts/work-on.sh 0063    # a change's own copy of the code, with Claude in it (#279)
+.sdlc/scripts/tidy-worktrees.py  # finished copies to remove (--go removes them)
 make lock-actions  # after changing any `uses:` in a workflow: relock .github/workflows/actions.lock (#143)
 ```
 
@@ -71,6 +73,6 @@ The framework itself. Its changes are tracked as GitHub issues (label `pipeline`
 
 ## Known mistakes
 
-- A test that runs `make` inherits the outer make's variables. `make check FULL=1` (CI on main, the release) passes `FULL=1` to every make below it through `MAKEFLAGS`, where it beats the test's own environment. Passing locally under plain `make check` doesn't prove the test. That broke main in #165 and again in #245. A test that runs make sets `MAKEFLAGS`, `MAKELEVEL` and `FULL` to empty in the child's env (`tests/scripts/test_docs_only_check.py`, `tests/scripts/test_pr_check_target.py`), and is checked with `MAKEFLAGS=FULL=1 uv run pytest <file>`.
+- A test that runs `make` inherits the outer make's variables. `make check FULL=1` (CI on main, the release) passes `FULL=1` to every make below it through `MAKEFLAGS`, where it beats the test's own environment. Passing locally under plain `make check` doesn't prove the test. That broke main in #165 and again in #245. A test that runs make sets `MAKEFLAGS`, `MAKELEVEL` and `FULL` to empty in the child's env (`tests/scripts/test_docs_only_check.py`, `tests/scripts/test_pr_check_target.py`), and is checked with `MAKEFLAGS=FULL=1 uv run pytest <file>`. The same goes for the environment: make reads it as make variables, so a CI job's `PR` reached a test's `make sync-changes` (#313). The scenario tests' `make` helper sets sdlc.mk's inputs (`SDLC_MK_INPUTS`) to empty, and a workflow sets such a variable only on the step that reads it.
 
 - A new script must be committed as `100755`. On Linux runners a non-executable hook fails silently, which turns the guardrail off. For every new script, `chmod +x <file>` on disk **and** run `git update-index --chmod=+x <file>`, then check the commit with `git ls-tree HEAD <file>`. On ext4 (`core.fileMode` true), a later `git add -A` re-stages the file's disk mode over `update-index`. That shipped `review-threads.sh` as `100644` in #227, and a `make check` run before the commit didn't see it. On NTFS, `chmod` has no effect, so `update-index` is the only way.
