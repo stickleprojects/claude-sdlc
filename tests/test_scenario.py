@@ -80,6 +80,8 @@ def test_sync_installs_framework_owned_files(consumer):
         ".sdlc/scripts/agent-identity.sh",
         ".sdlc/scripts/tests-locked.sh",
         ".sdlc/scripts/current-change.sh",
+        ".sdlc/scripts/work-on.sh",
+        ".sdlc/scripts/tidy-worktrees.py",
     ]:
         assert (consumer / rel).exists(), rel
     assert not (consumer / ".github/workflows/release.yml").exists(), "framework-only workflow"
