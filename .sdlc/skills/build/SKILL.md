@@ -61,8 +61,9 @@ Ask whenever something is ambiguous, but **one decision at a time**. Use AskUser
 ## 1. Work out which change to build
 
 1. `git fetch --prune origin`.
-2. **If the person named a change** (`0001` or `0001-role-browser`), use it, unless it isn't ready to build: not planned yet (offer `/sdlc-plan`), or already built and merged (say so).
-3. **Otherwise, list the candidates.** A candidate is a folder `changes/<slug>/` where all of these hold:
+2. **If the person named a change** (`0001` or `0001-role-browser`), use it, unless it isn't ready to build: not planned yet (offer `/sdlc-plan`), or already built and merged (say so). If `.sdlc/scripts/current-change.sh` prints another change, warn as routing's *Pick the change* says.
+3. **If none was named, run `.sdlc/scripts/current-change.sh` first.** It prints the change this copy is for: `SDLC_CHANGE` (set by `work-on.sh`), else the branch, else the folder. If it prints one that isn't done or withdrawn, build that one, as routing's *Pick the change* says: say which in one line and don't ask, even when other changes are ready. If it isn't ready to build, say why, as in step 2.
+4. **Otherwise, list the candidates.** A candidate is a folder `changes/<slug>/` where all of these hold:
    - `plan.md` exists on `origin/main`;
    - no merged PR has come from `build/<slug>`. Check with `gh api 'repos/{owner}/{repo}/pulls?state=closed&head={owner}:build/<slug>'` and look at `merged_at`.
 
@@ -74,7 +75,7 @@ Ask whenever something is ambiguous, but **one decision at a time**. Use AskUser
    - **None:** don't just stop. Follow routing step 4 in `.sdlc/skills/routing.md`: if a change is ready to plan (its spec merged), say so and offer to run `/sdlc-plan` for it; otherwise say what each change is waiting on.
 
    `make next REF=origin/main` (see the routing file) lists every change's next step, which gives you the candidates directly.
-4. **Check the plan is approved.** It must be merged on `origin/main` (a fast-path bug has no plan: its bug and spec are approved with its PR). If an open PR changes this change's `spec.md` or `plan.md`, ask whether to wait for it or build against what's on `main`. <!-- rule: build.plan-approved -->
+5. **Check the plan is approved.** It must be merged on `origin/main` (a fast-path bug has no plan: its bug and spec are approved with its PR). If an open PR changes this change's `spec.md` or `plan.md`, ask whether to wait for it or build against what's on `main`. <!-- rule: build.plan-approved -->
 
 ## 2. Get onto the branch and check what the last session left
 
