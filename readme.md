@@ -272,9 +272,11 @@ make sync-changes                            # housekeeping: check every change.
 make status                                  # stage each change has reached
 make next REF=origin/main                    # each change's next step, and the skill to run
 make check                                   # lint + tests + artifact chain
+.sdlc/scripts/work-on.sh 0063                # work on a change in its own copy, with Claude in it
+.sdlc/scripts/tidy-worktrees.py              # which finished copies can go (--go removes them)
 ```
 
-Mostly, though, you'll just talk to Claude: `/sdlc-intent`, `/sdlc-plan`, `/sdlc-build`, `/sdlc-pr`, `/sdlc-next`. Who does what: [.sdlc/docs/roles.md](.sdlc/docs/roles.md).
+Several changes can run side by side, each in its own copy: [.sdlc/docs/work-on.md](.sdlc/docs/work-on.md). Mostly, though, you'll just talk to Claude: `/sdlc-intent`, `/sdlc-plan`, `/sdlc-build`, `/sdlc-pr`, `/sdlc-next`. Who does what: [.sdlc/docs/roles.md](.sdlc/docs/roles.md).
 
 ## Guardrails
 
