@@ -62,7 +62,7 @@ Ask whenever something is ambiguous, but **one decision at a time**. Use AskUser
 
 1. `git fetch --prune origin`.
 2. **If the person named a change** (`0001` or `0001-role-browser`), use it, unless it isn't ready to build: not planned yet (offer `/sdlc-plan`), or already built and merged (say so). If `.sdlc/scripts/current-change.sh` prints another change, warn as routing's *Pick the change* says.
-3. **If none was named, run `.sdlc/scripts/current-change.sh` first.** It prints the change this copy is for: `SDLC_CHANGE` (set by `work-on.sh`), else the branch, else the folder. If it prints one that isn't done or withdrawn, build that one, as routing's *Pick the change* says: say which in one line and don't ask, even when other changes are ready. If it isn't ready to build, say why, as in step 2.
+3. **If none was named, run `.sdlc/scripts/current-change.sh` first** and follow routing's *Pick the change*: build the change it prints without asking, saying which. If it isn't ready to build, say why, as in step 2.
 4. **Otherwise, list the candidates.** A candidate is a folder `changes/<slug>/` where all of these hold:
    - `plan.md` exists on `origin/main`;
    - no merged PR has come from `build/<slug>`. Check with `gh api 'repos/{owner}/{repo}/pulls?state=closed&head={owner}:build/<slug>'` and look at `merged_at`.
