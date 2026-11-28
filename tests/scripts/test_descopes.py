@@ -142,6 +142,17 @@ def test_the_review_and_each_reply_check_the_descopes():
     )
 
 
+def test_the_descopes_check_runs_mains_scripts_not_the_prs():
+    """#310: it can set claude-review, so a PR's edited descopes-status.sh mustn't be what runs."""
+    workflow = (REPO / ".github/workflows/sdlc-descopes.yml").read_text()
+    steps = workflow.split("steps:", 1)[1]
+    checkout = steps.split("- run:", 1)[0]
+    assert "uses: actions/checkout@" in checkout
+    assert "ref: ${{ github.event.repository.default_branch }}" in checkout
+    assert "persist-credentials: false" in checkout
+    assert steps.count("actions/checkout@") == 1, "no second checkout of the PR"
+
+
 def test_the_review_rules_and_skill_use_the_lead_in_the_script_reads():
     """descopes-decided.sh finds a descope thread by its lead-in; both prompts must write it."""
     assert "Descope: needs approval" in (REPO / ".sdlc/scripts/descopes-decided.sh").read_text()
