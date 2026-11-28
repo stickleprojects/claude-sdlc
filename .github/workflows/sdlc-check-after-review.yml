@@ -156,8 +156,9 @@ jobs:
     concurrency:
       group: check-after-review-${{ needs.gate.outputs.pr }}
       cancel-in-progress: true
+    # PR is set only on the step that reads it: make reads the environment as make variables, and
+    # .sdlc/sdlc.mk takes PR as an input (`make sync-changes CHANGE=… PR=…`, #313).
     env:
-      PR: ${{ needs.gate.outputs.pr }}
       HEAD_SHA: ${{ needs.gate.outputs.head }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
@@ -174,6 +175,8 @@ jobs:
           fetch-depth: 0  # make validate and the docs-only check compare the branch with main
           persist-credentials: false
       - name: Check the merge is of this head
+        env:
+          PR: ${{ needs.gate.outputs.pr }}
         run: |
           parent="$(git rev-parse HEAD^2 2>/dev/null)"
           [[ "$parent" == "$HEAD_SHA" ]] || {
