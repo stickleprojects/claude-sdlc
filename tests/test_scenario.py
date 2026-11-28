@@ -65,6 +65,7 @@ def test_sync_installs_framework_owned_files(consumer):
         ".sdlc/templates/adr.md",
         ".claude/settings.json",
         ".github/workflows/sdlc-claude-review.yml",
+        ".github/workflows/sdlc-claude-review-transition.yml",
         ".github/workflows/sdlc-pr-title.yml",
         ".sdlc/templates/intent.md",
         ".sdlc/REVIEW.md",

@@ -239,6 +239,7 @@ case "$path" in
   repos/o/r/actions/organization-variables)
     echo '{"variables": []}' > "$D/org.json"; serve org.json ;;
   repos/o/r/actions/runs*) serve runs.json ;;
+  repos/o/r/actions/workflows/sdlc-claude-review.yml/runs*) serve target-runs.json ;;
   *) echo "unexpected: $path" >&2; exit 1 ;;
 esac
 """

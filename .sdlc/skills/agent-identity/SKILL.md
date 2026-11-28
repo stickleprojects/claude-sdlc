@@ -9,7 +9,7 @@ Check which applies: `echo "${SDLC_AGENT_IDENTITY:-person}"`.
 
 ## Who acts as whom
 
-One App, the identity `agent`, serves every local Claude session and the spec workflow. It is never the person. The CI reviewer and the `@claude` bot are a different identity (`claude[bot]`, from the review and mention workflows); they aren't yours to act as. <!-- rule: identity.who-is-who -->
+One App, the identity `agent`, serves every local Claude session and the spec workflow. It is never the person. The CI reviewer (`github-actions[bot]`) and the `@claude` bot (`claude[bot]`) are different identities; they aren't yours to act as. <!-- rule: identity.who-is-who -->
 
 ## Signing what you post
 

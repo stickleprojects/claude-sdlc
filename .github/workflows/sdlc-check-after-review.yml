@@ -10,7 +10,11 @@
 # The result is the `check` commit status on the head, which branch protection requires in
 # place of sdlc-ci.yml's check run. Until it runs, the status is pending and says what it waits
 # for. The gate looks again when that can change:
-#   - a Claude review finishes (workflow_run);
+#   - a Claude review finishes (workflow_run). Its run is a pull_request_target one (ADR 0001),
+#     whose head and branch are main's, so the PR and the reviewed head come from the run's name,
+#     "Claude review of #<pr> at <sha>", and the PR's own head repo is checked here: the run says
+#     nothing about forks. A pull_request run (the transition workflow, or main before ADR 0001)
+#     is read as before;
 #   - Descope decisions finishes (workflow_run, #223): a person's `Approved:` reply starts it and
 #     this gate at the same moment, so the gate's own run reads `claude-review` before Descope
 #     decisions has flipped it. This run looks again once it has;
@@ -53,6 +57,7 @@ jobs:
       vars.SDLC_CHECK_AFTER_REVIEW != '' && vars.SDLC_CHECK_AFTER_REVIEW != 'off' && (
         (github.event_name == 'workflow_run' &&
           (github.event.workflow_run.event == 'pull_request' ||
+            github.event.workflow_run.event == 'pull_request_target' ||
             (github.event.workflow_run.name == 'Descope decisions' &&
               github.event.workflow_run.conclusion == 'success')) &&
           github.event.workflow_run.head_repository.full_name == github.repository) ||
@@ -90,10 +95,20 @@ jobs:
           RUN_HEAD: ${{ github.event.workflow_run.head_sha }}
           RUN_PR: ${{ github.event.workflow_run.pull_requests[0].number }}
           RUN_NAME: ${{ github.event.workflow_run.name }}
+          RUN_EVENT: ${{ github.event.workflow_run.event }}
+          RUN_TITLE: ${{ github.event.workflow_run.display_title }}
           PR_HEAD: ${{ github.event.pull_request.head.sha }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          if [[ "$EVENT" == workflow_run ]]; then
+          if [[ "$EVENT" == workflow_run && "$RUN_EVENT" == pull_request_target ]]; then
+            # Main's run: the name says which PR and head it reviewed. A fork's PR never gates.
+            head="" pr=""
+            if [[ "$RUN_TITLE" =~ ^Claude\ review\ of\ \#([0-9]+)\ at\ ([0-9a-f]{40})$ ]]; then
+              pr="${BASH_REMATCH[1]}" head="${BASH_REMATCH[2]}"
+              from="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$pr" --jq .head.repo.full_name)"
+              [[ "$from" == "$GITHUB_REPOSITORY" ]] || { echo "PR #$pr is from $from: not gated here"; pr="" head=""; }
+            fi
+          elif [[ "$EVENT" == workflow_run ]]; then
             head="$RUN_HEAD" pr="$RUN_PR"
             [[ -n "$pr" ]] || pr="$(gh api "repos/$GITHUB_REPOSITORY/commits/$head/pulls" \
               --jq '[.[] | select(.state == "open")][0].number // empty')"

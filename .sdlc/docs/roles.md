@@ -156,7 +156,7 @@ To regenerate a spec by hand, run `claude`, then `/sdlc-next NNNN`: when the spe
 **What you do**
 
 1. Read the Claude review summary and its inline findings. Every *Important* finding is either fixed or dismissed with a reason, in a reply on its thread. If the PR changed since the review, its `claude-review` check says "Not reviewed: N commits since the review", and it can't merge until you add the `review` label to review it again.
-   - **A PR that changes `.github/workflows/sdlc-claude-*.yml` gets no AI review**, though its check is green. A comment on the PR says so. Review those by hand, with extra care: they control what the agent may do.
+   - **A PR that changes a file that sets CI's rules** (`.github/`, `.sdlc/hooks/`, `.claude/settings.json`, `uv.lock`) gets a full AI review, plus one `CI change: needs approval` thread listing those files (ADR 0001). Read the change to each, then reply `Approved: <name>, <date>`: `claude-review` fails until you do. The AI's findings on those files are advice, never the only check.
 2. Check that the diff matches `spec.md` and `plan.md` for its change.
 3. **Solo mode:** merge it. The required checks must be green, and nobody can bypass them. If GitHub says the branch is out of date with `main`, click *Update branch* and wait for the checks again: branch protection requires PRs to be up to date, so you see when one is behind. The branch is deleted when it merges. **Team mode:** approve it, then merge. Branch protection requires your approval, and Claude's review never counts as one.
 

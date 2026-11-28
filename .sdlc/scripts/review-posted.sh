@@ -6,15 +6,17 @@
 # The review job used to mark `claude-review` as success whenever the review action finished
 # without error. On PR #129 the action ended after 22 seconds, with 4 tool calls refused and no
 # comment posted, and the gate still said "The Claude review is posted". This reads the PR's
-# comments and exits 0 only if the reviewer created or edited one at or after <since> (the job's
-# start), printing its URL. The review edits its one summary in place, so a re-review shows as
-# an edit.
+# comments and exits 0 only if the reviewer created or edited its summary at or after <since> (the
+# job's start), printing its URL. The review edits its one summary in place, so a re-review shows
+# as an edit. The summary is the comment carrying the hidden count line (<!-- review-findings: ...),
+# since the review posts as github-actions[bot] (ADR 0001), as the job's other notes do.
 #
 # Exits 1 when there's no such comment, and 3 when the comments can't be read: either way the
 # job marks the review as not done.
 #
 # Env: GITHUB_REPOSITORY (owner/name; default: the gh repo of this checkout).
-#      REVIEW_BOT (default: claude[bot], the login claude-code-action comments as).
+#      REVIEW_BOT (default: github-actions[bot],claude[bot]): the reviewer's logins, comma-separated.
+#        The review posts with the job's token (ADR 0001); claude[bot] covers earlier reviews.
 set -uo pipefail
 
 pr="${1:-}" since="${2:-}"
@@ -22,15 +24,18 @@ pr="${1:-}" since="${2:-}"
   || { sed -n '2,17p' "$0" >&2; exit 2; }
 repo="${GITHUB_REPOSITORY:-$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)}"
 [[ -n "$repo" ]] || { echo "review-posted: can't tell which repo this is" >&2; exit 3; }
-bot="${REVIEW_BOT:-claude[bot]}"
+bots="${REVIEW_BOT:-github-actions[bot],claude[bot]}"
+# As a JSON array for jq.
+bots_json="[$(sed -E 's/[^,]+/"&"/g' <<<"$bots")]"
 
 # `since` keeps only comments updated at or after it; the select repeats it so a fake or an
 # older API that ignores the parameter can't pass an old summary off as new.
 found="$(gh api "repos/$repo/issues/$pr/comments?since=$since" --paginate \
-  --jq ".[] | select(.user.login == \"$bot\" and .updated_at >= \"$since\") | .html_url")" \
+  --jq ".[] | select((.user.login | IN($bots_json[])) and .updated_at >= \"$since\"
+    and (.body // \"\" | test(\"<!--\\\\s*review-findings:\"))) | .html_url")" \
   || { echo "review-posted: can't read PR #$pr's comments" >&2; exit 3; }
 if [[ -z "$found" ]]; then
-  echo "review-posted: $bot posted no comment on PR #$pr since $since" >&2
+  echo "review-posted: $bots posted no comment on PR #$pr since $since" >&2
   exit 1
 fi
 echo "review-posted: $(printf '%s\n' "$found" | tail -n 1)"

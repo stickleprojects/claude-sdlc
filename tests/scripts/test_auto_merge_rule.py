@@ -252,17 +252,8 @@ def test_review_posts_its_own_claude_review_status():
         if when:
             assert f"if: {when}" in steps[i]
     assert "HEAD_SHA: ${{ github.event.pull_request.head.sha }}" in workflow
-    assert "No AI review: the PR changes an sdlc-claude-*.yml workflow" in steps[done]
-
-
-def test_review_notes_a_workflow_change_on_the_push_that_makes_it():
-    # #101 finding 3: the note was posted only when the PR opened.
-    workflow = (REPO / ".github/workflows/sdlc-claude-review.yml").read_text()
-    note = workflow[workflow.index("- name: Note when the AI review can't run") :]
-    note = note[: note.index("\n      - ", 1)]
-    assert "if: github.event.action == 'opened'" not in note, "runs on every event"
-    assert 'git diff --name-only "$BEFORE" HEAD' in note and "synchronize)" in note
-    assert 'echo "skipped=true" >> "$GITHUB_OUTPUT"' in note
+    assert "No AI review: a Dependabot update" in steps[done]
+    assert "sdlc-claude-*.yml" not in workflow, "main's copy reviews a workflow change (ADR 0001)"
 
 
 def test_v0_10_0_upgrade_steps_match_the_scripts():

@@ -133,9 +133,12 @@ def test_review_runs_the_clause_check_before_the_review_and_never_fails_on_it():
     assert check < workflow.index("- name: Review\n")
     step = workflow[check : workflow.index("- name: Review\n")]
     # AI only through the adapter (CLAUDE.md): the script calls agent.sh, the step never claude -p.
-    assert '.sdlc/scripts/clause-check.sh --changed-since "$BASE"' in step
+    # Main's tool over the PR's specs and plans as data (ADR 0001): a copy of main with the PR's
+    # changed changes/<slug>/ folders put in, never the PR's Makefile.
+    assert '.sdlc/scripts/overlay-changes.sh "$copy" HEAD "$HEAD_SHA"' in step
+    in_copy = '(cd "$copy" && PATH="$bin:$PATH" .sdlc/scripts/clause-check.sh --changed-since HEAD)'
+    assert in_copy in step
     assert "claude -p" not in workflow
-    assert "BASE: ${{ github.event.pull_request.base.sha }}" in step
     assert "could not run" in step, "a failed check is reported to the review, not dropped"
     assert "if: steps.artifacts.outputs.changed == 'true'" in step
     setup = workflow[workflow.index("- uses: ./.github/actions/setup-stack") : check]

@@ -18,6 +18,7 @@ workflows:
     '.github/workflows/sdlc-claude-mention.yml':
         - 'actions/checkout@v7'
         - 'anthropics/claude-code-action@v1'
+    '.github/workflows/sdlc-claude-review-transition.yml': []
     '.github/workflows/sdlc-claude-review.yml':
         - 'actions/checkout@v7'
         - 'actions/upload-artifact@v7'
